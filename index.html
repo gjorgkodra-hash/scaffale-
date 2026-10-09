@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Scaffale</title>
+<meta name="description" content="Inventario personale di libri, dischi e film">
+<meta name="theme-color" content="#f4efe6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15120f" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Scaffale">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app"></div>
+
+<div id="sheetWrap" class="sheet-wrap hidden" aria-hidden="true">
+  <div class="sheet-backdrop" data-a="closeSheet"></div>
+  <div id="sheet" class="sheet" role="dialog" aria-modal="true"></div>
+</div>
+
+<div id="scanner" class="scanner hidden" aria-hidden="true">
+  <video id="scanVideo" playsinline muted autoplay></video>
+  <div class="scan-frame"><span></span></div>
+  <div class="scan-top">
+    <button class="scan-close" data-a="closeScanner" aria-label="Chiudi">✕</button>
+    <p class="scan-hint">Inquadra il codice a barre</p>
+  </div>
+  <form class="scan-bottom" id="manualCodeForm">
+    <input id="manualCode" inputmode="numeric" placeholder="…oppure digita il codice" autocomplete="off">
+    <button type="submit">Cerca</button>
+  </form>
+</div>
+
+<input type="file" id="photoInput" accept="image/*" multiple hidden>
+<input type="file" id="importInput" accept="application/json,.json" hidden>
+<div id="toast" class="toast" role="status"></div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
