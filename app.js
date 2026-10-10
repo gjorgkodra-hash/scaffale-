@@ -2,14 +2,17 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '1.7.1';
+const VERSION = '1.8.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
 const stripHtml = s => { const d = document.createElement('div'); d.innerHTML = String(s || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n\n'); return (d.textContent || '').trim(); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const fmtDate = ts => new Date(ts).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' });
-const fmtDateTime = ts => new Date(ts).toLocaleString('it-IT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const LOC = () => (window.I18N ? I18N.locale() : 'it-IT');
+const tr = s => (window.I18N ? I18N.tr(s) : s);
+const LNG = () => (window.I18N ? I18N.lang() : 'it');
+const fmtDate = ts => new Date(ts).toLocaleDateString(LOC(), { day: 'numeric', month: 'short', year: 'numeric' });
+const fmtDateTime = ts => new Date(ts).toLocaleString(LOC(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
 /* ── Tipi di oggetto ───────────────────────────────────────── */
 const TIPI = {
@@ -290,7 +293,7 @@ function renderGrid() {
       ${coverHTML(i)}
       <i class="stripe"></i>
       ${i.prestatoA ? `<span class="tag loan">In prestito</span>` : i.desiderio ? `<span class="tag">Desiderio</span>` : ''}
-      <div class="meta"><b>${esc(i.titolo || 'Senza titolo')}</b><span>${esc([i.autore, i.anno].filter(Boolean).join(' · ') || '—')}</span><em>${esc(label(i))}</em></div>
+      <div class="meta"><b translate="no">${esc(i.titolo || tr('Senza titolo'))}</b><span translate="no">${esc([i.autore, i.anno].filter(Boolean).join(' · ') || '—')}</span><em>${esc(label(i))}</em></div>
     </button>`).join('');
   hydratePhotos(g);
 }
@@ -327,20 +330,20 @@ function viewDetail(it) {
     ${coverHTML(it)}
     <div class="info">
       <span class="pill t-${it.tipo}">${esc(it.formato || T.label)}</span>${it.desiderio ? '<span class="pill wish">Desiderio</span>' : ''}
-      <h2>${esc(it.titolo || 'Senza titolo')}</h2>
-      <div class="who">${esc([it.autore, it.anno].filter(Boolean).join(' · '))}</div>
+      <h2 translate="no">${esc(it.titolo || tr('Senza titolo'))}</h2>
+      <div class="who" translate="no">${esc([it.autore, it.anno].filter(Boolean).join(' · '))}</div>
       ${starsHTML(it.valutazione || 0, 'rateDetail')}
     </div>
   </div>
   <div class="detail">
     ${it.prestatoA ? `<div class="loanbox">In prestito a <b>${esc(it.prestatoA)}</b>${it.prestatoIl ? ` dal ${esc(fmtDate(it.prestatoIl))}` : ''}<button data-a="returned">Restituito</button></div>` : ''}
-    ${desc ? `<div class="section"><h3>Descrizione</h3><div class="prose ${longDesc && !S.expanded ? 'clamp' : ''}">${esc(desc)}</div>${longDesc && !S.expanded ? '<button class="more" data-a="expand">Leggi tutto</button>' : ''}</div>` : ''}
-    ${isMusic(it.tipo) && it.tracklist ? `<div class="section"><h3>Tracce</h3><div class="tracks">${esc(it.tracklist)}</div></div>` : ''}
+    ${desc ? `<div class="section"><h3>Descrizione</h3><div translate="no" class="prose ${longDesc && !S.expanded ? 'clamp' : ''}">${esc(desc)}</div>${longDesc && !S.expanded ? '<button class="more" data-a="expand">Leggi tutto</button>' : ''}</div>` : ''}
+    ${isMusic(it.tipo) && it.tracklist ? `<div class="section"><h3>Tracce</h3><div class="tracks" translate="no">${esc(it.tracklist)}</div></div>` : ''}
     ${facts.length ? `<div class="section"><dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>` : ''}
     ${it.foto && it.foto.length ? `<div class="section"><h3>Foto</h3><div class="photos">${it.foto.map(p => `<button class="photo" data-a="viewPhoto" data-v="${esc(p)}"><img data-photo="${esc(p)}" alt="" hidden></button>`).join('')}</div></div>` : ''}
-    ${it.note ? `<div class="section"><h3>Note</h3><div class="prose">${esc(it.note)}</div></div>` : ''}
+    ${it.note ? `<div class="section"><h3>Note</h3><div class="prose" translate="no">${esc(it.note)}</div></div>` : ''}
     <div class="section"><h3>Commenti</h3>
-      ${(it.commenti || []).map(c => `<div class="comment"><p>${esc(c.testo)}<small>${esc(fmtDateTime(c.data))}</small></p><button data-a="delComment" data-v="${esc(c.id)}" aria-label="Elimina commento">✕</button></div>`).join('')}
+      ${(it.commenti || []).map(c => `<div class="comment"><p translate="no">${esc(c.testo)}<small>${esc(fmtDateTime(c.data))}</small></p><button data-a="delComment" data-v="${esc(c.id)}" aria-label="Elimina commento">✕</button></div>`).join('')}
       <form class="composer" id="commentForm"><textarea id="commentText" rows="1" placeholder="Scrivi un commento…"></textarea><button type="submit">Invia</button></form>
     </div>
     <div class="actions">
@@ -355,7 +358,7 @@ function viewEdit() {
   const posizioni = [...new Set(live().map(i => i.posizione).filter(Boolean))];
   const generi = [...new Set(live().map(i => i.genere).filter(Boolean))];
   const f = (name, label, attrs = '') => `<label class="field"><span>${label}</span><input data-f="${name}" value="${esc(d[name])}" ${attrs}></label>`;
-  const sel = (name, label, opts) => `<label class="field"><span>${label}</span><select data-f="${name}"><option value=""></option>${opts.map(o => `<option ${d[name] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}${d[name] && !opts.includes(d[name]) ? `<option selected>${esc(d[name])}</option>` : ''}</select></label>`;
+  const sel = (name, label, opts) => `<label class="field"><span>${label}</span><select data-f="${name}"><option value=""></option>${opts.map(o => `<option value="${esc(o)}" ${d[name] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}${d[name] && !opts.includes(d[name]) ? `<option value="${esc(d[name])}" selected>${esc(d[name])}</option>` : ''}</select></label>`;
   const chk = (name, label) => `<label class="field inline"><span>${label}</span><input type="checkbox" data-f="${name}" ${d[name] ? 'checked' : ''}></label>`;
   const M = isMusic(d.tipo);
   const edizione = !M ? '' : `
@@ -445,6 +448,10 @@ function viewSettings() {
     <div class="grow title-sm">Impostazioni</div>
   </header>
   <div class="form">
+    <div class="section"><h3>Lingua</h3>
+      <label class="field"><span>Lingua</span><select id="langSel" translate="no">${Object.entries(window.I18N ? I18N.LANGS : { it: 'Italiano' }).map(([k, v]) => `<option value="${k}" ${LNG() === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+    </div>
+
     <div class="section"><h3>Google Drive</h3>
       <div class="status"><i class="${st[0]}"></i><div>${esc(st[1])}<small>${esc(st[2])}</small></div></div>
       <div class="stack">
@@ -507,7 +514,7 @@ function resultsHTML(list) {
   return list.map((c, i) => `
     <button class="result" data-a="pick" data-v="${i}">
       <div class="th">${c.coverUrl ? `<img src="${esc(c.coverUrl)}" ${c._coverAlt ? `data-alt="${esc(c._coverAlt)}"` : ''} alt="" loading="lazy" referrerpolicy="no-referrer" onerror="if(this.dataset.alt){this.src=this.dataset.alt;this.dataset.alt=''}else{this.remove()}">` : ''}</div>
-      <div><b>${esc(c.titolo)}</b><span>${esc([c.autore, c.anno, c.editore].filter(Boolean).join(' · '))}</span>${c.sub ? `<span>${esc(c.sub)}</span>` : ''}<em>${esc(c.fonte)}</em></div>
+      <div><b translate="no">${esc(c.titolo)}</b><span>${esc([c.autore, c.anno, c.editore].filter(Boolean).join(' · '))}</span>${c.sub ? `<span>${esc(c.sub)}</span>` : ''}<em>${esc(c.fonte)}</em></div>
     </button>`).join('');
 }
 
@@ -656,20 +663,20 @@ async function itunes(term, entity) {
 const WD = 'https://www.wikidata.org/w/api.php?format=json&origin=*&';
 const FILM_CLASSES = new Set(['Q11424', 'Q24869', 'Q506240', 'Q202866', 'Q29168811', 'Q93204', 'Q226730', 'Q24862', 'Q5398426', 'Q1259759', 'Q20650540', 'Q581714', 'Q117467246']);
 const wdIds = (e, p) => ((e.claims || {})[p] || []).map(c => c.mainsnak?.datavalue?.value?.id).filter(Boolean);
-const wdLabel = e => e && ((e.labels?.it || e.labels?.en || {}).value || '');
+const wdLabel = e => e && ((e.labels?.[LNG()] || e.labels?.en || e.labels?.it || {}).value || '');
 async function wikidataFilms(q) {
-  const s = await fj(WD + 'action=wbsearchentities&type=item&limit=15&language=it&uselang=it&search=' + encodeURIComponent(q));
+  const s = await fj(WD + 'action=wbsearchentities&type=item&limit=15&language=' + LNG() + '&uselang=' + LNG() + '&search=' + encodeURIComponent(q));
   const ids = (s.search || []).map(x => x.id); if (!ids.length) return [];
-  const g = await fj(WD + 'action=wbgetentities&props=claims|labels|sitelinks&languages=it|en&sitefilter=itwiki|enwiki&ids=' + ids.join('|'));
+  const g = await fj(WD + 'action=wbgetentities&props=claims|labels|sitelinks&languages=' + [LNG(), 'en', 'it'].join('|') + '&sitefilter=' + [LNG(), 'en', 'it'].map(l => l + 'wiki').join('|') + '&ids=' + ids.join('|'));
   const films = ids.map(id => g.entities?.[id]).filter(e => e && wdIds(e, 'P31').some(c => FILM_CLASSES.has(c))).slice(0, 8);
   if (!films.length) return [];
   const extra = [...new Set(films.flatMap(e => [...wdIds(e, 'P57').slice(0, 2), ...wdIds(e, 'P136').slice(0, 2), ...wdIds(e, 'P272').slice(0, 1)]))].slice(0, 50);
   let L = {};
-  if (extra.length) { try { L = (await fj(WD + 'action=wbgetentities&props=labels&languages=it|en&ids=' + extra.join('|'))).entities || {}; } catch (e) {} }
+  if (extra.length) { try { L = (await fj(WD + 'action=wbgetentities&props=labels&languages=' + [LNG(), 'en', 'it'].join('|') + '&ids=' + extra.join('|'))).entities || {}; } catch (e) {} }
   return films.map(e => {
     const time = (((e.claims?.P577 || [])[0] || {}).mainsnak?.datavalue?.value?.time) || '';
     const dur = (((e.claims?.P2047 || [])[0] || {}).mainsnak?.datavalue?.value?.amount) || '';
-    const wiki = e.sitelinks?.itwiki ? { lang: 'it', title: e.sitelinks.itwiki.title } : e.sitelinks?.enwiki ? { lang: 'en', title: e.sitelinks.enwiki.title } : null;
+    const wl = [LNG(), 'en', 'it'].find(l => e.sitelinks?.[l + 'wiki']); const wiki = wl ? { lang: wl, title: e.sitelinks[wl + 'wiki'].title } : null;
     return { tipo: 'film', titolo: wdLabel(e), anno: year(time), autore: wdIds(e, 'P57').slice(0, 2).map(id => wdLabel(L[id])).filter(Boolean).join(', '),
       genere: wdIds(e, 'P136').slice(0, 2).map(id => wdLabel(L[id])).filter(Boolean).join(', '),
       editore: wdIds(e, 'P272').slice(0, 1).map(id => wdLabel(L[id])).filter(Boolean).join(''),
@@ -686,7 +693,7 @@ const filmKey = c => String(c.titolo).toLowerCase().normalize('NFD').replace(/[^
 // Film
 async function tmdb(q) {
   const k = cfg('tmdbKey'); if (!k) return [];
-  const d = await fj(`https://api.themoviedb.org/3/search/movie?language=it-IT&api_key=${encodeURIComponent(k)}&query=${encodeURIComponent(q)}`);
+  const d = await fj(`https://api.themoviedb.org/3/search/movie?language=${LOC()}&api_key=${encodeURIComponent(k)}&query=${encodeURIComponent(q)}`);
   return (d.results || []).slice(0, 10).map(m => ({
     tipo: 'film', titolo: m.title, anno: year(m.release_date), descrizione: m.overview || '', autore: '',
     coverUrl: m.poster_path ? 'https://image.tmdb.org/t/p/w500' + m.poster_path : '', fonte: 'TMDB', _tmdbId: m.id,
@@ -830,7 +837,7 @@ async function enrich(c) {
     }
     if (c._tmdbId) {
       const k = encodeURIComponent(cfg('tmdbKey'));
-      const m = await fj(`https://api.themoviedb.org/3/movie/${c._tmdbId}?language=it-IT&append_to_response=credits&api_key=${k}`);
+      const m = await fj(`https://api.themoviedb.org/3/movie/${c._tmdbId}?language=${LOC()}&append_to_response=credits&api_key=${k}`);
       c.autore = ((m.credits?.crew || []).filter(x => x.job === 'Director').map(x => x.name)).join(', ');
       c.durata = m.runtime ? m.runtime + ' min' : '';
       c.genere = (m.genres || []).map(g => g.name).join(', ');
@@ -1245,9 +1252,9 @@ const actions = {
   rateDetail: async el => { const it = byId(S.id); const v = +el.dataset.v; it.valutazione = it.valutazione === v ? 0 : v; await saveItem(it); el.parentElement.outerHTML = starsHTML(it.valutazione, 'rateDetail'); },
   expand: () => { S.expanded = true; render(); },
   returned: async () => { const it = byId(S.id); it.prestatoA = ''; it.prestatoIl = ''; await saveItem(it); render(); toast('Segnato come restituito'); },
-  delComment: async el => { if (!confirm('Eliminare questo commento?')) return; const it = byId(S.id); it.commenti = (it.commenti || []).filter(c => c.id !== el.dataset.v); await saveItem(it); render(); },
+  delComment: async el => { if (!confirm(tr('Eliminare questo commento?'))) return; const it = byId(S.id); it.commenti = (it.commenti || []).filter(c => c.id !== el.dataset.v); await saveItem(it); render(); },
   delete: async () => {
-    const it = byId(S.id); if (!confirm(`Eliminare "${it.titolo}" dallo scaffale?`)) return;
+    const it = byId(S.id); if (!confirm(tr(`Eliminare "${it.titolo}" dallo scaffale?`))) return;
     const keep = { id: it.id, deleted: true, createdAt: it.createdAt };
     (it.foto || []).forEach(p => DB.del('photos', p));
     await saveItem(keep); toast('Eliminato'); history.back();
@@ -1282,6 +1289,7 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('change', e => {
   const t = e.target;
+  if (t.id === 'langSel' && window.I18N) { I18N.set(t.value); location.reload(); return; }
   if (t.id === 'sort') { S.sort = t.value; localStorage.setItem('sort', S.sort); renderGrid(); }
   if (t.dataset.f && S.draft) S.draft[t.dataset.f] = t.type === 'checkbox' ? t.checked : t.value;
 });
@@ -1329,6 +1337,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
   S.dirty = !!(await getMeta('dirty'));
   S.lastSync = (await getMeta('lastSync')) || 0;
   history.replaceState({ view: 'list' }, '');
+  if (window.I18N) I18N.start();
   render();
   if (cfg('clientId')) { if (Drive.token()) { sync(); if (justLogged) toast('Collegato a Google Drive'); } else setSync('login'); }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
