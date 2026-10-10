@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '1.9.0';
+const VERSION = '2.1.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -53,8 +53,54 @@ const EMPTY = () => ({
   catalogo: '', paese: '', confezione: '', condCustodia: '', numDischi: '', spars: '', matrice: '', ifpi: '',
   tipoNastro: '', riduzione: '', origine: '', lunghezzaNastro: '', marcaNastro: '',
   note: '', commenti: [], foto: [], coverUrl: '', prestatoA: '', prestatoIl: '', desiderio: false,
+  stato: '', serie: '', volume: '', tags: [], valore: '', valoreDiscogs: null, discogsId: '',
   createdAt: Date.now(), updatedAt: Date.now(),
 });
+// Stato di lettura / visione / ascolto
+const STATI = {
+  libro:  [['da', 'Da leggere'], ['in', 'In lettura'], ['fatto', 'Letto']],
+  film:   [['da', 'Da vedere'], ['fatto', 'Visto']],
+  musica: [['da', 'Da ascoltare'], ['fatto', 'Ascoltato']],
+};
+const statiFor = t => STATI[t] || (isMusic(t) ? STATI.musica : []);
+const statoLabel = it => ((statiFor(it.tipo).find(([k]) => k === it.stato) || [])[1]) || '';
+const PRESTITO_GIORNI = 30;
+const loanDays = it => it.prestatoIl ? Math.max(0, Math.floor((Date.now() - new Date(it.prestatoIl).getTime()) / 864e5)) : 0;
+const num = v => { const n = parseFloat(String(v ?? '').replace(/\s/g, '').replace(/\.(?=\d{3}\b)/g, '').replace(',', '.').replace(/[^\d.\-]/g, '')); return isFinite(n) ? n : 0; };
+const money = (v, cur = 'EUR') => new Intl.NumberFormat(LOC(), { style: 'currency', currency: cur || 'EUR', maximumFractionDigits: v >= 100 ? 0 : 2 }).format(v);
+// Condizioni dell'app ↔ gradi Discogs (Goldmine)
+const GRADE_ORDER = ['Mint (M)', 'Near Mint (NM or M-)', 'Very Good Plus (VG+)', 'Very Good (VG)', 'Good Plus (G+)', 'Good (G)', 'Fair (F)', 'Poor (P)'];
+const GRADE_OF = { 'Nuovo / sigillato': 'Mint (M)', 'Come nuovo': 'Near Mint (NM or M-)', 'Ottimo': 'Very Good Plus (VG+)', 'Buono': 'Very Good (VG)', 'Discreto': 'Good Plus (G+)', 'Rovinato': 'Fair (F)' };
+const GRADE_LABEL = { 'Mint (M)': 'Nuovo / sigillato', 'Near Mint (NM or M-)': 'Come nuovo', 'Very Good Plus (VG+)': 'Ottimo', 'Very Good (VG)': 'Buono', 'Good Plus (G+)': 'Discreto', 'Good (G)': 'Mediocre', 'Fair (F)': 'Rovinato', 'Poor (P)': 'Pessimo' };
+const gradeShort = g => ({ 'Near Mint (NM or M-)': 'NM' }[g] || (String(g).match(/\(([^)]+)\)/) || [])[1] || g);
+const DEFAULT_GRADE = 'Very Good Plus (VG+)';
+// Valore di un pezzo: quello inserito a mano vince; poi il prezzo Discogs per la condizione della copia; poi il minimo in vendita
+function marketValue(it) {
+  const man = num(it.valore);
+  if (man) return { v: man, cur: 'EUR', src: 'manuale' };
+  const d = it.valoreDiscogs;
+  if (d && d.sugg) {
+    const g = GRADE_OF[it.condizione] || DEFAULT_GRADE;
+    if (d.sugg[g] != null) return { v: d.sugg[g], cur: d.scur || 'EUR', src: 'discogs', grade: g, assumed: !GRADE_OF[it.condizione] };
+  }
+  if (d && d.min) return { v: d.min, cur: d.cur || 'EUR', src: 'minimo' };
+  return { v: 0, cur: 'EUR', src: '' };
+}
+const valueOf = it => marketValue(it).v;
+const parseTags = s => [...new Set(String(s || '').split(/[,#\n]/).map(t => t.trim()).filter(Boolean))];
+const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/^(the|il|lo|la|i|gli|le|l'|el|los|las)\s+/, '').replace(/[^a-z0-9]/g, '');
+// Tutte le forme in cui lo stesso codice può essere scritto (ISBN 10/13, UPC 12/EAN 13)
+function codeVariants(c) {
+  c = String(c || '').replace(/[^\dX]/gi, '').toUpperCase(); if (!c) return [];
+  const out = new Set(isbnVariants(c));
+  if (c.length === 13 && c[0] === '0') out.add(c.slice(1));
+  if (c.length === 12) out.add('0' + c);
+  return [...out];
+}
+const sameCode = (a, b) => { const A = codeVariants(a); return !!A.length && codeVariants(b).some(v => A.includes(v)); };
+// Stessa opera (titolo e primo autore uguali), per riconoscere altre edizioni
+const sameWork = (i, c) => norm(String(i.titolo).split(/[:(\[]/)[0]) === norm(String(c.titolo).split(/[:(\[]/)[0]) &&
+  (!i.autore || !c.autore || norm(String(i.autore).split(/[,&]/)[0]) === norm(String(c.autore).split(/[,&]/)[0]));
 // Dati della versione 1.0: il tipo "musica" viene diviso in vinile / CD / cassetta
 function detectMusicTipo(s) {
   s = String(s || '');
@@ -71,6 +117,7 @@ function normalize(it) {
     else if (it.formato === 'Musicassetta') it.formato = 'Cassetta';
   }
   if (it && it.condizione === 'Nuovo') it.condizione = 'Nuovo / sigillato';
+  if (it && !it.deleted && !Array.isArray(it.tags)) it.tags = parseTags(it.tags);
   return it;
 }
 
@@ -87,6 +134,13 @@ const ICON = {
   camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
   hand: '<path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11V4.5a1.5 1.5 0 0 1 3 0V12M14 11V6.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-2.7L3 14.5a1.5 1.5 0 0 1 2.5-1.6L8 15"/>',
   book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5"/>',
+  check: '<path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2"/><path d="m8 12.5 2.8 2.8L16.5 9"/>',
+  chart: '<path d="M3 20h18"/><path d="M6 16v-4M11 16V6M16 16V9M21 16v-2"/>',
+  dice: '<rect x="4" y="4" width="16" height="16" rx="3.5"/><circle cx="9" cy="9" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="9" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="15" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="15" r="1.3" fill="currentColor" stroke="none"/>',
+  share: '<path d="M12 3v12M7.5 7.5 12 3l4.5 4.5"/><path d="M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/>',
+  bolt: '<path d="M13 3 5 14h6l-1 7 8-11h-6z"/>',
+  play: '<path d="M7 4.5v15l12-7.5z"/>',
+  download: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5"/><path d="M5 19h14"/>',
 };
 const ic = (n, size) => `<svg class="i" viewBox="0 0 24 24"${size ? ` style="width:${size}px;height:${size}px"` : ''}>${ICON[n]}</svg>`;
 
@@ -131,6 +185,7 @@ const S = {
   items: [], view: 'list', id: null, draft: null, draftIsNew: false, newPhotos: [],
   filter: localStorage.getItem('filter') || 'tutti', sort: localStorage.getItem('sort') || 'recenti', q: '',
   addTipo: 'libro', syncState: 'off', syncError: '', lastSync: 0, dirty: false, expanded: false,
+  batch: [], batchTipo: 'libro', batchTarget: null, pickTipo: 'tutti', valuing: null,
 };
 const live = () => S.items.filter(i => !i.deleted);
 const byId = id => S.items.find(i => i.id === id);
@@ -143,7 +198,7 @@ async function loadItems() {
 
 /* ── Navigazione ───────────────────────────────────────────── */
 function go(view, id, replace) {
-  S.view = view; S.id = id || null; S.expanded = false;
+  S.view = view; S.id = id || null; S.expanded = false; S.batchTarget = null;
   const st = { view, id: S.id };
   replace ? history.replaceState(st, '') : history.pushState(st, '');
   render(); window.scrollTo(0, 0);
@@ -213,6 +268,8 @@ function render() {
   if (S.view === 'detail' && byId(S.id) && !byId(S.id).deleted) app.innerHTML = viewDetail(byId(S.id));
   else if (S.view === 'edit' && S.draft) app.innerHTML = viewEdit();
   else if (S.view === 'settings') app.innerHTML = viewSettings();
+  else if (S.view === 'stats') app.innerHTML = viewStats();
+  else if (S.view === 'batch') app.innerHTML = viewBatch();
   else { S.view = 'list'; app.innerHTML = viewList(); renderGrid(); centerChip(false); }
   hydratePhotos(app);
 }
@@ -222,30 +279,39 @@ function syncBtn() {
 }
 
 function counts() {
-  const L = live(); const c = { tutti: 0, libro: 0, vinile: 0, cd: 0, cassetta: 0, film: 0, desideri: 0, prestito: 0 };
-  L.forEach(i => { if (i.desiderio) c.desideri++; else { c.tutti++; c[i.tipo]++; } if (i.prestatoA) c.prestito++; });
+  const L = live(); const c = { tutti: 0, libro: 0, vinile: 0, cd: 0, cassetta: 0, film: 0, desideri: 0, prestito: 0, scoprire: 0, valore: 0 };
+  L.forEach(i => {
+    if (i.desiderio) c.desideri++; else { c.tutti++; c[i.tipo]++; c.valore += valueOf(i); if (i.stato === 'da' || i.stato === 'in') c.scoprire++; }
+    if (i.prestatoA) c.prestito++;
+  });
   return c;
 }
 
 function viewList() {
   const c = counts();
-  const chips = [['tutti', 'Tutti'], ...Object.entries(TIPI).map(([k, v]) => [k, v.plural]), ['desideri', 'Desideri'], ['prestito', 'In prestito']]
-    .filter(([k]) => !['desideri', 'prestito'].includes(k) || c[k] > 0)
-    .map(([k, l]) => `<button class="chip ${S.filter === k ? 'on' : ''}" data-a="filter" data-v="${k}">${l}<b>${c[k]}</b></button>`).join('');
+  const compact = v => new Intl.NumberFormat(LOC(), { style: 'currency', currency: 'EUR', notation: 'compact', maximumFractionDigits: v >= 1000 ? 1 : 0 }).format(v);
+  const chips = [['tutti', 'Tutti'], ...Object.entries(TIPI).map(([k, v]) => [k, v.plural]), ['valore', 'Valore'], ['scoprire', 'Da scoprire'], ['desideri', 'Desideri'], ['prestito', 'In prestito']]
+    .filter(([k]) => !['desideri', 'prestito', 'scoprire'].includes(k) || c[k] > 0 || S.filter === k)
+    .map(([k, l]) => `<button class="chip ${S.filter === k ? 'on' : ''}" data-a="filter" data-v="${k}">${l}<b>${k === 'valore' ? (c.valore ? compact(c.valore) : '€') : c[k]}</b></button>`).join('');
   const needLogin = cfg('clientId') && S.syncState === 'login' && S.dirty;
+  const queued = S.batch.length;
   return `
   <header class="top">
     <div class="grow"><h1>Spinyl</h1></div>
+    <button class="iconbtn" data-a="check" aria-label="Ce l'ho già?">${ic('check')}</button>
+    <button class="iconbtn" data-a="stats" aria-label="Statistiche">${ic('chart')}</button>
     ${syncBtn()}
     <button class="iconbtn" data-a="settings" aria-label="Impostazioni">${ic('gear')}</button>
   </header>
   <div class="searchbar"><label>${ic('search', 18)}<input id="q" type="search" placeholder="Cerca titolo, autore, codice, note…" value="${esc(S.q)}" autocomplete="off"></label></div>
   <nav class="chips">${chips}</nav>
   ${needLogin ? `<div class="banner">Ci sono modifiche da salvare su Drive.<button data-a="login">Accedi</button></div>` : ''}
+  ${queued ? `<div class="banner">${queued === 1 ? '1 codice in coda' : queued + ' codici in coda'} dalla scansione a raffica.<button data-a="openBatch">Apri</button></div>` : ''}
   <div class="sortrow"><span id="countLbl"></span>
     <select id="sort" aria-label="Ordina">
-      ${[['recenti', 'Aggiunti di recente'], ['titolo', 'Titolo A–Z'], ['autore', 'Autore A–Z'], ['anno', 'Anno'], ['voto', 'Voto']].map(([k, l]) => `<option value="${k}" ${S.sort === k ? 'selected' : ''}>${l}</option>`).join('')}
+      ${[['recenti', 'Aggiunti di recente'], ['titolo', 'Titolo A–Z'], ['autore', 'Autore A–Z'], ['anno', 'Anno'], ['voto', 'Voto'], ['serie', 'Serie'], ['valore', 'Valore']].map(([k, l]) => `<option value="${k}" ${S.sort === k ? 'selected' : ''}>${l}</option>`).join('')}
     </select></div>
+  <div id="listTools"></div>
   <main id="grid" class="grid"></main>
   <button class="fab" data-a="add">${ic('plus')}Aggiungi</button>`;
 }
@@ -264,16 +330,22 @@ function filtered() {
     if (S.filter === 'desideri') return i.desiderio;
     if (S.filter === 'prestito') return !!i.prestatoA;
     if (i.desiderio) return false;
+    if (S.filter === 'scoprire') return i.stato === 'da' || i.stato === 'in';
+    if (S.filter === 'valore') return true;
     return S.filter === 'tutti' || i.tipo === S.filter;
   });
-  if (q) L = L.filter(i => [i.titolo, i.autore, i.codice, i.editore, i.genere, i.posizione, i.note, i.anno, i.formato, i.prestatoA, ...(i.commenti || []).map(c => c.testo)].join(' ').toLowerCase().includes(q));
-  const cmp = (a, b) => String(a || '').localeCompare(String(b || ''), 'it', { sensitivity: 'base' });
+  // "#etichetta" cerca solo tra le etichette
+  if (q.startsWith('#') && q.length > 1) { const t = q.slice(1).trim(); L = L.filter(i => (i.tags || []).some(x => x.toLowerCase() === t)); }
+  else if (q) L = L.filter(i => [i.titolo, i.autore, i.codice, i.editore, i.genere, i.posizione, i.note, i.anno, i.formato, i.prestatoA, i.serie, i.catalogo, ...(i.tags || []), ...(i.commenti || []).map(c => c.testo)].join(' ').toLowerCase().includes(q));
+  const cmp = (a, b) => String(a || '').localeCompare(String(b || ''), LOC(), { sensitivity: 'base', numeric: true });
   const sorters = {
     recenti: (a, b) => (b.createdAt || 0) - (a.createdAt || 0),
     titolo: (a, b) => cmp(a.titolo, b.titolo),
     autore: (a, b) => cmp(a.autore, b.autore) || cmp(a.anno, b.anno),
     anno: (a, b) => (parseInt(b.anno) || 0) - (parseInt(a.anno) || 0),
     voto: (a, b) => (b.valutazione || 0) - (a.valutazione || 0),
+    serie: (a, b) => (!a.serie - !b.serie) || cmp(a.serie, b.serie) || (num(a.volume) - num(b.volume)) || cmp(a.titolo, b.titolo),
+    valore: (a, b) => valueOf(b) - valueOf(a) || cmp(a.titolo, b.titolo),
   };
   return L.sort(sorters[S.sort] || sorters.recenti);
 }
@@ -282,20 +354,60 @@ function renderGrid() {
   const g = $('#grid'); if (!g) return;
   const L = filtered();
   $('#countLbl').textContent = `${L.length} ${L.length === 1 ? 'pezzo' : 'pezzi'}`;
+  const tools = $('#listTools');
+  if (tools) {
+    const tag = S.q.trim().startsWith('#') ? S.q.trim() : '';
+    tools.innerHTML = (S.filter === 'desideri' && L.length ? `<button class="toolbtn" data-a="shareWish">${ic('share', 18)}Condividi la lista desideri</button>` : '')
+      + (tag ? `<button class="toolbtn" data-a="clearTag">Filtro <b translate="no">${esc(tag)}</b> ✕</button>` : '');
+  }
   if (!live().length) {
     g.innerHTML = `<div class="empty" style="grid-column:1/-1">${ic('book', 44)}<h2>Lo scaffale è vuoto</h2><p>Scansiona il codice a barre di un libro, un disco o un film: i dati si compilano da soli.</p><button class="btn primary" data-a="add">${ic('scan')}Aggiungi il primo</button></div>`;
     return;
   }
+  const sortSel = $('#sort'); if (sortSel) sortSel.style.visibility = S.filter === 'valore' ? 'hidden' : '';
   if (!L.length) { g.innerHTML = `<div class="empty" style="grid-column:1/-1"><p>Nessun risultato.</p></div>`; return; }
+  if (S.filter === 'valore') { g.innerHTML = valueTableHTML(L); hydratePhotos(g); return; }
   const label = i => { const T = TIPI[i.tipo]; if (!T) return ''; const f = i.formato || ''; return f && f.toLowerCase().startsWith(T.label.toLowerCase()) ? f : [T.label, f].filter(Boolean).join(' · '); };
   g.innerHTML = L.map(i => `
     <button class="card t-${esc(i.tipo)}" data-a="open" data-id="${esc(i.id)}">
       ${coverHTML(i)}
       <i class="stripe"></i>
-      ${i.prestatoA ? `<span class="tag loan">In prestito</span>` : i.desiderio ? `<span class="tag">Desiderio</span>` : ''}
-      <div class="meta"><b translate="no">${esc(i.titolo || tr('Senza titolo'))}</b><span translate="no">${esc([i.autore, i.anno].filter(Boolean).join(' · ') || '—')}</span><em>${esc(label(i))}</em></div>
+      ${i.prestatoA ? `<span class="tag loan ${loanDays(i) > PRESTITO_GIORNI ? 'late' : ''}">${loanDays(i) > PRESTITO_GIORNI ? 'Da ' + loanDays(i) + ' giorni' : 'In prestito'}</span>` : i.desiderio ? `<span class="tag">Desiderio</span>` : i.stato === 'in' ? `<span class="tag now">${esc(statoLabel(i))}</span>` : ''}
+      ${S.sort === 'serie' && i.serie && i.volume ? `<span class="tag vol" translate="no">#${esc(i.volume)}</span>` : ''}
+      <div class="meta"><b translate="no">${esc(i.titolo || tr('Senza titolo'))}</b><span translate="no">${esc((S.sort === 'serie' && i.serie ? [i.serie, i.volume && 'vol. ' + i.volume] : [i.autore, i.anno]).filter(Boolean).join(' · ') || '—')}</span><em>${esc(label(i))}</em></div>
     </button>`).join('');
   hydratePhotos(g);
+}
+
+// Tab "Valore": totale per categoria, diviso per condizione, con il valore di ogni pezzo
+function valueTableHTML(L) {
+  const tot = L.reduce((t, i) => t + valueOf(i), 0); const valued = L.filter(i => valueOf(i) > 0).length;
+  const music = L.filter(i => isMusic(i.tipo)).length;
+  const SRC = { manuale: 'stimato da te', discogs: 'Discogs', minimo: 'min. Discogs' };
+  let h = `<div class="vt" style="grid-column:1/-1">
+    <div class="vt-total"><span>Valore totale</span><b>${esc(money(tot))}</b><small>${valued === L.length ? (L.length === 1 ? '1 pezzo con valore' : `tutti i ${L.length} pezzi hanno un valore`) : `${valued} pezzi su ${L.length} con valore`}</small></div>
+    ${music && cfg('discogsToken') ? `<button id="valueAllBtn" class="btn block" data-a="valueAll">${S.valuing && S.valuing.all ? `Aggiorno ${S.valuing.done} di ${S.valuing.tot}… (tocca per fermare)` : 'Aggiorna i prezzi dei dischi da Discogs'}</button>` : ''}`;
+  Object.keys(TIPI).forEach(k => {
+    const items = L.filter(i => i.tipo === k); if (!items.length) return;
+    const sum = items.reduce((t, i) => t + valueOf(i), 0);
+    const by = {}; items.forEach(i => { const c = CONDIZIONI.includes(i.condizione) ? i.condizione : ''; (by[c] = by[c] || [0, 0]); by[c][0]++; by[c][1] += valueOf(i); });
+    const conds = [...CONDIZIONI, ''].filter(c => by[c]);
+    const rows = items.slice().sort((a, b) => valueOf(b) - valueOf(a) || String(a.titolo).localeCompare(String(b.titolo), LOC())).map(i => {
+      const m = marketValue(i);
+      return `<button class="vrow" data-a="open" data-id="${esc(i.id)}">
+        <span class="vt-t"><b translate="no">${esc(i.titolo)}</b><small translate="no">${esc([i.autore, i.anno].filter(Boolean).join(' · '))}</small></span>
+        <span class="vt-c">${i.condizione ? `<span>${esc(i.condizione)}</span>` : '<span class="muted">—</span>'}${isMusic(i.tipo) && GRADE_OF[i.condizione] ? `<i translate="no">${esc(gradeShort(GRADE_OF[i.condizione]))}</i>` : ''}</span>
+        <span class="vt-v">${m.v ? `<b>${esc(money(m.v, m.cur))}</b><i>${SRC[m.src]}</i>` : '<b class="muted">—</b>'}</span>
+      </button>`;
+    }).join('');
+    h += `<section class="vgroup t-${k}">
+      <header><b>${TIPI[k].plural}</b><small>${items.length === 1 ? '1 pezzo' : items.length + ' pezzi'}</small><span>${esc(money(sum))}</span></header>
+      <div class="vconds">${conds.map(c => `<div class="vc"><span>${c ? esc(c) : 'Condizione non indicata'}</span><small>× ${by[c][0]}</small><b>${by[c][1] ? esc(money(by[c][1])) : '—'}</b></div>`).join('')}</div>
+      <div class="vrows">${rows}</div>
+    </section>`;
+  });
+  h += `<p class="note vt-note">Dischi: prezzo suggerito da Discogs per la condizione della tua copia (se la condizione manca, viene calcolato come Ottimo · VG+). Libri e film: il valore stimato che scrivi tu nella scheda. Il valore che inserisci a mano vale sempre più di quello automatico.</p></div>`;
+  return h;
 }
 
 function starsHTML(n, action, small) {
@@ -308,18 +420,22 @@ function viewDetail(it) {
   const spunte = (SPUNTE[it.tipo] || []).filter(([k]) => it[k]).map(([, l]) => l).join(' · ');
   const facts = [
     [T.autore, it.autore], ['Anno', it.anno], [T.editore, it.editore], ['N. catalogo', M && it.catalogo], ['Paese', M && it.paese],
+    ['Serie', it.serie && [it.serie, it.volume && 'vol. ' + it.volume].filter(Boolean).join(' · ')],
     ['Formato', it.formato], ['Confezione', M && it.confezione], ['Dischi', M && it.numDischi && +it.numDischi > 1 && it.numDischi],
     ['Codice SPARS', it.tipo === 'cd' && it.spars], ['Nastro', it.tipo === 'cassetta' && it.tipoNastro],
     ['Riduzione rumore', it.tipo === 'cassetta' && it.riduzione], ['Durata nastro', it.tipo === 'cassetta' && it.lunghezzaNastro], ['Marca nastro', it.tipo === 'cassetta' && it.marcaNastro], ['Origine', it.tipo === 'cassetta' && it.origine],
     ['Genere', it.genere], ['Pagine', it.tipo === 'libro' && it.pagine], ['Durata', it.tipo === 'film' && it.durata],
     [M ? 'Condizione ' + T.supporto.toLowerCase() : 'Condizione', it.condizione], ['Condizione ' + (T.custodia || '').toLowerCase(), M && it.condCustodia],
     ['Dettagli', spunte],
-    ['Posizione', it.posizione], ['Prezzo pagato', it.prezzo && (String(it.prezzo).match(/€/) ? it.prezzo : it.prezzo + ' €')],
+    ['Posizione', it.posizione], ['Prezzo pagato', it.prezzo && (num(it.prezzo) ? money(num(it.prezzo)) : it.prezzo)],
+    ['Valore stimato', it.valore && (num(it.valore) ? money(num(it.valore)) : it.valore)],
     [T.codice, it.codice], ['Matrice / runout', M && it.matrice], ['Codici IFPI', it.tipo === 'cd' && it.ifpi],
     ['Aggiunto il', fmtDate(it.createdAt)],
   ].filter(([, v]) => v);
   const desc = it.descrizione || '';
   const longDesc = desc.length > 320;
+  const stati = statiFor(it.tipo);
+  const days = loanDays(it);
   return `
   <header class="top">
     <button class="iconbtn" data-a="back" aria-label="Indietro">${ic('back')}</button>
@@ -336,10 +452,17 @@ function viewDetail(it) {
     </div>
   </div>
   <div class="detail">
-    ${it.prestatoA ? `<div class="loanbox">In prestito a <b>${esc(it.prestatoA)}</b>${it.prestatoIl ? ` dal ${esc(fmtDate(it.prestatoIl))}` : ''}<button data-a="returned">Restituito</button></div>` : ''}
+    ${it.desiderio ? `<button class="btn primary block" style="margin-top:14px" data-a="gotIt">L'ho comprato!</button>` : ''}
+    ${stati.length && !it.desiderio ? `<div class="seg statseg" style="grid-template-columns:repeat(${stati.length},1fr)">${stati.map(([k, l]) => `<button type="button" class="${it.stato === k ? 'on' : ''}" data-a="setStato" data-v="${k}">${it.stato === k ? '✓ ' : ''}${l}</button>`).join('')}</div>` : ''}
+    ${it.prestatoA ? `<div class="loanbox ${days > PRESTITO_GIORNI ? 'late' : ''}"><div>In prestito a <b translate="no">${esc(it.prestatoA)}</b>${it.prestatoIl ? `<small>${days === 0 ? 'da oggi' : days === 1 ? 'da 1 giorno' : 'da ' + days + ' giorni'}</small>` : ''}</div>
+      <div class="loanacts"><button data-a="remind">Ricordaglielo</button><button data-a="returned">Restituito</button></div></div>` : ''}
     ${desc ? `<div class="section"><h3>Descrizione</h3><div translate="no" class="prose ${longDesc && !S.expanded ? 'clamp' : ''}">${esc(desc)}</div>${longDesc && !S.expanded ? '<button class="more" data-a="expand">Leggi tutto</button>' : ''}</div>` : ''}
     ${isMusic(it.tipo) && it.tracklist ? `<div class="section"><h3>Tracce</h3><div class="tracks" translate="no">${esc(it.tracklist)}</div></div>` : ''}
+    ${valueHTML(it)}
     ${facts.length ? `<div class="section"><dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>` : ''}
+    ${(it.tags || []).length ? `<div class="section"><h3>Etichette</h3><div class="tagrow">${it.tags.map(t => `<button class="tagchip" data-a="tag" data-v="${esc(t)}" translate="no">#${esc(t)}</button>`).join('')}</div></div>` : ''}
+    ${seriesHTML(it)}
+    ${linksHTML(it)}
     ${it.foto && it.foto.length ? `<div class="section"><h3>Foto</h3><div class="photos">${it.foto.map(p => `<button class="photo" data-a="viewPhoto" data-v="${esc(p)}"><img data-photo="${esc(p)}" alt="" hidden></button>`).join('')}</div></div>` : ''}
     ${it.note ? `<div class="section"><h3>Note</h3><div class="prose" translate="no">${esc(it.note)}</div></div>` : ''}
     <div class="section"><h3>Commenti</h3>
@@ -353,10 +476,72 @@ function viewDetail(it) {
   </div>`;
 }
 
+// Valore: per i dischi i prezzi Discogs per condizione, per libri e film i venduti su eBay / AbeBooks
+function valueHTML(it) {
+  const m = marketValue(it);
+  const head = m.v ? `<div class="value"><b>${esc(money(m.v, m.cur))}</b><span>${
+    m.src === 'manuale' ? 'valore inserito da te'
+    : m.src === 'minimo' ? 'prezzo minimo in vendita su Discogs'
+    : m.assumed ? 'condizione non indicata: calcolato come Ottimo (VG+)'
+    : `per la tua copia · ${esc(it.condizione)}`}</span></div>` : '';
+  if (!isMusic(it.tipo)) {
+    return `<div class="section"><h3>Quanto vale?</h3>${head}
+      <p class="note pnote">Per libri e film non esiste un listino gratuito: guarda a quanto sono stati venduti davvero, poi scrivi il valore nella scheda (Modifica › Valore stimato).</p>${soldLinks(it)}</div>`;
+  }
+  const v = it.valoreDiscogs; const tok = !!cfg('discogsToken');
+  const busy = S.valuing && S.valuing.id === it.id;
+  let body = head;
+  if (v) {
+    body += priceTableHTML(v, it.condizione);
+    body += `<p class="note value-note"><span>Aggiornato il ${esc(fmtDate(v.at))}</span>${v.match === 'titolo' ? '<br><span>Edizione trovata per titolo: controlla che sia la tua.</span>' : ''}</p>`;
+  } else if (tok) body += `<p class="note pnote">Scopri quanto vale questa edizione: Discogs suggerisce un prezzo per ogni condizione, in base alle vendite.</p>`;
+  else body += `<p class="note pnote">Per i prezzi dei dischi inserisci il token Discogs nelle Impostazioni.</p>`;
+  return `<div class="section"><h3>Valore di mercato</h3>${body}${soldLinks(it)}
+    ${tok ? `<div class="stack" style="padding-top:2px"><button class="btn block" data-a="valueNow" ${busy ? 'disabled' : ''}>${busy ? 'Controllo su Discogs…' : v ? 'Aggiorna da Discogs' : 'Controlla il valore su Discogs'}</button></div>` : ''}</div>`;
+}
+
+// Gli altri volumi della stessa serie e quelli che mancano
+function seriesHTML(it) {
+  if (!it.serie) return '';
+  const k = norm(it.serie);
+  const all = live().filter(i => !i.desiderio && i.serie && norm(i.serie) === k);
+  const others = all.filter(i => i.id !== it.id).sort((a, b) => num(a.volume) - num(b.volume) || String(a.titolo).localeCompare(b.titolo));
+  const vols = new Set(all.map(i => num(i.volume)).filter(n => n > 0 && Number.isInteger(n)));
+  const max = Math.max(0, ...vols);
+  const missing = []; for (let n = 1; n <= max && max <= 200; n++) if (!vols.has(n)) missing.push(n);
+  if (!others.length && !missing.length) return '';
+  return `<div class="section"><h3><span>Serie</span> · <span translate="no">${esc(it.serie)}</span></h3>
+    ${missing.length ? `<p class="note" style="margin:8px 0">Ti mancano i volumi: <b translate="no">${missing.slice(0, 30).join(', ')}${missing.length > 30 ? '…' : ''}</b></p>` : ''}
+    <div class="minilist">${others.map(o => `<button class="mini" data-a="open" data-id="${esc(o.id)}"><span class="num" translate="no">${esc(o.volume || '–')}</span><span translate="no">${esc(o.titolo)}</span></button>`).join('')}</div></div>`;
+}
+
+// Dove ascoltare, guardare o leggere
+function linksHTML(it) {
+  const enc = encodeURIComponent; const L = [];
+  const q = [it.autore, it.titolo].filter(Boolean).join(' ');
+  const cc = { it: 'it', en: 'gb', es: 'es' }[LNG()] || 'it';
+  if (isMusic(it.tipo)) {
+    L.push(['Apple Music', `https://music.apple.com/${cc}/search?term=${enc(q)}`], ['Spotify', `https://open.spotify.com/search/${enc(q)}`], ['YouTube', `https://www.youtube.com/results?search_query=${enc(q)}`]);
+    if (it.discogsId) L.push(['Discogs', `https://www.discogs.com/release/${enc(it.discogsId)}`]);
+  } else if (it.tipo === 'film') {
+    L.push(['Trailer', `https://www.youtube.com/results?search_query=${enc([it.titolo, it.anno, 'trailer'].filter(Boolean).join(' '))}`]);
+    L.push(['JustWatch', { it: 'https://www.justwatch.com/it/cerca?q=', en: 'https://www.justwatch.com/uk/search?q=', es: 'https://www.justwatch.com/es/buscar?q=' }[LNG()] + enc(it.titolo)]);
+  } else if (it.tipo === 'libro') {
+    const isbn = String(it.codice || '').replace(/[^\dX]/gi, '');
+    L.push(['Google Libri', isbn ? `https://books.google.com/books?vid=ISBN${isbn}` : `https://www.google.com/search?tbm=bks&q=${enc(q)}`]);
+    if (isbn) L.push(['Open Library', `https://openlibrary.org/isbn/${isbn}`]);
+  }
+  if (!L.length) return '';
+  const title = isMusic(it.tipo) ? 'Ascolta' : it.tipo === 'film' ? 'Guarda' : 'Leggi di più';
+  return `<div class="section"><h3>${title}</h3><div class="links">${L.map(([n, u]) => `<a class="linkbtn" href="${esc(u)}" target="_blank" rel="noopener">${ic('play', 16)}${esc(n)}</a>`).join('')}</div></div>`;
+}
+
 function viewEdit() {
   const d = S.draft; const T = TIPI[d.tipo] || TIPI.libro;
   const posizioni = [...new Set(live().map(i => i.posizione).filter(Boolean))];
   const generi = [...new Set(live().map(i => i.genere).filter(Boolean))];
+  const serieList = [...new Set(live().map(i => i.serie).filter(Boolean))];
+  const allTags = [...new Set(live().flatMap(i => i.tags || []))].sort((a, b) => a.localeCompare(b));
   const f = (name, label, attrs = '') => `<label class="field"><span>${label}</span><input data-f="${name}" value="${esc(d[name])}" ${attrs}></label>`;
   const sel = (name, label, opts) => `<label class="field"><span>${label}</span><select data-f="${name}"><option value=""></option>${opts.map(o => `<option value="${esc(o)}" ${d[name] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}${d[name] && !opts.includes(d[name]) ? `<option value="${esc(d[name])}" selected>${esc(d[name])}</option>` : ''}</select></label>`;
   const chk = (name, label) => `<label class="field inline"><span>${label}</span><input type="checkbox" data-f="${name}" ${d[name] ? 'checked' : ''}></label>`;
@@ -395,6 +580,10 @@ function viewEdit() {
         <label class="field"><span>Formato</span><input data-f="formato" list="dl-formati" value="${esc(d.formato)}"></label>
         <label class="field"><span>Genere</span><input data-f="genere" list="dl-generi" value="${esc(d.genere)}"></label>
       </div>
+      <div class="two">
+        <label class="field"><span>Serie / saga</span><input data-f="serie" list="dl-serie" value="${esc(d.serie)}" autocomplete="off"></label>
+        ${f('volume', 'Volume n.', 'inputmode="decimal"')}
+      </div>
       ${d.tipo === 'libro' ? f('pagine', 'Pagine', 'inputmode="numeric"') : ''}
       ${d.tipo === 'film' ? f('durata', 'Durata') : ''}
       <label class="field"><span>${T.codice}</span><div class="with-btn"><input data-f="codice" value="${esc(d.codice)}" inputmode="numeric"><button type="button" data-a="scanForDraft" aria-label="Scansiona">${ic('scan')}</button></div></label>
@@ -415,9 +604,13 @@ function viewEdit() {
 
     <div class="section">
       <h3>La mia copia</h3>
-      ${M ? `<div class="two">${sel('condizione', 'Condizione ' + T.supporto.toLowerCase(), CONDIZIONI)}${sel('condCustodia', 'Condizione ' + T.custodia.toLowerCase(), CONDIZIONI)}</div>${f('prezzo', 'Prezzo pagato', 'inputmode="decimal"')}`
-        : `<div class="two">${sel('condizione', 'Condizione', CONDIZIONI)}${f('prezzo', 'Prezzo pagato', 'inputmode="decimal"')}</div>`}
+      ${statiFor(d.tipo).length ? `<div class="field"><span>${d.tipo === 'libro' ? 'Lettura' : d.tipo === 'film' ? 'Visione' : 'Ascolto'}</span><div class="seg" style="grid-template-columns:repeat(${statiFor(d.tipo).length},1fr);margin-top:6px">${statiFor(d.tipo).map(([k, l]) => `<button type="button" class="${d.stato === k ? 'on' : ''}" data-a="draftStato" data-v="${k}">${l}</button>`).join('')}</div></div>` : ''}
+      ${M ? `<div class="two">${sel('condizione', 'Condizione ' + T.supporto.toLowerCase(), CONDIZIONI)}${sel('condCustodia', 'Condizione ' + T.custodia.toLowerCase(), CONDIZIONI)}</div>`
+        : sel('condizione', 'Condizione', CONDIZIONI)}
+      <div class="two">${f('prezzo', 'Prezzo pagato', 'inputmode="decimal"')}${f('valore', 'Valore stimato', 'inputmode="decimal"')}</div>
       <label class="field"><span>Posizione (es. Salotto, scaffale 2)</span><input data-f="posizione" list="dl-pos" value="${esc(d.posizione)}"></label>
+      <label class="field"><span>Etichette (separate da virgola, es. Prima stampa, Autografato)</span><input data-f="tagsTxt" value="${esc(d.tagsTxt != null ? d.tagsTxt : (d.tags || []).join(', '))}" autocomplete="off" translate="no"></label>
+      ${allTags.filter(t => !parseTags(d.tagsTxt != null ? d.tagsTxt : (d.tags || []).join(',')).includes(t)).length ? `<div class="tagrow suggest">${allTags.filter(t => !parseTags(d.tagsTxt != null ? d.tagsTxt : (d.tags || []).join(',')).includes(t)).slice(0, 12).map(t => `<button type="button" class="tagchip" data-a="addTag" data-v="${esc(t)}" translate="no">+ ${esc(t)}</button>`).join('')}</div>` : ''}
       <div class="field"><span>Il mio voto</span>${starsHTML(d.valutazione || 0, 'rateDraft')}</div>
       <label class="field"><span>Note</span><textarea data-f="note" rows="3">${esc(d.note)}</textarea></label>
       <div class="two">
@@ -429,6 +622,7 @@ function viewEdit() {
     <datalist id="dl-formati">${T.formati.map(x => `<option value="${esc(x)}">`).join('')}</datalist>
     <datalist id="dl-pos">${posizioni.map(x => `<option value="${esc(x)}">`).join('')}</datalist>
     <datalist id="dl-generi">${generi.map(x => `<option value="${esc(x)}">`).join('')}</datalist>
+    <datalist id="dl-serie" translate="no">${serieList.map(x => `<option value="${esc(x)}">`).join('')}</datalist>
   </div>
   <div class="savebar">
     <button class="btn" data-a="cancelEdit">Annulla</button>
@@ -461,10 +655,21 @@ function viewSettings() {
       </div>
     </div>
 
-    <div class="section"><h3>Backup</h3>
+    <div class="section"><h3>Backup ed esportazione</h3>
       <div class="stack">
         <button class="btn block" data-a="export">Esporta backup completo (con foto)</button>
         <button class="btn block" data-a="import">Importa da backup</button>
+        <button class="btn block" data-a="exportCsv">${ic('download', 18)}Esporta tabella CSV (Excel, Numbers)</button>
+      </div>
+    </div>
+
+    <div class="section"><h3>Importa da altre app</h3>
+      <p class="note" style="margin:10px 0">Porta qui una collezione che hai già catalogato altrove. I doppioni vengono saltati.</p>
+      <div class="stack">
+        <button class="btn block" data-a="importDiscogs" ${cfg('discogsToken') ? '' : 'disabled'}>Collezione Discogs</button>
+        ${cfg('discogsToken') ? '' : '<p class="note" style="margin:-4px 0 0">Per Discogs serve il token (qui sotto, in Ricerca online).</p>'}
+        <button class="btn block" data-a="importCsv">File CSV: Goodreads, Letterboxd, Discogs</button>
+        <p class="note" style="margin:0">Goodreads: My Books › Import and export › Export Library. Letterboxd: Settings › Data › Export (usa watched.csv, ratings.csv o watchlist.csv). Discogs: Collection › Export.</p>
       </div>
     </div>
 
@@ -490,11 +695,13 @@ function openSheet(html) {
 function closeSheet() { $('#sheetWrap').classList.add('hidden'); $('#sheet').innerHTML = ''; }
 
 function sheetAdd() {
+  S.pickWish = false;
   const tipoSeg = `<div class="seg seg5" style="margin-bottom:14px">${Object.entries(TIPI).map(([k, v]) => `<button class="${S.addTipo === k ? 'on' : ''}" data-a="addTipo" data-v="${k}">${v.label}</button>`).join('')}</div>`;
   openSheet(`<h2>Aggiungi</h2>${tipoSeg}
     <button class="bigbtn" data-a="addScan"><span class="ic">${ic('scan')}</span><span><b>Scansiona il codice a barre</b><small>Il modo più veloce: compila tutto da solo</small></span></button>
     <button class="bigbtn" data-a="addSearch"><span class="ic">${ic('search')}</span><span><b>Cerca per titolo</b><small>Se il codice manca o non viene trovato</small></span></button>
-    <button class="bigbtn" data-a="addManual"><span class="ic">${ic('hand')}</span><span><b>Inserisci a mano</b><small>Per edizioni rare o fatte in casa</small></span></button>`);
+    <button class="bigbtn" data-a="addManual"><span class="ic">${ic('hand')}</span><span><b>Inserisci a mano</b><small>Per edizioni rare o fatte in casa</small></span></button>
+    <button class="bigbtn" data-a="addBatch"><span class="ic">${ic('bolt')}</span><span><b>Scansione a raffica</b><small>Tanti pezzi di fila, li controlli alla fine</small></span></button>`);
 }
 
 function sheetSearch(tipo, prefill = '', code = '') {
@@ -790,15 +997,41 @@ async function searchByCode(tipo, code) {
   }
   // film
   const up = await settled([upcLookup(code)]);
+  return { tipo, list: await filmFromUpc(code, up[0]) };
+}
+async function filmFromUpc(code, up) {
   let list = [];
-  if (up[0]) {
-    const raw = up[0].titolo; const t = cleanProductTitle(raw);
+  if (up) {
+    const raw = up.titolo; const t = cleanProductTitle(raw);
     list = (await searchByTitle('film', t)).slice(0, 6);
-    if (!list.length) list = [{ tipo: 'film', ...up[0], titolo: t, fonte: 'UPCitemdb' }];
-    list.forEach(c => { c.formato = guessFilmFormat(raw); if (!c.coverUrl && up[0].coverUrl) c.coverUrl = up[0].coverUrl; });
+    if (!list.length) list = [{ tipo: 'film', ...up, titolo: t, fonte: 'UPCitemdb' }];
+    list.forEach(c => { c.formato = guessFilmFormat(raw); if (!c.coverUrl && up.coverUrl) c.coverUrl = up.coverUrl; });
   }
   list.forEach(c => { c.codice = code; c.tipo = 'film'; });
-  return { tipo, list };
+  return list;
+}
+// Riconosce un codice senza sapere se è un libro, un disco o un film
+async function identifyCode(code) {
+  code = String(code).replace(/\D/g, '');
+  if (/^(978|979)\d{10}$/.test(code)) return searchByCode('libro', code);
+  const variants = [code]; if (code.length === 13 && code[0] === '0') variants.push(code.slice(1)); if (code.length === 12) variants.push('0' + code);
+  const music = await settled([discogs('barcode=' + code), musicBrainz(variants.map(v => 'barcode:' + v).join(' OR '))]);
+  if (music.length) {
+    const t = (music.find(c => c.tipo) || {}).tipo || 'cd';
+    const list = fitMusic(music, t); list.forEach(c => { c.codice = code; });
+    return { tipo: t, list };
+  }
+  const up = (await settled([upcLookup(code)]))[0];
+  if (!up) return { tipo: '', list: [] };
+  const mt = detectMusicTipo(up.titolo);
+  if (mt) {
+    const t = cleanProductTitle(up.titolo);
+    let list = (await settled([itunes(t, 'album')])).slice(0, 5);
+    if (!list.length) list = [{ ...up, titolo: t, fonte: 'UPCitemdb' }];
+    list = fitMusic(list, mt); list.forEach(c => { c.codice = code; });
+    return { tipo: mt, list };
+  }
+  return { tipo: 'film', list: await filmFromUpc(code, up) };
 }
 
 // Dettagli aggiuntivi dopo la scelta
@@ -848,13 +1081,14 @@ async function enrich(c) {
     }
   } catch (e) { console.warn('enrich', e); }
   const out = {}; for (const [k, v] of Object.entries(c)) if (!k.startsWith('_') && k !== 'fonte' && k !== 'sub' && v !== '' && v != null) out[k] = v;
+  if (c._discogsId) out.discogsId = String(c._discogsId);
   return out;
 }
 
 /* ── Flusso: scansione → ricerca → modulo ──────────────────── */
 async function handleCode(code, tipo, intoDraft) {
   code = String(code).replace(/\s/g, '');
-  S.intoDraft = intoDraft === true;
+  S.intoDraft = intoDraft === true; S.pickWish = false;
   if (!intoDraft) {
     const dup = live().find(i => i.codice && i.codice.replace(/\D/g, '') === code.replace(/\D/g, ''));
     if (dup) {
@@ -884,6 +1118,14 @@ async function pickCandidate(c) {
   openSheet(`<h2>Un attimo…</h2>${loadingHTML('Recupero i dettagli')}`);
   const data = await enrich({ ...c });
   closeSheet();
+  if (S.checkPrice && data.codice && sameCode(data.codice, S.checkPrice.code) && (!data.discogsId || String(data.discogsId) === S.checkPrice.id)) {
+    data.discogsId = S.checkPrice.id; data.valoreDiscogs = { ...S.checkPrice.p, match: 'barcode' };
+  }
+  if (S.pickWish) { // "Aggiungi ai desideri" dal controllo veloce: salva subito
+    S.pickWish = false;
+    const it = normalize({ ...EMPTY(), ...data, desiderio: true });
+    await saveItem(it); toast('Aggiunto ai desideri'); return go('detail', it.id);
+  }
   startDraft(data, S.intoDraft);
 }
 
@@ -970,16 +1212,21 @@ async function decodeImageFile(file) {
   } finally { URL.revokeObjectURL(url); }
 }
 const Scanner = {
-  active: false, stream: null, timer: null, onCode: null, canvas: null,
+  active: false, stream: null, timer: null, onCode: null, canvas: null, continuous: false, mode: '', last: '', lastAt: 0,
   hint(t) { $('.scan-hint').textContent = t; },
-  async start(onCode) {
-    this.onCode = onCode; this.active = true;
+  count(t) { const c = $('#scanCount'); if (c) c.textContent = t || ''; },
+  readyHint() { return this.continuous ? 'Raffica: inquadra un codice dopo l’altro' : this.mode === 'check' ? 'Controllo veloce: inquadra il codice' : 'Inquadra il codice a 15–20 cm, con buona luce'; },
+  // opts.continuous: non si chiude a ogni codice (scansione a raffica); opts.mode 'check': "Ce l'ho già?"
+  async start(onCode, opts = {}) {
+    this.onCode = onCode; this.active = true; this.continuous = !!opts.continuous; this.mode = opts.mode || ''; this.last = ''; this.lastAt = 0;
     $('#scanner').classList.remove('hidden'); $('#manualCode').value = '';
+    $('#scanner').classList.toggle('batch', this.continuous); $('#scanner').classList.toggle('check', this.mode === 'check');
+    this.count(opts.count || '');
     this.hint('Avvio la fotocamera…');
     const video = $('#scanVideo');
     const constraints = { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false };
     try {
-      const detP = getDetector();
+      const detP = getDetector(); detP.catch(() => {});
       this.stream = await navigator.mediaDevices.getUserMedia(constraints);
       if (!this.active) { this.stream.getTracks().forEach(t => t.stop()); return; }
       video.srcObject = this.stream; await video.play().catch(() => {});
@@ -987,7 +1234,7 @@ const Scanner = {
       this.hint('Carico il lettore…');
       const { det } = await detP;
       if (!this.active) return;
-      this.hint('Inquadra il codice a 15–20 cm, con buona luce');
+      this.hint(this.readyHint());
       this.canvas = this.canvas || document.createElement('canvas');
       const tick = async () => {
         if (!this.active) return;
@@ -996,7 +1243,10 @@ const Scanner = {
             cropToCanvas(video, video.videoWidth, video.videoHeight, this.canvas);
             const r = await det.detect(this.canvas);
             const hit = (r || []).map(x => x.rawValue).find(validCode);
-            if (hit) return this.submit(hit);
+            if (hit) {
+              if (!this.continuous) return this.submit(hit);
+              if (this.submit(hit)) { this.timer = setTimeout(tick, 1300); return; }
+            }
           } catch (e) {}
         }
         this.timer = setTimeout(tick, 120);
@@ -1024,17 +1274,28 @@ const Scanner = {
     this.hint('Leggo la foto…');
     try {
       const code = await decodeImageFile(file);
-      if (code) { this.onCode = cb; return this.submit(code); }
+      if (code) { this.onCode = cb; const r = this.submit(code); if (this.continuous) this.hint(this.readyHint()); return r; }
       this.hint('Codice non leggibile nella foto. Riprova più vicino e dritto, oppure digitalo.');
     } catch (e) { this.hint('Lettore non disponibile: digita il codice qui sotto.'); }
   },
-  submit(code) { if (navigator.vibrate) navigator.vibrate(60); const cb = this.onCode; this.stop(); cb && cb(code); },
+  submit(code) {
+    if (this.continuous) {
+      // in raffica lo stesso codice letto due volte di seguito conta una volta sola
+      const now = Date.now(); if (code === this.last && now - this.lastAt < 5000) return false;
+      this.last = code; this.lastAt = now;
+      if (navigator.vibrate) navigator.vibrate(60);
+      const f = $('.scan-frame'); if (f) { f.classList.remove('hit'); void f.offsetWidth; f.classList.add('hit'); }
+      this.onCode && this.onCode(code); return true;
+    }
+    if (navigator.vibrate) navigator.vibrate(60); const cb = this.onCode; this.stop(); cb && cb(code); return true;
+  },
   found(code) { if (validCode(code)) this.submit(code); },
   stop() {
     this.active = false; this.onCode = null; clearTimeout(this.timer);
     if (this.stream) { this.stream.getTracks().forEach(t => t.stop()); this.stream = null; }
     const v = $('#scanVideo'); if (v && v.srcObject) { try { v.srcObject.getTracks().forEach(t => t.stop()); } catch (e) {} v.srcObject = null; }
-    $('#scanner').classList.add('hidden'); this.hint('Inquadra il codice a barre');
+    $('#scanner').classList.add('hidden'); this.hint('Inquadra il codice a barre'); this.count('');
+    this.continuous = false; this.mode = '';
   },
 };
 
@@ -1207,6 +1468,632 @@ async function importBackup(file) {
   } catch (e) { toast('File di backup non valido'); }
 }
 
+/* ── Righe riassuntive (oggetti della collezione o risultati online) ── */
+function rowHTML(it, action) {
+  const img = it.foto && it.foto[0] ? `<img data-photo="${esc(it.foto[0])}" alt="" hidden>`
+    : it.coverUrl ? `<img src="${esc(it.coverUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : '';
+  const T = TIPI[it.tipo];
+  const inner = `<div class="th">${img}</div><div><b translate="no">${esc(it.titolo || '—')}</b><span translate="no">${esc([it.autore, it.anno].filter(Boolean).join(' · '))}</span>${it.formato || T ? `<em>${esc(it.formato || T.label)}</em>` : ''}</div>`;
+  return action ? `<button class="result" data-a="${action}" data-id="${esc(it.id)}">${inner}</button>` : `<div class="result static">${inner}</div>`;
+}
+
+/* ── "Ce l'ho già?" ────────────────────────────────────────── */
+function startCheck() { closeSheet(); Scanner.start(code => checkCode(code), { mode: 'check' }); }
+async function checkCode(code) {
+  code = String(code).replace(/\D/g, ''); S.checkPrice = null;
+  const hits = live().filter(i => i.codice && sameCode(i.codice, code));
+  const owned = hits.filter(i => !i.desiderio), wish = hits.filter(i => i.desiderio);
+  S.check = { code, res: null };
+  const again = `<button class="btn block" data-a="check">${ic('check', 18)}Controlla un altro</button>`;
+  const priceBox = '<div class="section pricebox" id="checkPrice"></div>';
+  if (owned.length) {
+    openSheet(`<div class="verdict ok"><b>✓</b>Ce l'hai già</div><div class="results">${owned.map(i => rowHTML(i, 'open')).join('')}</div>${priceBox}
+      <div class="stack" style="padding-top:14px">${again}</div>`);
+    return checkPrice(owned[0], null, code);
+  }
+  if (wish.length) {
+    openSheet(`<div class="verdict wish"><b>★</b>È nella tua lista desideri</div><div class="results">${wish.map(i => rowHTML(i, 'open')).join('')}</div>${priceBox}
+      <div class="stack" style="padding-top:14px"><button class="btn primary block" data-a="gotIt" data-id="${esc(wish[0].id)}">L'ho comprato!</button>${again}</div>`);
+    return checkPrice(wish[0], null, code);
+  }
+  openSheet(`<h2>Controllo ${esc(code)}…</h2>${loadingHTML('Non è nella collezione: cerco cos’è')}`);
+  let res = { tipo: '', list: [] };
+  try { res = await identifyCode(code); } catch (e) {}
+  if ($('#sheetWrap').classList.contains('hidden') || !S.check || S.check.code !== code) return; // chiuso nel frattempo
+  S.check.res = res;
+  const c = res.list[0];
+  const other = c ? live().filter(i => sameWork(i, c)) : [];
+  const otherWish = other.filter(i => i.desiderio);
+  if (otherWish.length && !other.some(i => !i.desiderio)) {
+    openSheet(`<div class="verdict wish"><b>★</b>È nella tua lista desideri</div><div class="results">${otherWish.map(i => rowHTML(i, 'open')).join('')}</div>${priceBox}
+      <div class="stack" style="padding-top:14px"><button class="btn primary block" data-a="gotIt" data-id="${esc(otherWish[0].id)}" data-code="${esc(code)}">L'ho comprato!</button>${again}</div>`);
+    return checkPrice(null, c, code);
+  }
+  openSheet(`<div class="verdict no"><b>✕</b>Non ce l'hai</div>
+    ${c ? `<div class="results">${rowHTML(c)}</div>${res.list.length > 1 ? '<p class="note" style="margin:8px 2px 0">Ci sono più edizioni con questo codice: scegli la tua quando lo aggiungi.</p>' : ''}`
+      : `<p class="lead" style="margin-top:0">Codice ${esc(code)} non trovato nei database online.</p>`}
+    ${other.length ? `<p class="note warnnote">Hai già lo stesso titolo in un'altra edizione:</p><div class="results">${other.map(i => rowHTML(i, 'open')).join('')}</div>` : ''}
+    ${c ? priceBox : ''}
+    <div class="stack" style="padding-top:14px">
+      <button class="btn primary block" data-a="checkAdd" data-v="own">Aggiungi alla collezione</button>
+      <button class="btn block" data-a="checkAdd" data-v="wish">Aggiungi ai desideri</button>
+      ${again}
+    </div>`);
+  if (c) checkPrice(null, c, code);
+}
+// "Quanto vale?" durante il controllo veloce
+async function checkPrice(item, cand, code) {
+  const box = $('#checkPrice'); if (!box) return;
+  const base = { ...(cand || {}), ...(item || {}) }; if (!base.codice) base.codice = code;
+  const set = html => { const b = $('#checkPrice'); if (b && S.check && S.check.code === code) b.innerHTML = '<h3>Quanto vale?</h3>' + html; };
+  if (!isMusic(base.tipo)) {
+    const mv = item && !item.desiderio ? marketValue(item) : { v: 0 };
+    return set(`${mv.v ? `<div class="value"><b>${esc(money(mv.v, mv.cur))}</b><span>valore inserito da te</span></div>` : ''}<p class="note pnote">Per libri e film non esiste un listino gratuito: guarda a quanto sono stati venduti davvero.</p>${soldLinks(base)}`);
+  }
+  if (!cfg('discogsToken')) return set(`<p class="note pnote">Per i prezzi dei dischi inserisci il token Discogs nelle Impostazioni.</p>${soldLinks(base)}`);
+  set(loadingHTML('Chiedo i prezzi a Discogs…'));
+  try {
+    let id = (item && item.discogsId) || (cand && cand._discogsId);
+    let match = 'barcode';
+    if (!id) { const m = await discogsLookupId({ ...base, discogsId: '' }); if (m) { id = m.id; match = m.match; } }
+    if (!id) return set(`<p class="note pnote">Edizione non trovata su Discogs.</p>${soldLinks(base)}`);
+    const p = await discogsPrices(String(id));
+    S.checkPrice = { id: String(id), p, code };
+    if (item) { // aggiorna anche il valore del pezzo che hai già
+      item.discogsId = String(id); item.valoreDiscogs = { ...p, match: (item.valoreDiscogs && item.valoreDiscogs.match) || match }; saveItem(item);
+    }
+    const mv = item && !item.desiderio ? marketValue(item) : null;
+    set(`${mv && mv.v ? `<div class="value"><b>${esc(money(mv.v, mv.cur))}</b><span>${mv.src === 'discogs' && !mv.assumed ? 'la tua copia · ' + esc(item.condizione) : 'la tua copia'}</span></div>` : ''}${priceTableHTML(p, item && item.condizione)}${soldLinks({ ...base, discogsId: String(id) })}`);
+  } catch (e) {
+    set(`<p class="note pnote">Discogs non risponde: riprova tra poco.</p>${soldLinks(base)}`);
+  }
+}
+function checkAdd(el) {
+  const wish = el.dataset.v === 'wish'; const { code, res } = S.check || {};
+  const list = (res && res.list) || [];
+  S.intoDraft = false; S.pickWish = wish;
+  if (!list.length) { closeSheet(); S.pickWish = false; return startDraft({ tipo: (res && res.tipo) || (/^(978|979)/.test(code) ? 'libro' : S.addTipo), codice: code, desiderio: wish }, false); }
+  if (list.length === 1) return pickCandidate(list[0]);
+  S.candidates = list; S.searchCtx = { tipo: res.tipo, code };
+  openSheet(`<h2>Quale di questi?</h2><div class="results">${resultsHTML(list)}</div>
+    <button class="btn block" style="margin-top:12px" data-a="manualWithCode">Nessuno, inserisco a mano</button>`);
+}
+async function gotIt(el) {
+  const it = byId((el && el.dataset.id) || S.id); if (!it) return;
+  it.desiderio = false; it.createdAt = Date.now();
+  // comprato dopo il controllo veloce: completa con il codice e i dati trovati online
+  const code = el && el.dataset.code;
+  if (code && !it.codice) it.codice = code;
+  const c = code && S.check && S.check.res && S.check.res.list[0];
+  if (c) ['coverUrl', 'editore', 'anno', 'formato', 'catalogo', 'paese'].forEach(k => { if (!it[k] && c[k]) it[k] = c[k]; });
+  await saveItem(it); closeSheet(); toast('Spostato nella collezione');
+  if (S.view === 'detail' && S.id === it.id) render(); else go('detail', it.id);
+}
+
+/* ── Scansione a raffica ───────────────────────────────────── */
+const saveBatch = () => setMeta('batch', S.batch).catch(() => {});
+function batchCountText() {
+  const n = S.batch.length, f = S.batch.filter(r => r.data).length;
+  return n ? `${n} in coda · ${f} trovati` : '';
+}
+function startBatch() { Scanner.start(batchAdd, { continuous: true, count: batchCountText() }); }
+function batchAdd(code) {
+  code = String(code).replace(/\D/g, '');
+  if (S.batch.some(r => r.code === code)) { toast('Già in coda', 1200); return; }
+  S.batch.push({ id: uid(), code, tipo: S.batchTipo, status: 'wait' });
+  toast('+ ' + code, 1000);
+  saveBatch(); refreshBatch(); runBatch();
+}
+function refreshBatch() {
+  if (Scanner.active && Scanner.continuous) Scanner.count(batchCountText());
+  if (S.view === 'batch' && $('#sheetWrap').classList.contains('hidden')) render();
+}
+let batchRunning = false;
+async function runBatch() {
+  if (batchRunning) return; batchRunning = true;
+  try {
+    let r;
+    while ((r = S.batch.find(x => x.status === 'wait'))) {
+      if (!navigator.onLine) break;
+      r.status = 'busy'; refreshBatch();
+      try {
+        const res = await searchByCode(r.tipo, r.code);
+        if (!S.batch.includes(r)) continue; // tolto nel frattempo
+        if (!res.list.length) r.status = 'none';
+        else {
+          r.tipo = res.tipo;
+          r.data = await enrich({ ...res.list[0] });
+          r.alts = res.list.length > 1 ? res.list.slice(0, 8) : null;
+          r.status = res.list.length > 1 ? 'multi' : 'ok';
+        }
+      } catch (e) { r.status = navigator.onLine ? 'none' : 'wait'; }
+      r.dup = live().some(i => !i.desiderio && i.codice && sameCode(i.codice, r.code));
+      await saveBatch(); refreshBatch();
+      await sleep(900); // MusicBrainz: al massimo una richiesta al secondo
+    }
+  } finally { batchRunning = false; }
+}
+const BATCH_STATUS = { wait: 'In attesa', busy: 'Cerco…', ok: 'Trovato', multi: 'Più edizioni', none: 'Non trovato' };
+function viewBatch() {
+  const B = S.batch; const ready = B.filter(batchReady).length;
+  const busy = B.some(r => r.status === 'wait' || r.status === 'busy');
+  const row = r => {
+    const d = r.data || {}; const T = TIPI[r.tipo] || {};
+    return `<div class="result qrow ${r.status}">
+      <div class="th">${d.coverUrl ? `<img src="${esc(d.coverUrl)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">` : r.status === 'busy' ? '<div class="spinner"></div>' : ''}</div>
+      <div class="grow"><b translate="no">${esc(d.titolo || r.code)}</b>${d.titolo ? `<span translate="no">${esc([d.autore, d.anno].filter(Boolean).join(' · '))}</span>` : ''}
+        <em>${esc([T.label, BATCH_STATUS[r.status]].filter(Boolean).join(' · '))}</em>${r.dup ? `<span class="dupnote">Ce l'hai già</span>` : ''}
+        ${r.dup && r.data ? `<label class="dupforce"><input type="checkbox" data-a="batchForce" data-v="${r.id}" ${r.force ? 'checked' : ''}><span>Aggiungi un'altra copia</span></label>` : ''}
+        ${r.status === 'multi' ? `<div class="qacts"><button data-a="batchChoose" data-v="${r.id}">Scegli l'edizione</button></div>` : ''}
+        ${r.status === 'none' ? `<div class="qacts"><button data-a="batchSearch" data-v="${r.id}">Cerca per titolo</button></div>` : ''}
+      </div>
+      <button class="x" data-a="batchRemove" data-v="${r.id}" aria-label="Togli dalla coda">✕</button>
+    </div>`;
+  };
+  return `
+  <header class="top">
+    <button class="iconbtn" data-a="back" aria-label="Indietro">${ic('back')}</button>
+    <div class="grow title-sm">Scansione a raffica</div>
+    ${B.length ? `<button class="iconbtn" data-a="batchClear" aria-label="Svuota la coda">${ic('trash')}</button>` : ''}
+  </header>
+  <div class="form">
+    <div class="seg seg5" style="margin-top:6px">${Object.entries(TIPI).map(([k, v]) => `<button type="button" class="${S.batchTipo === k ? 'on' : ''}" data-a="batchTipo" data-v="${k}">${v.label}</button>`).join('')}</div>
+    <p class="note" style="margin:10px 2px 4px">${!B.length ? 'Scegli il tipo e tocca “Scansiona”: leggi un codice dopo l’altro, senza fermarti.' : busy ? 'Cerco i dati un codice alla volta: puoi aspettare qui o continuare a scansionare.' : 'Controlla l’elenco, poi aggiungi tutto con un tocco.'}</p>
+    ${!navigator.onLine && busy ? '<p class="note warnnote">Sei offline: la ricerca riparte appena torna la connessione.</p>' : ''}
+    ${B.length ? `<div class="results">${B.map(row).join('')}</div>` : ''}
+  </div>
+  <div class="savebar">
+    <button class="btn" data-a="batchScan">${ic('scan', 18)}Scansiona</button>
+    <button class="btn primary" data-a="batchSave" ${ready ? '' : 'disabled'}>${ready === 1 ? 'Aggiungi 1 pezzo' : `Aggiungi ${ready} pezzi`}</button>
+  </div>`;
+}
+async function batchAssign(c) {
+  const r = S.batch.find(x => x.id === S.batchTarget); S.batchTarget = null;
+  if (!r) return closeSheet();
+  openSheet(`<h2>Un attimo…</h2>${loadingHTML('Recupero i dettagli')}`);
+  r.data = await enrich({ ...c }); r.tipo = c.tipo || r.tipo; r.status = 'ok';
+  r.data.codice = r.data.codice || r.code;
+  await saveBatch(); closeSheet(); render();
+}
+// pronti da aggiungere: trovati, e se li hai già solo se chiedi un'altra copia
+const batchReady = r => !!r.data && (!r.dup || r.force);
+async function batchSave() {
+  const ready = S.batch.filter(batchReady); if (!ready.length) return;
+  const now = Date.now();
+  const items = ready.map((r, i) => normalize({ ...EMPTY(), ...r.data, tipo: r.data.tipo || r.tipo, codice: r.data.codice || r.code, createdAt: now + ready.length - i, updatedAt: now }));
+  await DB.putMany('items', items); S.items.push(...items);
+  S.batch = S.batch.filter(r => !r.data); await saveBatch(); markDirty(); // i doppioni non scelti escono dalla coda
+  toast(items.length === 1 ? 'Aggiunto 1 pezzo' : `Aggiunti ${items.length} pezzi`);
+  if (!S.batch.length) { history.replaceState({ view: 'list' }, ''); S.view = 'list'; render(); } else render();
+}
+
+/* ── Valore di mercato (Discogs) ───────────────────────────── */
+async function discogsLookupId(it) {
+  if (it.discogsId) return { id: String(it.discogsId), match: 'id' };
+  const fmt = { vinile: 'Vinyl', cd: 'CD', cassetta: 'Cassette' }[it.tipo];
+  const code = String(it.codice || '').replace(/\D/g, '');
+  if (code) { const r = await discogs('barcode=' + code); if (r[0]) return { id: String(r[0]._discogsId), match: 'barcode' }; }
+  if (it.catalogo) { const r = await discogs('catno=' + encodeURIComponent(it.catalogo) + (it.autore ? '&artist=' + encodeURIComponent(it.autore) : '')); if (r[0]) return { id: String(r[0]._discogsId), match: 'catno' }; }
+  const r = await discogs('q=' + encodeURIComponent([it.autore, it.titolo].filter(Boolean).join(' ')) + (fmt ? '&format=' + fmt : ''));
+  return r[0] ? { id: String(r[0]._discogsId), match: 'titolo' } : null;
+}
+// Prezzi Discogs di un'edizione: suggeriti per condizione (in base alle vendite) + minimo in vendita ora
+async function discogsPrices(id) {
+  const tok = encodeURIComponent(cfg('discogsToken'));
+  const [st, sg] = await Promise.allSettled([
+    fj(`https://api.discogs.com/marketplace/stats/${encodeURIComponent(id)}?curr_abbr=EUR&token=${tok}`),
+    fj(`https://api.discogs.com/marketplace/price_suggestions/${encodeURIComponent(id)}?token=${tok}`),
+  ]);
+  if (st.status === 'rejected' && sg.status === 'rejected') throw st.reason;
+  const s = st.status === 'fulfilled' ? st.value || {} : {};
+  const sugg = {}; let scur = '';
+  if (sg.status === 'fulfilled' && sg.value && typeof sg.value === 'object') {
+    for (const [k, v] of Object.entries(sg.value)) if (v && v.value != null && GRADE_ORDER.includes(k)) { sugg[k] = Math.round(+v.value * 100) / 100; scur = v.currency || scur; }
+  }
+  return { min: s.lowest_price && s.lowest_price.value != null ? +s.lowest_price.value : null, cur: (s.lowest_price && s.lowest_price.currency) || 'EUR', n: s.num_for_sale || 0,
+    sugg: Object.keys(sugg).length ? sugg : null, scur: scur || 'EUR', suggErr: sg.status === 'rejected', at: Date.now() };
+}
+async function discogsValue(it) {
+  const tok = cfg('discogsToken'); if (!tok) throw new Error('token');
+  const m = await discogsLookupId(it); if (!m) return false;
+  const p = await discogsPrices(m.id);
+  const prev = it.valoreDiscogs && it.valoreDiscogs.match;
+  it.discogsId = m.id;
+  it.valoreDiscogs = { ...p, match: m.match === 'id' ? (prev || 'id') : m.match };
+  await saveItem(it); return true;
+}
+// Tabella dei prezzi per condizione (evidenzia quella della tua copia)
+function priceTableHTML(p, cond) {
+  const mine = GRADE_OF[cond]; let h = '';
+  if (p.sugg) {
+    h += `<div class="ptable">${GRADE_ORDER.filter(g => p.sugg[g] != null).map(g => `<div class="prow ${g === mine ? 'mine' : ''}"><span class="pg" translate="no">${esc(gradeShort(g))}</span><span class="pl">${esc(GRADE_LABEL[g])}</span>${g === mine ? '<span class="pm">la tua copia</span>' : ''}<b>${esc(money(p.sugg[g], p.scur))}</b></div>`).join('')}</div>
+      <p class="note pnote">Prezzi suggeriti da Discogs in base alle vendite, secondo la condizione del disco.</p>`;
+  } else if (p.suggErr) {
+    h += `<p class="note pnote">Mancano i prezzi per condizione: su Discogs apri Settings › Seller Settings, scegli valuta e paese e salva (basta una volta).</p>`;
+  }
+  h += `<p class="note pnote">${p.min != null ? `<span>In vendita ora, da</span> <b>${esc(money(p.min, p.cur))}</b> <span>${p.n === 1 ? '(1 copia)' : `(${p.n} copie)`}</span>` : '<span>Nessuna copia in vendita ora su Discogs</span>'}</p>`;
+  return h;
+}
+// Dove vedere a quanto è stato venduto davvero (libri e film non hanno un listino gratuito)
+function soldLinks(it) {
+  const enc = encodeURIComponent; const L = LNG();
+  const eb = { it: 'https://www.ebay.it', en: 'https://www.ebay.co.uk', es: 'https://www.ebay.es' }[L] || 'https://www.ebay.it';
+  const isbn = it.tipo === 'libro' ? String(it.codice || '').replace(/[^\dX]/gi, '') : '';
+  const kind = isMusic(it.tipo) ? ({ vinile: 'LP', cd: 'CD', cassetta: L === 'it' ? 'musicassetta' : 'cassette' }[it.tipo]) : it.tipo === 'film' ? (it.formato || 'DVD') : '';
+  const q = isbn || [it.autore, it.titolo, kind].filter(Boolean).join(' ') || String(it.codice || '');
+  const out = [['Venduti su eBay', `${eb}/sch/i.html?_nkw=${enc(q)}&LH_Sold=1&LH_Complete=1`]];
+  if (it.tipo === 'libro') {
+    const ab = { it: 'https://www.abebooks.it', en: 'https://www.abebooks.co.uk', es: 'https://www.iberlibro.com' }[L] || 'https://www.abebooks.it';
+    out.push(['AbeBooks', isbn ? `${ab}/servlet/SearchResults?isbn=${isbn}` : `${ab}/servlet/SearchResults?kn=${enc(q)}`]);
+  }
+  if (isMusic(it.tipo) && it.discogsId) out.push(['Discogs', `https://www.discogs.com/sell/release/${enc(it.discogsId)}`]);
+  return `<div class="links">${out.map(([n, u]) => `<a class="linkbtn" href="${esc(u)}" target="_blank" rel="noopener"><span>${esc(n)}</span><span aria-hidden="true">↗</span></a>`).join('')}</div>`;
+}
+async function valueNow() {
+  const it = byId(S.id); if (!it || S.valuing) return;
+  S.valuing = { id: it.id }; render();
+  try { toast(await discogsValue(it) ? 'Valore aggiornato' : 'Edizione non trovata su Discogs'); }
+  catch (e) { toast('Discogs non risponde: riprova tra poco'); }
+  S.valuing = null; if (S.view === 'detail') render();
+}
+async function valueAll() {
+  if (S.valuing) { S.valuing.stop = true; return; }
+  const L = live().filter(i => isMusic(i.tipo) && !i.desiderio).sort((a, b) => ((a.valoreDiscogs || {}).at || 0) - ((b.valoreDiscogs || {}).at || 0));
+  if (!L.length) return;
+  S.valuing = { all: true, done: 0, tot: L.length, stop: false };
+  const btn = () => $('#valueAllBtn');
+  const upd = () => { const b = btn(); if (b && S.valuing) b.textContent = `Aggiorno ${S.valuing.done} di ${S.valuing.tot}… (tocca per fermare)`; };
+  upd();
+  for (const it of L) {
+    if (S.valuing.stop) break;
+    const lookup = !it.discogsId;
+    try { await discogsValue(it); } catch (e) { if (/429/.test(e.message)) await sleep(30000); else if (!navigator.onLine) break; }
+    S.valuing.done++; upd();
+    await sleep(lookup ? 3300 : 2200); // limite Discogs: 60 richieste al minuto
+  }
+  const done = S.valuing.done; S.valuing = null;
+  toast(done === 1 ? 'Aggiornato 1 valore' : `Aggiornati ${done} valori`);
+  if (S.view === 'stats' || S.view === 'list') render();
+}
+
+/* ── Statistiche e "pesca a caso" ──────────────────────────── */
+function bars(rows, color, translate) {
+  if (!rows.length) return '<p class="note" style="margin:8px 0 12px">Nessun dato ancora.</p>';
+  const max = Math.max(...rows.map(r => r[1]));
+  return `<div class="bars">${rows.map(([l, n, k]) => `<div class="bar"><span class="bl" ${translate ? '' : 'translate="no"'}>${esc(l)}</span><span class="bt"><i style="width:${Math.max(3, n / max * 100)}%;background:${k ? `var(--${k === 'cassetta' ? 'tape' : k})` : color}"></i></span><b>${n}</b></div>`).join('')}</div>`;
+}
+function viewStats() {
+  const own = live().filter(i => !i.desiderio), wish = live().filter(i => i.desiderio);
+  const spent = own.reduce((s, i) => s + num(i.prezzo), 0);
+  const valued = own.filter(i => valueOf(i) > 0); const value = valued.reduce((s, i) => s + valueOf(i), 0);
+  const byType = Object.keys(TIPI).map(k => [TIPI[k].plural, own.filter(i => i.tipo === k).length, k]).filter(x => x[1]);
+  const dec = {}; own.forEach(i => { const y = parseInt(i.anno, 10); if (y > 1500 && y < 2100) { const d = Math.floor(y / 10) * 10; dec[d] = (dec[d] || 0) + 1; } });
+  const decades = Object.entries(dec).sort((a, b) => a[0] - b[0]).map(([d, n]) => [`${d}–${String(+d + 9).slice(2)}`, n]);
+  const top = (fn, n = 8) => { const m = new Map(); own.forEach(i => new Set(fn(i).map(v => String(v).trim()).filter(Boolean)).forEach(v => { const k = v.toLowerCase(); const e = m.get(k) || [v, 0]; e[1]++; m.set(k, e); })); return [...m.values()].filter(e => e[1] > 1 || m.size <= n).sort((a, b) => b[1] - a[1]).slice(0, n); };
+  const genres = top(i => String(i.genere || '').split(/[,/]/));
+  const authors = top(i => i.autore ? [String(i.autore).split(/,|;| & /)[0]] : []);
+  const late = live().filter(i => i.prestatoA && loanDays(i) > PRESTITO_GIORNI).sort((a, b) => loanDays(b) - loanDays(a));
+  const loans = live().filter(i => i.prestatoA).length;
+  const st = (t, k) => own.filter(i => (t === 'musica' ? isMusic(i.tipo) : i.tipo === t) && i.stato === k).length;
+  const stRows = [['Libri letti', st('libro', 'fatto')], ['In lettura', st('libro', 'in')], ['Da leggere', st('libro', 'da')], ['Film visti', st('film', 'fatto')], ['Da vedere', st('film', 'da')], ['Dischi ascoltati', st('musica', 'fatto')], ['Da ascoltare', st('musica', 'da')]].filter(r => r[1]);
+  const music = own.filter(i => isMusic(i.tipo)).length;
+  const tile = (n, l, sub) => `<div class="tile"><b>${n}</b><span>${l}</span>${sub ? `<small>${sub}</small>` : ''}</div>`;
+  const pickers = [['tutti', 'Tutti'], ...Object.entries(TIPI).map(([k, v]) => [k, v.plural])];
+  return `
+  <header class="top">
+    <button class="iconbtn" data-a="back" aria-label="Indietro">${ic('back')}</button>
+    <div class="grow title-sm">La tua collezione</div>
+  </header>
+  <div class="form">
+    <div class="tiles">
+      ${tile(own.length, own.length === 1 ? 'pezzo' : 'pezzi')}
+      ${tile(wish.length, 'desideri')}
+      ${tile(spent ? money(spent) : '—', 'spesi', spent ? `su ${own.filter(i => num(i.prezzo)).length} con prezzo` : '')}
+      ${tile(value ? money(value) : '—', 'valore stimato', value ? `su ${valued.length} con valore` : '')}
+    </div>
+
+    <div class="section pick"><h3>Non sai cosa scegliere?</h3>
+      <div class="pickchips">${pickers.map(([k, l]) => `<button type="button" class="chip ${S.pickTipo === k ? 'on' : ''}" data-a="pickTipo" data-v="${k}">${l}</button>`).join('')}</div>
+      <div class="stack"><button class="btn primary block" data-a="pickRandom">${ic('dice', 20)}Pesca a caso</button></div>
+    </div>
+
+    <div class="section"><h3>Per tipo</h3>${bars(byType, '', true)}</div>
+    <div class="section"><h3>Per decennio</h3>${bars(decades, 'var(--accent)', false)}</div>
+    <div class="section"><h3>Generi più presenti</h3>${bars(genres.map(([l, n]) => [l, n]), 'var(--tape)', false)}</div>
+    <div class="section"><h3>Autori e artisti più presenti</h3>${bars(authors.map(([l, n]) => [l, n]), 'var(--film)', false)}</div>
+    ${stRows.length ? `<div class="section"><h3>Lettura, visione, ascolto</h3><dl class="facts">${stRows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl></div>` : ''}
+    <div class="section"><h3>Prestiti</h3>
+      ${loans ? `<p class="note" style="margin:10px 0">${loans === 1 ? '1 pezzo in prestito' : loans + ' pezzi in prestito'}${late.length ? ` · ${late.length} da più di ${PRESTITO_GIORNI} giorni` : ''}</p>` : '<p class="note" style="margin:10px 0 12px">Nessun pezzo in prestito.</p>'}
+      ${late.length ? `<div class="results" style="padding-bottom:12px">${late.map(i => rowHTML(i, 'open')).join('')}</div>` : ''}
+    </div>
+    ${music && cfg('discogsToken') ? `<div class="section"><h3>Valore dei dischi</h3>
+      <p class="note" style="margin:10px 0">Controlla su Discogs il prezzo minimo di ${music === 1 ? '1 disco' : music + ' dischi'}. Ci vuole circa un minuto ogni 30: puoi continuare a usare l'app.</p>
+      <div class="stack"><button id="valueAllBtn" class="btn block" data-a="valueAll">${S.valuing && S.valuing.all ? `Aggiorno ${S.valuing.done} di ${S.valuing.tot}… (tocca per fermare)` : 'Aggiorna tutti i valori'}</button></div></div>` : ''}
+  </div>`;
+}
+function pickRandom() {
+  const t = S.pickTipo;
+  let pool = live().filter(i => !i.desiderio && !i.prestatoA && (t === 'tutti' || i.tipo === t));
+  if (!pool.length) return toast('Niente da pescare qui');
+  const fresh = pool.filter(i => i.stato === 'da' || i.stato === 'in');
+  if (fresh.length && Math.random() < 0.5) pool = fresh; // a volte preferisce quello che non hai ancora letto/visto
+  let it; let n = 0;
+  do { it = pool[Math.floor(Math.random() * pool.length)]; } while (pool.length > 1 && it.id === S.lastPick && ++n < 10);
+  S.lastPick = it.id;
+  const h = isMusic(it.tipo) ? 'Stasera ascolta…' : it.tipo === 'film' ? 'Stasera guarda…' : 'Adesso leggi…';
+  openSheet(`<h2>${h}</h2>
+    <div class="pickcard">${coverHTML(it)}<div><b translate="no">${esc(it.titolo)}</b><span translate="no">${esc([it.autore, it.anno].filter(Boolean).join(' · '))}</span>
+      ${it.posizione ? `<small>Lo trovi in: <span translate="no">${esc(it.posizione)}</span></small>` : ''}</div></div>
+    <div class="row" style="margin-top:16px"><button class="btn" data-a="pickRandom">${ic('dice', 18)}Un altro</button><button class="btn primary" data-a="open" data-id="${esc(it.id)}">Apri</button></div>`);
+}
+
+/* ── Condividere ───────────────────────────────────────────── */
+async function shareText(text, title) {
+  if (navigator.share) { try { await navigator.share({ title, text }); return; } catch (e) { if (e.name === 'AbortError') return; } }
+  try { await navigator.clipboard.writeText(text); toast('Testo copiato: incollalo dove vuoi'); }
+  catch (e) { location.href = 'https://wa.me/?text=' + encodeURIComponent(text); }
+}
+function shareWish() {
+  const W = live().filter(i => i.desiderio);
+  if (!W.length) return toast('La lista desideri è vuota');
+  const title = tr('La mia lista desideri');
+  const parts = [title + ' 🎁', ''];
+  Object.entries(TIPI).forEach(([k, T]) => {
+    const L = W.filter(i => i.tipo === k).sort((a, b) => String(a.autore || a.titolo).localeCompare(String(b.autore || b.titolo), LOC()));
+    if (!L.length) return;
+    parts.push(tr(T.plural).toUpperCase());
+    L.forEach(i => parts.push(`• ${i.titolo}${i.autore ? ' — ' + i.autore : ''}${i.formato ? ' (' + tr(i.formato) + ')' : ''}`));
+    parts.push('');
+  });
+  parts.push(tr('Creata con Spinyl'));
+  shareText(parts.join('\n'), title);
+}
+function remindLoan() {
+  const it = byId(S.id); if (!it || !it.prestatoA) return;
+  const name = String(it.prestatoA).trim().split(/\s+/)[0];
+  const d = it.prestatoIl ? new Date(it.prestatoIl).toLocaleDateString(LOC(), { day: 'numeric', month: 'long' }) : '';
+  const msg = {
+    it: `Ciao ${name}! Ti ricordi di "${it.titolo}" che ti ho prestato${d ? ' il ' + d : ''}? Quando puoi me lo riporti? Grazie 😊`,
+    en: `Hi ${name}! Do you remember "${it.titolo}", which I lent you${d ? ' on ' + d : ''}? Could you bring it back when you get a chance? Thanks 😊`,
+    es: `¡Hola ${name}! ¿Te acuerdas de "${it.titolo}", que te presté${d ? ' el ' + d : ''}? ¿Me lo devuelves cuando puedas? Gracias 😊`,
+  }[LNG()] || '';
+  shareText(msg, it.titolo);
+}
+async function saveFile(file, title) {
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title }); return; } catch (e) { if (e.name === 'AbortError') return; }
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+function exportCsv() {
+  const sep = LNG() === 'en' ? ',' : ';';
+  const n = v => { v = num(v); return v ? (sep === ';' ? String(v).replace('.', ',') : String(v)) : ''; };
+  const order = Object.keys(TIPI);
+  const L = live().sort((a, b) => (a.desiderio - b.desiderio) || (order.indexOf(a.tipo) - order.indexOf(b.tipo)) || String(a.autore || '').localeCompare(String(b.autore || ''), LOC()) || String(a.titolo).localeCompare(String(b.titolo), LOC()));
+  const cols = [
+    ['Tipo', i => tr((TIPI[i.tipo] || {}).label || i.tipo)], ['Titolo', i => i.titolo], ['Autore / artista', i => i.autore], ['Anno', i => i.anno],
+    ['Editore / etichetta', i => i.editore], ['Formato', i => tr(i.formato)], ['Genere', i => i.genere], ['Serie', i => i.serie], ['Volume', i => i.volume],
+    ['Codice', i => i.codice], ['N. catalogo', i => i.catalogo], ['Paese', i => i.paese], ['Condizione', i => tr(i.condizione)], ['Posizione', i => i.posizione],
+    ['Prezzo pagato', i => n(i.prezzo)], ['Valore stimato', i => n(i.valore)], ['Valore di mercato', i => { const m = marketValue(i); return m.src && m.src !== 'manuale' ? n(m.v) : ''; }],
+    ['Voto', i => i.valutazione || ''], ['Stato', i => tr(statoLabel(i))], ['Etichette', i => (i.tags || []).join(', ')], ['Lista desideri', i => i.desiderio ? tr('Sì') : ''],
+    ['Prestato a', i => i.prestatoA], ['Prestato il', i => i.prestatoIl], ['Note', i => i.note], ['Aggiunto il', i => { if (!i.createdAt) return ''; const d = new Date(i.createdAt); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }],
+  ];
+  const cell = v => { v = String(v ?? ''); return /["\n\r,;]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  const csv = '﻿' + [cols.map(c => cell(tr(c[0]))).join(sep), ...L.map(i => cols.map(c => cell(c[1](i))).join(sep))].join('\r\n');
+  saveFile(new File([csv], `spinyl-${new Date().toISOString().slice(0, 10)}.csv`, { type: 'text/csv' }), 'Spinyl CSV');
+}
+
+/* ── Importare da altre app ────────────────────────────────── */
+function parseCSV(text) {
+  text = String(text).replace(/^﻿/, '');
+  const first = text.split(/\r?\n/, 1)[0] || '';
+  const sep = (first.match(/;/g) || []).length > (first.match(/,/g) || []).length ? ';' : first.includes('\t') && !first.includes(',') ? '\t' : ',';
+  const rows = []; let row = [], f = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === sep) { row.push(f); f = ''; }
+    else if (ch === '\n') { row.push(f); rows.push(row); row = []; f = ''; }
+    else if (ch !== '\r') f += ch;
+  }
+  if (f || row.length) { row.push(f); rows.push(row); }
+  const head = (rows.shift() || []).map(h => h.trim());
+  return rows.filter(r => r.some(x => String(x).trim())).map(r => Object.fromEntries(head.map((h, i) => [h, String(r[i] ?? '').trim()])));
+}
+const cleanDiscogsName = s => String(s || '').replace(/\s\(\d+\)$/, '').replace(/\*$/, '').trim();
+const goldmine = s => { s = String(s || ''); return /^Mint/.test(s) ? 'Nuovo / sigillato' : /Near Mint/.test(s) ? 'Come nuovo' : /Very Good Plus/.test(s) ? 'Ottimo' : /Very Good/.test(s) ? 'Buono' : /Good/.test(s) ? 'Discreto' : /Fair|Poor/.test(s) ? 'Rovinato' : ''; };
+function discogsAny(formats, qty) {
+  const s = formats.join(' | ').replace(/\bCass\b/g, 'Cassette');
+  const m = discogsMedia([s], qty);
+  if (!m.tipo && /DVD|Blu-?ray|VHS/i.test(s)) return { tipo: 'film', formato: guessFilmFormat(s) };
+  return m;
+}
+function fromDiscogsApi(r) {
+  const b = r.basic_information || {};
+  const fm = b.formats || [];
+  const l = (b.labels || [])[0] || {};
+  return { ...discogsAny(fm.flatMap(f => [f.name, ...(f.descriptions || []), f.text].filter(Boolean)), fm[0] && fm[0].qty),
+    titolo: b.title || '', autore: (b.artists || []).map(a => cleanDiscogsName(a.anv || a.name)).join(', '), anno: b.year ? String(b.year) : '',
+    editore: cleanDiscogsName(l.name), catalogo: l.catno && l.catno.toLowerCase() !== 'none' ? l.catno : '',
+    genere: [...(b.genres || []), ...(b.styles || [])].slice(0, 4).join(', '), coverUrl: b.cover_image || '',
+    discogsId: String(b.id || r.id || ''), valutazione: r.rating || 0, createdAt: Date.parse(r.date_added) || 0 };
+}
+function fromDiscogsCsv(r) {
+  const f = r.Format || ''; const q = (f.match(/(\d+)\s*x/i) || [])[1];
+  return { ...discogsAny([f], q), titolo: r.Title || '', autore: cleanDiscogsName(r.Artist), editore: cleanDiscogsName(r.Label),
+    catalogo: r['Catalog#'] && r['Catalog#'].toLowerCase() !== 'none' ? r['Catalog#'] : '', anno: year(r.Released), discogsId: r.release_id || '',
+    valutazione: +r.Rating || 0, condizione: goldmine(r['Collection Media Condition']), condCustodia: goldmine(r['Collection Sleeve Condition']),
+    note: r['Collection Notes'] || '', createdAt: Date.parse(r['Date Added']) || 0 };
+}
+function fromGoodreads(r) {
+  const digits = s => String(s || '').replace(/[^\dX]/gi, '');
+  const isbn = digits(r.ISBN13) || digits(r.ISBN);
+  let titolo = r.Title || '', serie = '', volume = '';
+  const m = titolo.match(/^(.*?)\s*\(([^()]+?),?\s*#(\d+(?:\.\d+)?)\)\s*$/);
+  if (m) { titolo = m[1]; serie = m[2].replace(/,\s*$/, '').trim(); volume = m[3]; }
+  const shelf = r['Exclusive Shelf'] || ''; const bind = r.Binding || '';
+  const when = Date.parse(r['Date Added']) || 0;
+  return { tipo: 'libro', titolo, autore: r.Author || '', codice: isbn, editore: r.Publisher || '', pagine: r['Number of Pages'] || '',
+    anno: r['Original Publication Year'] || r['Year Published'] || '', valutazione: +r['My Rating'] || 0, serie, volume,
+    formato: /hardcover/i.test(bind) ? 'Copertina rigida' : /mass market/i.test(bind) ? 'Tascabile' : /paperback/i.test(bind) ? 'Brossura' : /comic|graphic/i.test(bind) ? 'Fumetto' : '',
+    stato: shelf === 'read' ? 'fatto' : shelf === 'currently-reading' ? 'in' : shelf === 'to-read' ? 'da' : '',
+    desiderio: shelf === 'to-read' && !(+r['Owned Copies'] > 0),
+    tags: String(r.Bookshelves || '').split(',').map(t => t.trim()).filter(t => t && !['read', 'to-read', 'currently-reading'].includes(t)),
+    note: r['Private Notes'] || '',
+    commenti: r['My Review'] ? [{ id: uid(), testo: stripHtml(r['My Review']), data: Date.parse(r['Date Read']) || when || Date.now() }] : [],
+    coverUrl: isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg?default=false` : '', createdAt: when };
+}
+function fromLetterboxd(r, wl) {
+  return { tipo: 'film', titolo: r.Name || '', anno: r.Year || '', valutazione: r.Rating ? Math.min(5, Math.round(+r.Rating)) : 0,
+    stato: wl ? 'da' : 'fatto', desiderio: !!wl, createdAt: Date.parse(r.Date) || 0 };
+}
+function isDup(c, list) {
+  return list.some(e => (c.discogsId && e.discogsId && String(e.discogsId) === String(c.discogsId))
+    || (c.codice && e.codice && sameCode(c.codice, e.codice))
+    || (e.tipo === c.tipo && (!c.codice || !e.codice) && sameWork(e, c) && (!c.anno || !e.anno || String(c.anno) === String(e.anno))));
+}
+function importPreview(list, source, askOwn) {
+  const ex = live(); const fresh = []; const promote = []; let dups = 0;
+  list.forEach(c => {
+    // è nella lista desideri e ora ce l'hai: passa nella collezione invece di essere un doppione
+    if (!c.desiderio) { const w = ex.find(e => e.desiderio && isDup(c, [e])); if (w && !promote.some(p => p.w === w)) { promote.push({ w, c }); return; } }
+    if (isDup(c, ex) || isDup(c, fresh)) dups++; else fresh.push(c);
+  });
+  S.importList = fresh; S.importPromote = promote;
+  const total = fresh.length + promote.length;
+  const more = fresh.length - 5;
+  openSheet(`<h2>Importa da ${esc(source)}</h2>
+    <p class="lead">${fresh.length === 1 ? '1 pezzo nuovo' : fresh.length + ' pezzi nuovi'}${promote.length ? ` · ${promote.length === 1 ? '1 dai desideri alla collezione' : promote.length + ' dai desideri alla collezione'}` : ''}${dups ? ` · ${dups === 1 ? '1 già presente' : dups + ' già presenti'}` : ''}</p>
+    ${fresh.length ? `<div class="results">${fresh.slice(0, 5).map(c => rowHTML(c)).join('')}</div>${more > 0 ? `<p class="note" style="margin:8px 2px">…e altri ${more}</p>` : ''}` : ''}
+    ${!total ? `<button class="btn block" style="margin-top:14px" data-a="closeSheet">Chiudi</button>`
+      : askOwn ? `<p class="note" style="margin:14px 2px 8px">Questi film li hai in DVD o Blu-ray, o li metto nei desideri?</p>
+        <div class="stack"><button class="btn primary block" data-a="importGo" data-v="own">Li ho in collezione</button><button class="btn block" data-a="importGo" data-v="wish">Mettili nei desideri</button></div>`
+      : `<button class="btn primary block" style="margin-top:14px" data-a="importGo">${total === 1 ? 'Importa 1 pezzo' : `Importa ${total} pezzi`}</button>`}`);
+}
+async function importGo(el) {
+  const wish = el.dataset.v === 'wish'; const now = Date.now(); const list = S.importList || [];
+  const items = list.map((c, i) => normalize({ ...EMPTY(), ...c, desiderio: wish || !!c.desiderio, createdAt: c.createdAt || now - i, updatedAt: now }));
+  const moved = wish ? [] : (S.importPromote || []).map(({ w, c }) => {
+    Object.entries(c).forEach(([k, v]) => { if (k !== 'createdAt' && v !== '' && v != null && (w[k] === '' || w[k] == null || (Array.isArray(w[k]) && !w[k].length) || w[k] === 0)) w[k] = v; });
+    w.desiderio = false; w.createdAt = now; w.updatedAt = now; return w;
+  });
+  await DB.putMany('items', [...items, ...moved]); S.items.push(...items); S.importList = null; S.importPromote = null;
+  const n = items.length + moved.length;
+  closeSheet(); toast(n === 1 ? 'Importato 1 pezzo' : `Importati ${n} pezzi`); markDirty();
+  S.filter = 'tutti'; S.q = ''; go('list');
+  queueCovers(items.filter(i => !i.coverUrl).map(i => i.id));
+}
+async function importCsvFile(file) {
+  let rows;
+  try { rows = parseCSV(await file.text()); } catch (e) { return toast('File CSV non leggibile'); }
+  const h = rows[0] ? Object.keys(rows[0]) : [];
+  if (h.includes('Exclusive Shelf') || h.includes('Book Id')) return importPreview(rows.map(fromGoodreads).filter(c => c.titolo), 'Goodreads');
+  if (h.includes('Letterboxd URI')) { const wl = /watchlist/i.test(file.name || ''); return importPreview(rows.map(r => fromLetterboxd(r, wl)).filter(c => c.titolo), 'Letterboxd', !wl); }
+  if (h.includes('release_id') || h.includes('Catalog#')) return importPreview(rows.map(fromDiscogsCsv).filter(c => c.titolo && c.tipo), 'Discogs');
+  toast('Formato non riconosciuto: servono i CSV di Goodreads, Letterboxd o Discogs', 4500);
+}
+async function importDiscogs() {
+  const tok = cfg('discogsToken'); if (!tok) return toast('Serve il token Discogs');
+  openSheet(`<h2>Collezione Discogs</h2>${loadingHTML('Leggo la tua collezione…')}`);
+  try {
+    const me = await fj('https://api.discogs.com/oauth/identity?token=' + encodeURIComponent(tok));
+    const out = []; let page = 1, pages = 1;
+    do {
+      const d = await fj(`https://api.discogs.com/users/${encodeURIComponent(me.username)}/collection/folders/0/releases?per_page=100&page=${page}&sort=added&sort_order=desc&token=${encodeURIComponent(tok)}`);
+      pages = (d.pagination && d.pagination.pages) || 1;
+      (d.releases || []).forEach(r => out.push(fromDiscogsApi(r)));
+      page++; if (page <= pages) await sleep(1100);
+    } while (page <= pages && page <= 60);
+    if ($('#sheetWrap').classList.contains('hidden')) return;
+    if (!out.length) return openSheet(`<h2>Collezione Discogs</h2><p class="lead">La collezione di <b translate="no">${esc(me.username)}</b> su Discogs è vuota.</p>`);
+    importPreview(out.filter(c => c.tipo && c.titolo), 'Discogs');
+  } catch (e) {
+    openSheet(`<h2>Collezione Discogs</h2><p class="lead">Non riesco a leggere la collezione. Controlla il token e la connessione, poi riprova.</p>`);
+  }
+}
+
+/* ── Copertine mancanti (dopo un'importazione) ─────────────── */
+let coverRunning = false;
+async function queueCovers(ids) {
+  if (!ids.length) return;
+  const q = new Set([...((await getMeta('coverJob')) || []), ...ids]);
+  await setMeta('coverJob', [...q]); runCovers();
+}
+async function findCover(it) {
+  if (it.discogsId && cfg('discogsToken')) {
+    const r = await fj(`https://api.discogs.com/releases/${encodeURIComponent(it.discogsId)}?token=${encodeURIComponent(cfg('discogsToken'))}`);
+    return (r.images && r.images[0] && (r.images[0].uri || r.images[0].uri150)) || '';
+  }
+  if (isMusic(it.tipo)) { const L = await itunes([it.autore, it.titolo].filter(Boolean).join(' '), 'album'); const m = L.find(c => sameWork(c, it)); return m ? m.coverUrl : ''; }
+  if (it.tipo === 'film') {
+    const L = await itunes(it.titolo, 'movie').catch(() => []);
+    const m = L.find(c => norm(c.titolo) === norm(it.titolo) && (!it.anno || !c.anno || Math.abs(+c.anno - +it.anno) <= 1));
+    if (m && m.coverUrl) return m.coverUrl;
+    const W = await wikidataFilms(it.titolo);
+    const w = W.find(c => (!it.anno || !c.anno || String(c.anno) === String(it.anno)) && norm(c.titolo) === norm(it.titolo)) || W.find(c => it.anno && String(c.anno) === String(it.anno));
+    return w && w._wiki ? (await wikipediaInfo(w._wiki)).coverUrl : '';
+  }
+  if (it.tipo === 'libro') {
+    const L = await openLibrarySearch('title=' + encodeURIComponent(it.titolo) + (it.autore ? '&author=' + encodeURIComponent(String(it.autore).split(',')[0]) : ''));
+    const m = L.find(c => c.coverUrl); return m ? m.coverUrl : '';
+  }
+  return '';
+}
+async function runCovers() {
+  if (coverRunning || !navigator.onLine) return; coverRunning = true;
+  try {
+    const q = (await getMeta('coverJob')) || [];
+    while (q.length) {
+      const it = byId(q[0]);
+      if (it && !it.deleted && !it.coverUrl && !(it.foto || []).length) {
+        try {
+          const u = await findCover(it);
+          if (u) { it.coverUrl = u; await saveItem(it); if (S.view === 'list') renderGrid(); }
+        } catch (e) { if (!navigator.onLine) break; }
+        await sleep(1100);
+      }
+      q.shift(); await setMeta('coverJob', q);
+    }
+  } finally { coverRunning = false; }
+}
+
+/* ── Nuova versione disponibile e novità ───────────────────── */
+function showUpdateBar() {
+  if ($('#updateBar')) return;
+  const b = document.createElement('div'); b.id = 'updateBar'; b.className = 'updatebar'; b.setAttribute('role', 'status');
+  b.innerHTML = `<span>È pronta una nuova versione di Spinyl.</span><button data-a="reloadApp">Aggiorna</button>`;
+  document.body.appendChild(b);
+}
+const NEWS = {
+  '2.1': [
+    ['Quanto vale?', 'Scansionando un disco con “Ce l’ho già?” vedi subito i prezzi Discogs per ogni condizione; per libri e film i venduti su eBay e AbeBooks.'],
+    ['Tab Valore', 'Nella lista, il filtro “Valore”: totale per categoria, diviso per condizione, con il prezzo di ogni pezzo.'],
+  ],
+  '2.0': [
+    ['Ce l’ho già?', 'Il tasto con la spunta in alto: scansioni un codice in negozio e scopri subito se ce l’hai.'],
+    ['Scansione a raffica', 'Da “Aggiungi”: leggi tanti codici di fila e li controlli alla fine.'],
+    ['Valore di mercato', 'Per vinili, CD e cassette: il prezzo minimo in vendita su Discogs.'],
+    ['Statistiche e pesca a caso', 'Il tasto con il grafico: i numeri della collezione e cosa ascoltare stasera.'],
+    ['Letto, visto, ascoltato', 'Segna a che punto sei: trovi tutto nel filtro “Da scoprire”.'],
+    ['Serie ed etichette', 'Volumi di una saga (con quelli che mancano) ed etichette libere come “Autografato”.'],
+    ['Condividi e ricorda', 'Manda la lista desideri e ricorda i prestiti con un messaggio.'],
+    ['Importa ed esporta', 'Da Goodreads, Letterboxd e Discogs; tabella CSV per Excel.'],
+  ],
+};
+const verNum = v => String(v || '0').split('.').slice(0, 2).map(Number).reduce((a, n) => a * 1000 + (n || 0), 0);
+function maybeWhatsNew() {
+  let seen = null; try { seen = localStorage.getItem('seenVersion'); localStorage.setItem('seenVersion', VERSION); } catch (e) { return; }
+  if (seen === VERSION || (!seen && !live().length)) return;
+  const from = seen ? verNum(seen) : verNum('1.9');
+  const items = Object.keys(NEWS).filter(v => verNum(v) > from && verNum(v) <= verNum(VERSION)).flatMap(v => NEWS[v]);
+  if (!items.length) return;
+  setTimeout(() => openSheet(`<h2>Novità di Spinyl ${VERSION.replace(/\.0$/, '')}</h2>
+    <ul class="news">${items.map(([t, d]) => `<li><b>${esc(t)}</b><span>${esc(d)}</span></li>`).join('')}</ul>
+    <button class="btn primary block" style="margin-top:6px" data-a="closeSheet">Inizia</button>`), 600);
+}
+
 /* ── Azioni ────────────────────────────────────────────────── */
 const actions = {
   closeSheet, back: () => history.back(),
@@ -1220,15 +2107,24 @@ const actions = {
   add: () => sheetAdd(),
   addTipo: el => { S.addTipo = el.dataset.v; sheetAdd(); },
   addScan: () => { closeSheet(); const t = S.addTipo; Scanner.start(code => handleCode(code, t, false)); },
-  addSearch: () => { S.intoDraft = false; sheetSearch(S.addTipo); },
+  addSearch: () => { S.intoDraft = false; S.pickWish = false; sheetSearch(S.addTipo); },
   addManual: () => { closeSheet(); startDraft({ tipo: S.addTipo }, false); },
-  manualWithCode: () => { const c = S.searchCtx || {}; closeSheet(); startDraft({ tipo: c.tipo || S.addTipo, codice: c.code || '' }, S.intoDraft); },
-  pick: el => pickCandidate(S.candidates[+el.dataset.v]),
-  closeScanner: () => Scanner.stop(),
+  manualWithCode: () => {
+    const c = S.searchCtx || {}; closeSheet();
+    if (S.batchTarget) { S.batch = S.batch.filter(r => r.id !== S.batchTarget); S.batchTarget = null; saveBatch(); }
+    const wish = !!S.pickWish; S.pickWish = false;
+    startDraft({ tipo: c.tipo || S.addTipo, codice: c.code || '', desiderio: wish }, S.intoDraft);
+  },
+  pick: el => (S.batchTarget ? batchAssign(S.candidates[+el.dataset.v]) : pickCandidate(S.candidates[+el.dataset.v])),
+  closeScanner: () => {
+    const wasBatch = Scanner.continuous; Scanner.stop();
+    if (wasBatch && S.view !== 'batch' && S.batch.length) go('batch');
+    else if (wasBatch && S.view === 'batch') render();
+  },
   scanPhoto: () => $('#scanPhotoInput').click(),
 
   scanForDraft: () => { const t = S.draft.tipo; Scanner.start(code => { S.draft.codice = code; handleCode(code, t, true); }); },
-  searchForDraft: () => { S.intoDraft = true; sheetSearch(S.draft.tipo, [S.draft.titolo, isMusic(S.draft.tipo) ? S.draft.autore : ''].filter(Boolean).join(' ')); },
+  searchForDraft: () => { S.intoDraft = true; S.pickWish = false; sheetSearch(S.draft.tipo, [S.draft.titolo, isMusic(S.draft.tipo) ? S.draft.autore : ''].filter(Boolean).join(' ')); },
   draftTipo: el => { S.draft.tipo = el.dataset.v; render(); },
   rateDraft: el => { const v = +el.dataset.v; S.draft.valutazione = S.draft.valutazione === v ? 0 : v; el.parentElement.outerHTML = starsHTML(S.draft.valutazione, 'rateDraft'); },
   addPhoto: () => $('#photoInput').click(),
@@ -1238,6 +2134,7 @@ const actions = {
   cancelEdit: () => { discardDraftPhotos(); S.draft = null; history.back(); },
   save: async () => {
     const d = S.draft;
+    if (d.tagsTxt != null) { d.tags = parseTags(d.tagsTxt); delete d.tagsTxt; }
     if (!d.titolo.trim()) { toast('Serve almeno il titolo'); $('[data-f="titolo"]')?.focus(); return; }
     d.titolo = d.titolo.trim();
     const isNew = S.draftIsNew; S.newPhotos = []; S.draft = null;
@@ -1248,7 +2145,7 @@ const actions = {
     else history.back();
   },
 
-  edit: el => { const it = byId(el.dataset.id); S.draft = JSON.parse(JSON.stringify(it)); S.draft.foto = S.draft.foto || []; S.draft.commenti = S.draft.commenti || []; S.draftIsNew = false; S.newPhotos = []; go('edit'); },
+  edit: el => { const it = byId(el.dataset.id); S.draft = { ...EMPTY(), ...JSON.parse(JSON.stringify(it)) }; S.draft.foto = S.draft.foto || []; S.draft.commenti = S.draft.commenti || []; S.draft.tags = S.draft.tags || []; S.draftIsNew = false; S.newPhotos = []; go('edit'); },
   rateDetail: async el => { const it = byId(S.id); const v = +el.dataset.v; it.valutazione = it.valutazione === v ? 0 : v; await saveItem(it); el.parentElement.outerHTML = starsHTML(it.valutazione, 'rateDetail'); },
   expand: () => { S.expanded = true; render(); },
   returned: async () => { const it = byId(S.id); it.prestatoA = ''; it.prestatoIl = ''; await saveItem(it); render(); toast('Segnato come restituito'); },
@@ -1272,6 +2169,38 @@ const actions = {
     toast('Impostazioni salvate'); render();
   },
 };
+Object.assign(actions, {
+  check: () => startCheck(),
+  checkAdd,
+  gotIt,
+  stats: () => go('stats'),
+  pickTipo: el => { S.pickTipo = el.dataset.v; document.querySelectorAll('.pickchips .chip').forEach(c => c.classList.toggle('on', c === el)); },
+  pickRandom: () => pickRandom(),
+  draftStato: el => { S.draft.stato = S.draft.stato === el.dataset.v ? '' : el.dataset.v; render(); },
+  setStato: async el => { const it = byId(S.id); it.stato = it.stato === el.dataset.v ? '' : el.dataset.v; await saveItem(it); render(); },
+  addTag: el => { const cur = parseTags(S.draft.tagsTxt != null ? S.draft.tagsTxt : (S.draft.tags || []).join(',')); cur.push(el.dataset.v); S.draft.tagsTxt = cur.join(', '); render(); },
+  tag: el => { S.q = '#' + el.dataset.v; S.filter = 'tutti'; localStorage.setItem('filter', 'tutti'); go('list'); },
+  clearTag: () => { S.q = ''; const q = $('#q'); if (q) q.value = ''; renderGrid(); },
+  shareWish: () => shareWish(),
+  remind: () => remindLoan(),
+  valueNow: () => valueNow(),
+  valueAll: () => valueAll(),
+  addBatch: () => { S.batchTipo = S.addTipo; closeSheet(); startBatch(); },
+  openBatch: () => go('batch'),
+  batchScan: () => startBatch(),
+  batchTipo: el => { S.batchTipo = el.dataset.v; render(); },
+  batchRemove: el => { S.batch = S.batch.filter(r => r.id !== el.dataset.v); saveBatch(); render(); },
+  batchClear: () => { if (!confirm(tr('Svuotare la coda?'))) return; S.batch = []; saveBatch(); render(); },
+  batchChoose: el => { const r = S.batch.find(x => x.id === el.dataset.v); if (!r || !r.alts) return; S.batchTarget = r.id; S.candidates = r.alts; openSheet(`<h2>Quale di questi?</h2><div class="results">${resultsHTML(r.alts)}</div>`); },
+  batchSearch: el => { const r = S.batch.find(x => x.id === el.dataset.v); if (!r) return; S.intoDraft = false; S.pickWish = false; sheetSearch(r.tipo, '', r.code); S.batchTarget = r.id; },
+  batchSave: () => batchSave(),
+  batchForce: el => { const r = S.batch.find(x => x.id === el.dataset.v); if (r) { r.force = !r.force; saveBatch(); render(); } },
+  exportCsv: () => exportCsv(),
+  importCsv: () => $('#csvInput').click(),
+  importDiscogs: () => importDiscogs(),
+  importGo,
+  reloadApp: () => location.reload(),
+});
 // "Aggiungi un'altra copia": procedi ignorando il duplicato
 actions.dupAnyway = () => { const p = S.pendingCode; closeSheet(); handleCode(p.code, p.tipo, 'force'); };
 
@@ -1297,7 +2226,7 @@ document.addEventListener('submit', async e => {
   e.preventDefault();
   if (e.target.id === 'manualCodeForm') {
     const code = $('#manualCode').value.replace(/\D/g, ''); if (code.length < 8) { toast('Codice troppo corto'); return; }
-    Scanner.submit(code);
+    Scanner.submit(code); if (Scanner.continuous) $('#manualCode').value = '';
   }
   if (e.target.id === 'titleSearch') {
     const q = $('#titleQ').value.trim(); if (!q) return; $('#titleQ').blur();
@@ -1324,9 +2253,14 @@ $('#photoInput').addEventListener('change', async e => {
 });
 $('#scanPhotoInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f && Scanner.onCode) Scanner.fromPhoto(f); });
 $('#importInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importBackup(f); });
+$('#csvInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importCsvFile(f); });
 
-window.addEventListener('online', () => scheduleSync(800));
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') scheduleSync(800); });
+window.addEventListener('online', () => { scheduleSync(800); runBatch(); runCovers(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  scheduleSync(800);
+  if (S.swReg) S.swReg.update().catch(() => {}); // controlla se è uscita una nuova versione
+});
 
 /* ── Avvio ─────────────────────────────────────────────────── */
 (async function init() {
@@ -1336,9 +2270,21 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
   await loadItems();
   S.dirty = !!(await getMeta('dirty'));
   S.lastSync = (await getMeta('lastSync')) || 0;
+  S.batch = ((await getMeta('batch')) || []).map(r => (r.status === 'busy' ? { ...r, status: 'wait' } : r));
   history.replaceState({ view: 'list' }, '');
   if (window.I18N) I18N.start();
   render();
   if (cfg('clientId')) { if (Drive.token()) { sync(); if (justLogged) toast('Collegato a Google Drive'); } else setSync('login'); }
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  maybeWhatsNew();
+  runBatch(); runCovers();
+  if ('serviceWorker' in navigator) {
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+      S.swReg = reg;
+      reg.addEventListener('updatefound', () => {
+        const w = reg.installing; if (!w) return;
+        w.addEventListener('statechange', () => { if (w.state === 'activated' && hadController) showUpdateBar(); });
+      });
+    }).catch(() => {});
+  }
 })();
