@@ -1,8 +1,8 @@
 // Scaffale — service worker: l'app funziona anche offline
-const VERSION = 'scaffale-v1.0.0';
+const VERSION = 'scaffale-v1.2.0';
 const SHELL = ['./', './index.html', './app.css', './app.js', './config.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
-const LIBS = /(unpkg\.com|cdn\.jsdelivr\.net)\/npm\/@zxing|unpkg\.com\/@zxing/;
+const LIBS = /(unpkg\.com|cdn\.jsdelivr\.net|fastly\.jsdelivr\.net)\/(npm\/)?(@zxing|barcode-detector|zxing-wasm)/;
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

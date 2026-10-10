@@ -31,13 +31,17 @@
     <button class="scan-close" data-a="closeScanner" aria-label="Chiudi">✕</button>
     <p class="scan-hint">Inquadra il codice a barre</p>
   </div>
+  <div class="scan-bottom-wrap">
+  <button type="button" class="scan-photo" data-a="scanPhoto">📷 Scatta una foto del codice</button>
   <form class="scan-bottom" id="manualCodeForm">
     <input id="manualCode" inputmode="numeric" placeholder="…oppure digita il codice" autocomplete="off">
     <button type="submit">Cerca</button>
   </form>
+  </div>
 </div>
 
 <input type="file" id="photoInput" accept="image/*" multiple hidden>
+<input type="file" id="scanPhotoInput" accept="image/*" capture="environment" hidden>
 <input type="file" id="importInput" accept="application/json,.json" hidden>
 <div id="toast" class="toast" role="status"></div>
 

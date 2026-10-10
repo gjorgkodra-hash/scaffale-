@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '1.0.0';
+const VERSION = '1.2.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -13,17 +13,60 @@ const fmtDateTime = ts => new Date(ts).toLocaleString('it-IT', { day: 'numeric',
 
 /* ── Tipi di oggetto ───────────────────────────────────────── */
 const TIPI = {
-  libro:  { label: 'Libro', plural: 'Libri', autore: 'Autore',  editore: 'Editore',      codice: 'ISBN',           formati: ['Copertina rigida', 'Brossura', 'Tascabile', 'Edizione speciale', 'Fumetto'] },
-  musica: { label: 'Disco', plural: 'Dischi', autore: 'Artista', editore: 'Etichetta',    codice: 'Codice a barre', formati: ['Vinile LP', 'Vinile 45 giri', 'CD', 'Musicassetta', 'Box set'] },
-  film:   { label: 'Film',  plural: 'Film',   autore: 'Regista', editore: 'Distributore', codice: 'Codice a barre', formati: ['DVD', 'Blu-ray', '4K UHD', 'VHS', 'Box set'] },
+  libro:    { label: 'Libro',    plural: 'Libri',    autore: 'Autore',  editore: 'Editore',      codice: 'ISBN',
+              formati: ['Copertina rigida', 'Brossura', 'Tascabile', 'Edizione speciale', 'Fumetto'] },
+  vinile:   { label: 'Vinile',   plural: 'Vinili',   autore: 'Artista', editore: 'Etichetta',    codice: 'Codice a barre', musica: true,
+              formati: ['LP 33 giri', '45 giri (7")', 'EP', '10"', 'Maxi 12"', 'Box set'],
+              confezioni: ['Copertina singola', 'Gatefold', 'Busta interna stampata', 'Box'],
+              supporto: 'Disco', custodia: 'Copertina' },
+  cd:       { label: 'CD',       plural: 'CD',       autore: 'Artista', editore: 'Etichetta',    codice: 'Codice a barre', musica: true,
+              formati: ['CD', 'CD 8 cm', 'Enhanced CD', 'HDCD', 'SHM-CD', 'SACD ibrido', 'CD+G', 'CD-R'],
+              confezioni: ['Jewel case', 'Digipak', 'Slipcase', 'Cardboard sleeve', 'Box'],
+              supporto: 'Disco', custodia: 'Custodia e booklet' },
+  cassetta: { label: 'Cassetta', plural: 'Cassette', autore: 'Artista', editore: 'Etichetta',    codice: 'Codice a barre', musica: true,
+              formati: ['Cassetta', 'Microcassetta', 'DCC'],
+              confezioni: ['Custodia standard', 'Slipcase', 'Box'],
+              supporto: 'Nastro', custodia: 'J-card e custodia' },
+  film:     { label: 'Film',     plural: 'Film',     autore: 'Regista', editore: 'Distributore', codice: 'Codice a barre',
+              formati: ['DVD', 'Blu-ray', '4K UHD', 'VHS', 'Box set'] },
 };
-const CONDIZIONI = ['Nuovo', 'Come nuovo', 'Ottimo', 'Buono', 'Discreto', 'Rovinato'];
+const isMusic = t => !!(TIPI[t] && TIPI[t].musica);
+const CONDIZIONI = ['Nuovo / sigillato', 'Come nuovo', 'Ottimo', 'Buono', 'Discreto', 'Rovinato'];
+const SPARS = ['DDD', 'ADD', 'AAD', 'DDA'];
+const NASTRI = ['Tipo I (normale)', 'Tipo II (cromo)', 'Tipo IV (metal)'];
+const RIDUZIONI = ['Nessuna', 'Dolby B', 'Dolby C', 'Dolby S', 'Dolby HX Pro', 'dbx'];
+const ORIGINI = ['Originale stampata', 'Registrata in casa'];
+const SPUNTE = {
+  vinile:   [['inserto', 'Inserti / poster presenti']],
+  cd:       [['booklet', 'Booklet presente'], ['obi', 'Obi strip'], ['custodiaRotta', 'Custodia da sostituire']],
+  cassetta: [['jcard', 'J-card presente'], ['linguette', 'Linguette anti-registrazione intatte'], ['testato', 'Nastro testato, suona bene']],
+};
 const EMPTY = () => ({
   id: uid(), tipo: 'libro', titolo: '', autore: '', anno: '', editore: '', codice: '', formato: '', genere: '',
   descrizione: '', tracklist: '', pagine: '', durata: '', condizione: '', posizione: '', prezzo: '', valutazione: 0,
+  catalogo: '', paese: '', confezione: '', condCustodia: '', numDischi: '', spars: '', matrice: '', ifpi: '',
+  tipoNastro: '', riduzione: '', origine: '',
   note: '', commenti: [], foto: [], coverUrl: '', prestatoA: '', prestatoIl: '', desiderio: false,
   createdAt: Date.now(), updatedAt: Date.now(),
 });
+// Dati della versione 1.0: il tipo "musica" viene diviso in vinile / CD / cassetta
+function detectMusicTipo(s) {
+  s = String(s || '');
+  if (/cassett|musicassetta|\bdcc\b|microcassette|tape/i.test(s)) return 'cassetta';
+  if (/\bcd\b|compact disc|sacd|hdcd|shm-cd|cd-r|cd\+g/i.test(s)) return 'cd';
+  if (/vinyl|vinile|\blp\b|45 giri|7"|10"|12"/i.test(s)) return 'vinile';
+  return '';
+}
+function normalize(it) {
+  if (it && it.tipo === 'musica') {
+    it.tipo = detectMusicTipo(it.formato) || 'vinile';
+    if (it.formato === 'Vinile LP') it.formato = 'LP 33 giri';
+    else if (it.formato === 'Vinile 45 giri') it.formato = '45 giri (7")';
+    else if (it.formato === 'Musicassetta') it.formato = 'Cassetta';
+  }
+  if (it && it.condizione === 'Nuovo') it.condizione = 'Nuovo / sigillato';
+  return it;
+}
 
 /* ── Icone ─────────────────────────────────────────────────── */
 const ICON = {
@@ -85,7 +128,12 @@ const S = {
 };
 const live = () => S.items.filter(i => !i.deleted);
 const byId = id => S.items.find(i => i.id === id);
-async function loadItems() { S.items = await DB.all('items'); }
+async function loadItems() {
+  const all = await DB.all('items'); const fix = [];
+  all.forEach(i => { const before = i.tipo + '|' + i.condizione; normalize(i); if (before !== i.tipo + '|' + i.condizione) fix.push(i); });
+  if (fix.length) await DB.putMany('items', fix);
+  S.items = all;
+}
 
 /* ── Navigazione ───────────────────────────────────────────── */
 function go(view, id, replace) {
@@ -168,15 +216,15 @@ function syncBtn() {
 }
 
 function counts() {
-  const L = live(); const c = { tutti: 0, libro: 0, musica: 0, film: 0, desideri: 0, prestito: 0 };
+  const L = live(); const c = { tutti: 0, libro: 0, vinile: 0, cd: 0, cassetta: 0, film: 0, desideri: 0, prestito: 0 };
   L.forEach(i => { if (i.desiderio) c.desideri++; else { c.tutti++; c[i.tipo]++; } if (i.prestatoA) c.prestito++; });
   return c;
 }
 
 function viewList() {
   const c = counts();
-  const chips = [['tutti', 'Tutti'], ['libro', 'Libri'], ['musica', 'Dischi'], ['film', 'Film'], ['desideri', 'Desideri'], ['prestito', 'In prestito']]
-    .filter(([k]) => k === 'tutti' || k === 'libro' || k === 'musica' || k === 'film' || c[k] > 0)
+  const chips = [['tutti', 'Tutti'], ...Object.entries(TIPI).map(([k, v]) => [k, v.plural]), ['desideri', 'Desideri'], ['prestito', 'In prestito']]
+    .filter(([k]) => !['desideri', 'prestito'].includes(k) || c[k] > 0)
     .map(([k, l]) => `<button class="chip ${S.filter === k ? 'on' : ''}" data-a="filter" data-v="${k}">${l}<b>${c[k]}</b></button>`).join('');
   const needLogin = cfg('clientId') && S.syncState === 'login' && S.dirty;
   return `
@@ -244,11 +292,19 @@ function starsHTML(n, action, small) {
 
 function viewDetail(it) {
   const T = TIPI[it.tipo] || TIPI.libro;
+  const M = isMusic(it.tipo);
+  const spunte = (SPUNTE[it.tipo] || []).filter(([k]) => it[k]).map(([, l]) => l).join(' · ');
   const facts = [
-    [T.autore, it.autore], ['Anno', it.anno], [T.editore, it.editore], ['Formato', it.formato], ['Genere', it.genere],
-    ['Pagine', it.tipo === 'libro' && it.pagine], ['Durata', it.tipo === 'film' && it.durata],
-    ['Condizione', it.condizione], ['Posizione', it.posizione], ['Prezzo pagato', it.prezzo && (String(it.prezzo).match(/€/) ? it.prezzo : it.prezzo + ' €')],
-    [T.codice, it.codice], ['Aggiunto il', fmtDate(it.createdAt)],
+    [T.autore, it.autore], ['Anno', it.anno], [T.editore, it.editore], ['N. catalogo', M && it.catalogo], ['Paese', M && it.paese],
+    ['Formato', it.formato], ['Confezione', M && it.confezione], ['Dischi', M && it.numDischi && +it.numDischi > 1 && it.numDischi],
+    ['Codice SPARS', it.tipo === 'cd' && it.spars], ['Nastro', it.tipo === 'cassetta' && it.tipoNastro],
+    ['Riduzione rumore', it.tipo === 'cassetta' && it.riduzione], ['Origine', it.tipo === 'cassetta' && it.origine],
+    ['Genere', it.genere], ['Pagine', it.tipo === 'libro' && it.pagine], ['Durata', it.tipo === 'film' && it.durata],
+    [M ? 'Condizione ' + T.supporto.toLowerCase() : 'Condizione', it.condizione], ['Condizione ' + (T.custodia || '').toLowerCase(), M && it.condCustodia],
+    ['Dettagli', spunte],
+    ['Posizione', it.posizione], ['Prezzo pagato', it.prezzo && (String(it.prezzo).match(/€/) ? it.prezzo : it.prezzo + ' €')],
+    [T.codice, it.codice], ['Matrice / runout', M && it.matrice], ['Codici IFPI', it.tipo === 'cd' && it.ifpi],
+    ['Aggiunto il', fmtDate(it.createdAt)],
   ].filter(([, v]) => v);
   const desc = it.descrizione || '';
   const longDesc = desc.length > 320;
@@ -270,7 +326,7 @@ function viewDetail(it) {
   <div class="detail">
     ${it.prestatoA ? `<div class="loanbox">In prestito a <b>${esc(it.prestatoA)}</b>${it.prestatoIl ? ` dal ${esc(fmtDate(it.prestatoIl))}` : ''}<button data-a="returned">Restituito</button></div>` : ''}
     ${desc ? `<div class="section"><h3>Descrizione</h3><div class="prose ${longDesc && !S.expanded ? 'clamp' : ''}">${esc(desc)}</div>${longDesc && !S.expanded ? '<button class="more" data-a="expand">Leggi tutto</button>' : ''}</div>` : ''}
-    ${it.tipo === 'musica' && it.tracklist ? `<div class="section"><h3>Tracce</h3><div class="tracks">${esc(it.tracklist)}</div></div>` : ''}
+    ${isMusic(it.tipo) && it.tracklist ? `<div class="section"><h3>Tracce</h3><div class="tracks">${esc(it.tracklist)}</div></div>` : ''}
     ${facts.length ? `<div class="section"><dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>` : ''}
     ${it.foto && it.foto.length ? `<div class="section"><h3>Foto</h3><div class="photos">${it.foto.map(p => `<button class="photo" data-a="viewPhoto" data-v="${esc(p)}"><img data-photo="${esc(p)}" alt="" hidden></button>`).join('')}</div></div>` : ''}
     ${it.note ? `<div class="section"><h3>Note</h3><div class="prose">${esc(it.note)}</div></div>` : ''}
@@ -290,13 +346,28 @@ function viewEdit() {
   const posizioni = [...new Set(live().map(i => i.posizione).filter(Boolean))];
   const generi = [...new Set(live().map(i => i.genere).filter(Boolean))];
   const f = (name, label, attrs = '') => `<label class="field"><span>${label}</span><input data-f="${name}" value="${esc(d[name])}" ${attrs}></label>`;
+  const sel = (name, label, opts) => `<label class="field"><span>${label}</span><select data-f="${name}"><option value=""></option>${opts.map(o => `<option ${d[name] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}${d[name] && !opts.includes(d[name]) ? `<option selected>${esc(d[name])}</option>` : ''}</select></label>`;
+  const chk = (name, label) => `<label class="field inline"><span>${label}</span><input type="checkbox" data-f="${name}" ${d[name] ? 'checked' : ''}></label>`;
+  const M = isMusic(d.tipo);
+  const edizione = !M ? '' : `
+    <div class="section">
+      <h3>Edizione</h3>
+      <div class="two">${sel('confezione', 'Confezione', T.confezioni)}${f('numDischi', d.tipo === 'cassetta' ? 'N. cassette' : 'N. dischi', 'inputmode="numeric"')}</div>
+      ${d.tipo === 'cd' ? `<div class="two">${sel('spars', 'Codice SPARS', SPARS)}<div></div></div>` : ''}
+      ${d.tipo === 'cassetta' ? `<div class="two">${sel('tipoNastro', 'Tipo di nastro', NASTRI)}${sel('riduzione', 'Riduzione rumore', RIDUZIONI)}</div>${sel('origine', 'Origine', ORIGINI)}` : ''}
+      ${(SPUNTE[d.tipo] || []).map(([k, l]) => chk(k, l)).join('')}
+      ${d.tipo !== 'cassetta' ? `<details class="adv" ${d.matrice || d.ifpi ? 'open' : ''}><summary>Dettagli avanzati (per collezionisti)</summary>
+        <label class="field"><span>Matrice / runout (scritte incise vicino al centro)</span><textarea data-f="matrice" rows="2">${esc(d.matrice)}</textarea></label>
+        ${d.tipo === 'cd' ? `<label class="field"><span>Codici IFPI (mastering / mould SID)</span><textarea data-f="ifpi" rows="2">${esc(d.ifpi)}</textarea></label>` : ''}
+      </details>` : ''}
+    </div>`;
   return `
   <header class="top">
     <button class="iconbtn" data-a="cancelEdit" aria-label="Annulla">${ic('back')}</button>
     <div class="grow title-sm">${S.draftIsNew ? 'Nuovo pezzo' : 'Modifica'}</div>
   </header>
   <div class="form">
-    <div class="seg">${Object.entries(TIPI).map(([k, v]) => `<button type="button" class="${d.tipo === k ? 'on' : ''}" data-a="draftTipo" data-v="${k}">${v.label}</button>`).join('')}</div>
+    <div class="seg seg5">${Object.entries(TIPI).map(([k, v]) => `<button type="button" class="${d.tipo === k ? 'on' : ''}" data-a="draftTipo" data-v="${k}">${v.label}</button>`).join('')}</div>
     <div class="quick">
       <button class="btn" data-a="scanForDraft">${ic('scan', 18)}Scansiona</button>
       <button class="btn" data-a="searchForDraft">${ic('search', 18)}Cerca online</button>
@@ -307,6 +378,7 @@ function viewEdit() {
       ${f('titolo', 'Titolo *', 'autocomplete="off"')}
       ${f('autore', T.autore)}
       <div class="two">${f('anno', 'Anno', 'inputmode="numeric"')}${f('editore', T.editore)}</div>
+      ${M ? `<div class="two">${f('catalogo', 'N. catalogo')}${f('paese', 'Paese')}</div>` : ''}
       <div class="two">
         <label class="field"><span>Formato</span><input data-f="formato" list="dl-formati" value="${esc(d.formato)}"></label>
         <label class="field"><span>Genere</span><input data-f="genere" list="dl-generi" value="${esc(d.genere)}"></label>
@@ -315,8 +387,10 @@ function viewEdit() {
       ${d.tipo === 'film' ? f('durata', 'Durata') : ''}
       <label class="field"><span>${T.codice}</span><div class="with-btn"><input data-f="codice" value="${esc(d.codice)}" inputmode="numeric"><button type="button" data-a="scanForDraft" aria-label="Scansiona">${ic('scan')}</button></div></label>
       <label class="field"><span>Descrizione</span><textarea data-f="descrizione" rows="4">${esc(d.descrizione)}</textarea></label>
-      ${d.tipo === 'musica' ? `<label class="field"><span>Tracce</span><textarea data-f="tracklist" rows="4">${esc(d.tracklist)}</textarea></label>` : ''}
+      ${isMusic(d.tipo) ? `<label class="field"><span>Tracce</span><textarea data-f="tracklist" rows="4">${esc(d.tracklist)}</textarea></label>` : ''}
     </div>
+
+    ${edizione}
 
     <div class="section">
       <h3>Foto</h3>
@@ -329,10 +403,8 @@ function viewEdit() {
 
     <div class="section">
       <h3>La mia copia</h3>
-      <div class="two">
-        <label class="field"><span>Condizione</span><select data-f="condizione"><option value=""></option>${CONDIZIONI.map(c => `<option ${d.condizione === c ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
-        ${f('prezzo', 'Prezzo pagato', 'inputmode="decimal"')}
-      </div>
+      ${M ? `<div class="two">${sel('condizione', 'Condizione ' + T.supporto.toLowerCase(), CONDIZIONI)}${sel('condCustodia', 'Condizione ' + T.custodia.toLowerCase(), CONDIZIONI)}</div>${f('prezzo', 'Prezzo pagato', 'inputmode="decimal"')}`
+        : `<div class="two">${sel('condizione', 'Condizione', CONDIZIONI)}${f('prezzo', 'Prezzo pagato', 'inputmode="decimal"')}</div>`}
       <label class="field"><span>Posizione (es. Salotto, scaffale 2)</span><input data-f="posizione" list="dl-pos" value="${esc(d.posizione)}"></label>
       <div class="field"><span>Il mio voto</span>${starsHTML(d.valutazione || 0, 'rateDraft')}</div>
       <label class="field"><span>Note</span><textarea data-f="note" rows="3">${esc(d.note)}</textarea></label>
@@ -381,10 +453,10 @@ function viewSettings() {
     </div>
 
     <div class="section"><h3>Ricerca online</h3>
-      <p class="note" style="margin:10px 0">Libri: Google Libri + Open Library. Dischi: MusicBrainz + Apple Music. Film: Apple TV. Con le chiavi facoltative qui sotto la ricerca migliora.</p>
+      <p class="note" style="margin:10px 0">Libri: Google Libri + Open Library. Vinili, CD e cassette: MusicBrainz + Apple Music (+ Discogs con il token). Film: Apple TV. Con le chiavi facoltative qui sotto la ricerca migliora.</p>
       <details class="adv"><summary>Chiavi facoltative e configurazione avanzata</summary>
         <label class="field"><span>Chiave API TMDB (film, consigliata)</span><input id="cfg-tmdbKey" value="${esc(cfg('tmdbKey'))}" autocomplete="off"></label>
-        <label class="field"><span>Token Discogs (vinili/CD)</span><input id="cfg-discogsToken" value="${esc(cfg('discogsToken'))}" autocomplete="off"></label>
+        <label class="field"><span>Token Discogs (vinili, CD, cassette)</span><input id="cfg-discogsToken" value="${esc(cfg('discogsToken'))}" autocomplete="off"></label>
         <label class="field"><span>Client ID Google</span><input id="cfg-clientId" value="${esc(cfg('clientId'))}" autocomplete="off"></label>
         <div class="stack" style="padding-top:12px"><button class="btn block" data-a="saveCfg">Salva impostazioni</button></div>
       </details>
@@ -401,7 +473,7 @@ function openSheet(html) {
 function closeSheet() { $('#sheetWrap').classList.add('hidden'); $('#sheet').innerHTML = ''; }
 
 function sheetAdd() {
-  const tipoSeg = `<div class="seg" style="margin-bottom:14px">${Object.entries(TIPI).map(([k, v]) => `<button class="${S.addTipo === k ? 'on' : ''}" data-a="addTipo" data-v="${k}">${v.label}</button>`).join('')}</div>`;
+  const tipoSeg = `<div class="seg seg5" style="margin-bottom:14px">${Object.entries(TIPI).map(([k, v]) => `<button class="${S.addTipo === k ? 'on' : ''}" data-a="addTipo" data-v="${k}">${v.label}</button>`).join('')}</div>`;
   openSheet(`<h2>Aggiungi</h2>${tipoSeg}
     <button class="bigbtn" data-a="addScan"><span class="ic">${ic('scan')}</span><span><b>Scansiona il codice a barre</b><small>Il modo più veloce: compila tutto da solo</small></span></button>
     <button class="bigbtn" data-a="addSearch"><span class="ic">${ic('search')}</span><span><b>Cerca per titolo</b><small>Se il codice manca o non viene trovato</small></span></button>
@@ -410,9 +482,9 @@ function sheetAdd() {
 
 function sheetSearch(tipo, prefill = '', code = '') {
   S.searchCtx = { tipo, code };
-  openSheet(`<h2>Cerca ${TIPI[tipo].label.toLowerCase()}</h2>
-    ${code ? `<p class="lead">Codice ${esc(code)} non trovato. Prova con il titolo${tipo === 'musica' ? ' e l’artista' : ''}.</p>` : ''}
-    <form class="searchform" id="titleSearch"><input id="titleQ" type="search" placeholder="${tipo === 'musica' ? 'Artista e titolo' : tipo === 'libro' ? 'Titolo o autore' : 'Titolo del film'}" value="${esc(prefill)}" autocomplete="off"><button class="btn primary" type="submit">Cerca</button></form>
+  openSheet(`<h2>Cerca ${tipo === 'cd' ? 'CD' : TIPI[tipo].label.toLowerCase()}</h2>
+    ${code ? `<p class="lead">Codice ${esc(code)} non trovato. Prova con il titolo${isMusic(tipo) ? ' e l’artista' : ''}.</p>` : ''}
+    <form class="searchform" id="titleSearch"><input id="titleQ" type="search" placeholder="${isMusic(tipo) ? 'Artista e titolo' : tipo === 'libro' ? 'Titolo o autore' : 'Titolo del film'}" value="${esc(prefill)}" autocomplete="off"><button class="btn primary" type="submit">Cerca</button></form>
     <div id="results" class="results"></div>
     ${code ? `<button class="btn block" style="margin-top:12px" data-a="manualWithCode">Inserisci a mano</button>` : ''}`);
   setTimeout(() => $('#titleQ')?.focus(), 250);
@@ -466,38 +538,51 @@ async function openLibraryIsbn(isbn) {
     coverUrl: b.cover ? (b.cover.large || b.cover.medium || '') : '', codice: isbn, descrizione: '', fonte: 'Open Library' }];
 }
 
-// Musica
-function mbFormat(r) {
+// Musica — riconosce vinile / CD / cassetta e i dettagli del formato
+function mbMedia(r) {
   const f = ((r.media || [])[0] || {}).format || '';
-  if (/7"/.test(f)) return 'Vinile 45 giri';
-  if (/vinyl/i.test(f)) return 'Vinile LP';
-  if (/cd/i.test(f)) return 'CD';
-  if (/cassette/i.test(f)) return 'Musicassetta';
-  return '';
+  const tipo = detectMusicTipo(f) || (/vinyl/i.test(f) ? 'vinile' : '');
+  let formato = '';
+  if (tipo === 'vinile') formato = /7"/.test(f) ? '45 giri (7")' : /10"/.test(f) ? '10"' : 'LP 33 giri';
+  else if (tipo === 'cd') formato = /8cm/i.test(f) ? 'CD 8 cm' : /enhanced/i.test(f) ? 'Enhanced CD' : /hdcd/i.test(f) ? 'HDCD' : /shm/i.test(f) ? 'SHM-CD' : /sacd/i.test(f) ? 'SACD ibrido' : /cd\+g/i.test(f) ? 'CD+G' : /cd-r/i.test(f) ? 'CD-R' : 'CD';
+  else if (tipo === 'cassetta') formato = /micro/i.test(f) ? 'Microcassetta' : /dcc|digital compact/i.test(f) ? 'DCC' : 'Cassetta';
+  return { tipo, formato, numDischi: (r.media || []).length > 1 ? String(r.media.length) : '' };
 }
 async function musicBrainz(query) {
-  const d = await fj('https://musicbrainz.org/ws/2/release/?fmt=json&limit=10&query=' + encodeURIComponent(query));
-  return (d.releases || []).map(r => ({
-    tipo: 'musica', titolo: r.title, autore: (r['artist-credit'] || []).map(a => (a.name || a.artist?.name || '') + (a.joinphrase || '')).join(''),
-    anno: year(r.date), editore: ((r['label-info'] || [])[0]?.label?.name) || '', formato: mbFormat(r), codice: r.barcode || '',
-    coverUrl: `https://coverartarchive.org/release/${r.id}/front-500`, descrizione: '', genere: '', fonte: 'MusicBrainz', _mbid: r.id,
-    sub: [r.country, (r.media || []).map(m => m.format).filter(Boolean).join(' + ')].filter(Boolean).join(' · '),
-  }));
+  const d = await fj('https://musicbrainz.org/ws/2/release/?fmt=json&limit=12&query=' + encodeURIComponent(query));
+  return (d.releases || []).map(r => {
+    const m = mbMedia(r); const li = (r['label-info'] || [])[0] || {};
+    return {
+      tipo: m.tipo, titolo: r.title, autore: (r['artist-credit'] || []).map(a => (a.name || a.artist?.name || '') + (a.joinphrase || '')).join(''),
+      anno: year(r.date), editore: li.label?.name || '', catalogo: li['catalog-number'] || '', paese: r.country || '',
+      formato: m.formato, numDischi: m.numDischi, codice: r.barcode || '',
+      coverUrl: `https://coverartarchive.org/release/${r.id}/front-500`, descrizione: '', genere: '', fonte: 'MusicBrainz', _mbid: r.id,
+      sub: [r.country, (r.media || []).map(m => m.format).filter(Boolean).join(' + ')].filter(Boolean).join(' · '),
+    };
+  });
 }
-function discogsFormat(arr) {
-  const s = (arr || []).join(' ');
-  if (/7"/.test(s)) return 'Vinile 45 giri';
-  if (/vinyl|LP/i.test(s)) return 'Vinile LP';
-  if (/CD/.test(s)) return 'CD';
-  if (/cassette/i.test(s)) return 'Musicassetta';
-  return '';
+function discogsMedia(arr, qty) {
+  const s = (arr || []).join(' | ');
+  const tipo = /cassette/i.test(s) ? 'cassetta' : /\bCD\b|CDr|SACD|HDCD/.test(s) ? 'cd' : /vinyl|LP/i.test(s) ? 'vinile' : '';
+  const out = { tipo, formato: '' };
+  if (tipo === 'vinile') out.formato = /7"/.test(s) ? '45 giri (7")' : /10"/.test(s) ? '10"' : /12"/.test(s) && !/LP/.test(s) ? 'Maxi 12"' : /\bEP\b/.test(s) ? 'EP' : 'LP 33 giri';
+  if (tipo === 'cd') out.formato = /SACD/.test(s) ? 'SACD ibrido' : /HDCD/.test(s) ? 'HDCD' : /SHM/.test(s) ? 'SHM-CD' : /CD\+G/.test(s) ? 'CD+G' : /CDr/.test(s) ? 'CD-R' : /Enhanced/i.test(s) ? 'Enhanced CD' : /Mini/i.test(s) ? 'CD 8 cm' : 'CD';
+  if (tipo === 'cassetta') {
+    out.formato = /Microcassette/i.test(s) ? 'Microcassetta' : /DCC/.test(s) ? 'DCC' : 'Cassetta';
+    out.tipoNastro = /Metal/i.test(s) ? 'Tipo IV (metal)' : /Chrome|CrO2/i.test(s) ? 'Tipo II (cromo)' : /Ferric|Normal/i.test(s) ? 'Tipo I (normale)' : '';
+    out.riduzione = /HX Pro/i.test(s) ? 'Dolby HX Pro' : /Dolby C/i.test(s) ? 'Dolby C' : /Dolby S/i.test(s) ? 'Dolby S' : /Dolby/i.test(s) ? 'Dolby B' : /dbx/i.test(s) ? 'dbx' : '';
+  }
+  if (/Box Set/i.test(s) && tipo === 'vinile') out.formato = 'Box set';
+  if (qty && +qty > 1) out.numDischi = String(qty);
+  return out;
 }
 async function discogs(params) {
   const tok = cfg('discogsToken'); if (!tok) return [];
-  const d = await fj(`https://api.discogs.com/database/search?type=release&per_page=10&${params}&token=${encodeURIComponent(tok)}`);
+  const d = await fj(`https://api.discogs.com/database/search?type=release&per_page=12&${params}&token=${encodeURIComponent(tok)}`);
   return (d.results || []).map(r => {
     const parts = String(r.title || '').split(' - '); const art = parts.length > 1 ? parts.shift() : '';
-    return { tipo: 'musica', titolo: parts.join(' - '), autore: art, anno: r.year || '', editore: (r.label || [])[0] || '', formato: discogsFormat(r.format),
+    return { ...discogsMedia(r.format, r.format_quantity), titolo: parts.join(' - '), autore: art, anno: r.year || '', editore: (r.label || [])[0] || '',
+      catalogo: r.catno && r.catno !== 'none' ? r.catno : '', paese: r.country || '',
       genere: [...(r.genre || []), ...(r.style || [])].slice(0, 4).join(', '), coverUrl: r.cover_image || '', codice: (r.barcode || [])[0] || '',
       descrizione: '', fonte: 'Discogs', _discogsId: r.id, sub: [(r.format || []).join(', '), r.country].filter(Boolean).join(' · ') };
   });
@@ -505,7 +590,7 @@ async function discogs(params) {
 async function itunes(term, entity) {
   const d = await fj(`https://itunes.apple.com/search?country=it&lang=it_it&limit=10&entity=${entity}&term=${encodeURIComponent(term)}`);
   return (d.results || []).map(r => ({
-    tipo: entity === 'movie' ? 'film' : 'musica',
+    tipo: entity === 'movie' ? 'film' : '',
     titolo: entity === 'album' ? r.collectionName : r.trackName, autore: r.artistName || '', anno: year(r.releaseDate),
     descrizione: stripHtml(r.longDescription || r.description || ''), genere: r.primaryGenreName || '',
     coverUrl: (r.artworkUrl100 || '').replace(/100x100bb/, '600x600bb'),
@@ -530,13 +615,26 @@ async function upcLookup(code) {
   return (d.items || []).map(i => ({ titolo: i.title || '', descrizione: i.description || '', coverUrl: (i.images || [])[0] || '', editore: i.brand || '' }));
 }
 const guessFilmFormat = s => /4k|uhd/i.test(s) ? '4K UHD' : /blu-?ray/i.test(s) ? 'Blu-ray' : /dvd/i.test(s) ? 'DVD' : /vhs/i.test(s) ? 'VHS' : '';
-const guessMusicFormat = s => /vinyl|vinile|\blp\b/i.test(s) ? 'Vinile LP' : /\bcd\b/i.test(s) ? 'CD' : '';
+// Mette prima i risultati del formato scelto e allinea tipo/formato alla tab selezionata
+function fitMusic(list, tipo) {
+  const ok = list.filter(c => c.tipo === tipo), other = list.filter(c => c.tipo !== tipo);
+  other.forEach(c => { c.formato = ''; delete c.tipoNastro; delete c.riduzione; });
+  const out = [...ok, ...other];
+  out.forEach(c => { c.tipo = tipo; if (!c.formato) c.formato = TIPI[tipo].formati[0]; });
+  return out;
+}
 
 async function searchByTitle(tipo, q) {
   if (tipo === 'libro') return settled([googleBooks(q)]);
-  if (tipo === 'musica') {
-    const [dc, mb, it] = await Promise.all([settled([discogs('q=' + encodeURIComponent(q))]), settled([musicBrainz(q)]), settled([itunes(q, 'album')])]);
-    return [...dc.slice(0, 6), ...mb.slice(0, 6), ...it.slice(0, 5)];
+  if (isMusic(tipo)) {
+    const fmt = { vinile: 'Vinyl', cd: 'CD', cassetta: 'Cassette' }[tipo];
+    const mbFmt = { vinile: 'vinyl', cd: 'cd', cassetta: 'cassette' }[tipo];
+    const [dc, mb, it] = await Promise.all([
+      settled([discogs('q=' + encodeURIComponent(q) + '&format=' + fmt)]),
+      settled([musicBrainz(`${q} AND format:${mbFmt}`)]).then(r => r.length ? r : settled([musicBrainz(q)])),
+      settled([itunes(q, 'album')]),
+    ]);
+    return fitMusic([...dc.slice(0, 6), ...mb.slice(0, 6), ...it.slice(0, 4)], tipo);
   }
   const t = await settled([tmdb(q)]);
   return t.length ? t : settled([itunes(q, 'movie')]);
@@ -555,7 +653,7 @@ async function searchByCode(tipo, code) {
     });
     return { tipo: 'libro', list };
   }
-  if (tipo === 'musica') {
+  if (isMusic(tipo)) {
     const variants = [code]; if (code.length === 13 && code[0] === '0') variants.push(code.slice(1)); if (code.length === 12) variants.push('0' + code);
     let list = await settled([discogs('barcode=' + code), musicBrainz(variants.map(v => 'barcode:' + v).join(' OR '))]);
     if (!list.length) {
@@ -563,12 +661,17 @@ async function searchByCode(tipo, code) {
       if (up[0]) {
         const t = cleanProductTitle(up[0].titolo);
         list = (await settled([itunes(t, 'album')])).slice(0, 5);
-        list.forEach(c => { c.formato = guessMusicFormat(up[0].titolo); });
-        if (!list.length) list = [{ tipo: 'musica', ...up[0], titolo: t, formato: guessMusicFormat(up[0].titolo), fonte: 'UPCitemdb' }];
+        if (!list.length) list = [{ ...up[0], titolo: t, fonte: 'UPCitemdb' }];
+        const guessed = detectMusicTipo(up[0].titolo);
+        list.forEach(c => { c.tipo = guessed || tipo; });
       }
     }
+    // Se il codice appartiene chiaramente a un altro formato musicale, avvisa e usa quello giusto
+    const found = list.find(c => c.tipo && isMusic(c.tipo));
+    const realTipo = list.length && found && !list.some(c => c.tipo === tipo) ? found.tipo : tipo;
+    list = fitMusic(list, realTipo);
     list.forEach(c => { c.codice = code; });
-    return { tipo, list };
+    return { tipo: realTipo, list, switched: realTipo !== tipo };
   }
   // film
   const up = await settled([upcLookup(code)]);
@@ -599,6 +702,14 @@ async function enrich(c) {
       c.tracklist = (r.tracklist || []).filter(t => t.type_ !== 'heading').map(t => `${t.position ? t.position + '. ' : ''}${t.title}${t.duration ? ' (' + t.duration + ')' : ''}`).join('\n');
       if (r.notes) c.descrizione = stripHtml(r.notes).slice(0, 2000);
       if (r.images && r.images[0]) c.coverUrl = r.images[0].uri || c.coverUrl;
+      const ids = r.identifiers || [];
+      const pick = rx => ids.filter(x => rx.test(x.type || '')).map(x => (x.description ? x.description + ': ' : '') + x.value);
+      const spars = ids.find(x => /SPARS/i.test(x.type || ''));
+      if (spars && SPARS.includes(String(spars.value).trim().toUpperCase())) c.spars = String(spars.value).trim().toUpperCase();
+      const mx = pick(/Matrix/i); if (mx.length) c.matrice = mx.join('\n');
+      const sid = pick(/SID/i); if (sid.length) c.ifpi = sid.join('\n');
+      if (!c.catalogo && r.labels && r.labels[0] && r.labels[0].catno !== 'none') c.catalogo = r.labels[0].catno;
+      if (!c.paese && r.country) c.paese = r.country;
     } else if (c._itunesCollection) {
       const r = await fj(`https://itunes.apple.com/lookup?entity=song&country=it&id=${c._itunesCollection}`);
       c.tracklist = (r.results || []).filter(x => x.wrapperType === 'track').map(t => `${t.trackNumber}. ${t.trackName}`).join('\n');
@@ -635,6 +746,7 @@ async function handleCode(code, tipo, intoDraft) {
   openSheet(`<h2>Cerco ${esc(code)}…</h2>${loadingHTML('Sto cercando nei database online')}`);
   let res;
   try { res = await searchByCode(tipo, code); } catch (e) { res = { tipo, list: [] }; }
+  if (res.switched) toast(`Questo codice è di ${{ vinile: 'un vinile', cd: 'un CD', cassetta: 'una cassetta' }[res.tipo]}: l'ho spostato lì`, 3500);
   if (!res.list.length) {
     if (!navigator.onLine) { closeSheet(); toast('Sei offline: compila a mano, potrai cercare dopo'); return startDraft({ tipo: res.tipo, codice: code }, S.intoDraft); }
     sheetSearch(res.tipo, '', code); S.searchCtx.code = code; return;
@@ -662,61 +774,145 @@ function startDraft(data, intoDraft) {
 }
 
 /* ── Scanner (fotocamera) ──────────────────────────────────── */
+// 1) lettore integrato del browser (Chrome Android)  2) zxing-cpp in WebAssembly (iPhone)  3) ZXing JS come ultima risorsa
+const BD_URLS = ['https://cdn.jsdelivr.net/npm/barcode-detector@3.0.8/dist/iife/ponyfill.min.js', 'https://unpkg.com/barcode-detector@3.0.8/dist/iife/ponyfill.min.js'];
 const ZXING_URLS = ['https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js', 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js'];
+const FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
 function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); }); }
-async function loadZXing() {
-  if (window.ZXing) return;
-  for (const u of ZXING_URLS) { try { await loadScript(u); if (window.ZXing) return; } catch (e) { /* prova il prossimo */ } }
-  throw new Error('Libreria scanner non disponibile');
+async function loadFirst(urls, ok) { if (ok()) return true; for (const u of urls) { try { await loadScript(u); if (ok()) return true; } catch (e) {} } return false; }
+// Cifra di controllo EAN/UPC: scarta le letture sbagliate
+function validCode(c) {
+  c = String(c || '').replace(/\D/g, '');
+  if (![8, 12, 13].includes(c.length)) return c.length >= 6; // altri formati: accetta
+  const d = c.split('').map(Number); const chk = d.pop(); let sum = 0;
+  d.reverse().forEach((n, i) => { sum += n * (i % 2 === 0 ? 3 : 1); });
+  return (10 - (sum % 10)) % 10 === chk;
+}
+let detectorPromise = null;
+function getDetector() {
+  if (detectorPromise) return detectorPromise;
+  detectorPromise = (async () => {
+    try {
+      if ('BarcodeDetector' in window && (await BarcodeDetector.getSupportedFormats()).includes('ean_13'))
+        return { kind: 'native', det: new BarcodeDetector({ formats: FORMATS }) };
+    } catch (e) {}
+    if (await loadFirst(BD_URLS, () => window.BarcodeDetectionAPI && window.BarcodeDetectionAPI.BarcodeDetector)) {
+      try {
+        const det = new window.BarcodeDetectionAPI.BarcodeDetector({ formats: FORMATS });
+        return { kind: 'wasm', det };
+      } catch (e) { console.warn(e); }
+    }
+    if (await loadFirst(ZXING_URLS, () => window.ZXing)) {
+      const hints = new Map();
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8, ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.UPC_E]);
+      hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+      const reader = new ZXing.MultiFormatReader(); reader.setHints(hints);
+      return { kind: 'zxing', det: { detect: async (canvas) => {
+        try {
+          const src = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
+          const r = reader.decode(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(src)));
+          return r ? [{ rawValue: r.getText() }] : [];
+        } catch (e) { return []; }
+      } } };
+    }
+    detectorPromise = null;
+    throw new Error('Nessun lettore di codici disponibile');
+  })();
+  return detectorPromise;
+}
+// Ritaglia il centro dell'immagine (dove sta il riquadro) e lo ingrandisce
+function cropToCanvas(src, w, h, canvas, frac = { x: 0.85, y: 0.45 }, target = 1280) {
+  const cw = Math.round(w * frac.x), ch = Math.round(h * frac.y);
+  const sx = Math.round((w - cw) / 2), sy = Math.round((h - ch) / 2);
+  const scale = Math.min(2.5, Math.max(1, target / cw));
+  canvas.width = Math.round(cw * scale); canvas.height = Math.round(ch * scale);
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = true; ctx.drawImage(src, sx, sy, cw, ch, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+async function decodeImageFile(file) {
+  const { det } = await getDetector();
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    const W = img.naturalWidth, H = img.naturalHeight; const c = document.createElement('canvas');
+    // prova: immagine intera ridotta, poi il centro a diverse dimensioni
+    const tries = [{ x: 1, y: 1, t: 1600 }, { x: 0.7, y: 0.5, t: 1600 }, { x: 0.5, y: 0.35, t: 1400 }, { x: 0.9, y: 0.9, t: 2200 }];
+    for (const t of tries) {
+      cropToCanvas(img, W, H, c, t, t.t);
+      const r = await det.detect(c).catch(() => []);
+      const hit = (r || []).map(x => x.rawValue).find(validCode);
+      if (hit) return hit;
+    }
+    return null;
+  } finally { URL.revokeObjectURL(url); }
 }
 const Scanner = {
-  active: false, reader: null, stream: null, timer: null, onCode: null,
+  active: false, stream: null, timer: null, onCode: null, canvas: null,
+  hint(t) { $('.scan-hint').textContent = t; },
   async start(onCode) {
     this.onCode = onCode; this.active = true;
     $('#scanner').classList.remove('hidden'); $('#manualCode').value = '';
+    this.hint('Avvio la fotocamera…');
     const video = $('#scanVideo');
-    const constraints = { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false };
+    const constraints = { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false };
     try {
-      if ('BarcodeDetector' in window && (await BarcodeDetector.getSupportedFormats()).includes('ean_13')) {
-        const det = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e'] });
-        this.stream = await navigator.mediaDevices.getUserMedia(constraints);
-        video.srcObject = this.stream; await video.play();
-        const tick = async () => {
-          if (!this.active) return;
-          try { const r = await det.detect(video); if (r[0]) return this.found(r[0].rawValue); } catch (e) {}
-          this.timer = setTimeout(tick, 150);
-        };
-        tick();
-      } else {
-        await loadZXing();
-        const hints = new Map();
-        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8, ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.UPC_E]);
-        hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-        this.reader = new ZXing.BrowserMultiFormatReader(hints, 200);
-        await this.reader.decodeFromConstraints(constraints, video, (result) => { if (result && this.active) this.found(result.getText()); });
-      }
+      const detP = getDetector();
+      this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      if (!this.active) { this.stream.getTracks().forEach(t => t.stop()); return; }
+      video.srcObject = this.stream; await video.play().catch(() => {});
+      this.tuneCamera();
+      this.hint('Carico il lettore…');
+      const { det } = await detP;
+      if (!this.active) return;
+      this.hint('Inquadra il codice a 15–20 cm, con buona luce');
+      this.canvas = this.canvas || document.createElement('canvas');
+      const tick = async () => {
+        if (!this.active) return;
+        if (video.videoWidth) {
+          try {
+            cropToCanvas(video, video.videoWidth, video.videoHeight, this.canvas);
+            const r = await det.detect(this.canvas);
+            const hit = (r || []).map(x => x.rawValue).find(validCode);
+            if (hit) return this.submit(hit);
+          } catch (e) {}
+        }
+        this.timer = setTimeout(tick, 120);
+      };
+      tick();
     } catch (e) {
       console.warn(e);
-      $('.scan-hint').textContent = e && e.name === 'NotAllowedError'
-        ? 'Accesso alla fotocamera negato. Abilitalo in Impostazioni › Safari › Fotocamera, oppure digita il codice.'
-        : 'Fotocamera non disponibile. Digita il codice qui sotto.';
+      this.hint(e && e.name === 'NotAllowedError'
+        ? 'Accesso alla fotocamera negato. Abilitalo in Impostazioni › Safari › Fotocamera, oppure usa “Scatta una foto”.'
+        : 'Fotocamera non disponibile: usa “Scatta una foto” o digita il codice.');
     }
   },
-  last: '', lastN: 0,
-  submit(code) { if (navigator.vibrate) navigator.vibrate(60); const cb = this.onCode; this.stop(); cb && cb(code); },
-  found(code) {
-    // per sicurezza, chiedi due letture uguali di fila
-    if (code === this.last) this.lastN++; else { this.last = code; this.lastN = 1; }
-    if (this.lastN < 2 && !('BarcodeDetector' in window)) return;
-    this.submit(code);
+  // Zoom leggero e messa a fuoco continua dove il telefono lo permette (aiuta sugli iPhone recenti)
+  tuneCamera() {
+    try {
+      const track = this.stream.getVideoTracks()[0]; const cap = track.getCapabilities ? track.getCapabilities() : {};
+      const adv = {};
+      if (cap.focusMode && cap.focusMode.includes('continuous')) adv.focusMode = 'continuous';
+      if (cap.zoom && cap.zoom.max >= 1.8) adv.zoom = Math.min(2, cap.zoom.max);
+      if (Object.keys(adv).length) track.applyConstraints({ advanced: [adv] }).catch(() => {});
+    } catch (e) {}
   },
+  async fromPhoto(file) {
+    const cb = this.onCode;
+    this.hint('Leggo la foto…');
+    try {
+      const code = await decodeImageFile(file);
+      if (code) { this.onCode = cb; return this.submit(code); }
+      this.hint('Codice non leggibile nella foto. Riprova più vicino e dritto, oppure digitalo.');
+    } catch (e) { this.hint('Lettore non disponibile: digita il codice qui sotto.'); }
+  },
+  submit(code) { if (navigator.vibrate) navigator.vibrate(60); const cb = this.onCode; this.stop(); cb && cb(code); },
+  found(code) { if (validCode(code)) this.submit(code); },
   stop() {
-    this.active = false; this.onCode = null; clearTimeout(this.timer); this.last = ''; this.lastN = 0;
-    try { this.reader && this.reader.reset(); } catch (e) {}
-    this.reader = null;
+    this.active = false; this.onCode = null; clearTimeout(this.timer);
     if (this.stream) { this.stream.getTracks().forEach(t => t.stop()); this.stream = null; }
     const v = $('#scanVideo'); if (v && v.srcObject) { try { v.srcObject.getTracks().forEach(t => t.stop()); } catch (e) {} v.srcObject = null; }
-    $('#scanner').classList.add('hidden'); $('.scan-hint').textContent = 'Inquadra il codice a barre';
+    $('#scanner').classList.add('hidden'); this.hint('Inquadra il codice a barre');
   },
 };
 
@@ -791,7 +987,7 @@ async function markDirty() { S.dirty = true; await setMeta('dirty', true); sched
 
 function mergeItems(localList, remoteList) {
   const map = new Map(localList.map(i => [i.id, i])); const changed = [];
-  for (const r of remoteList || []) {
+  for (const r of (remoteList || []).map(normalize)) {
     const l = map.get(r.id);
     if (!l || (r.updatedAt || 0) > (l.updatedAt || 0)) { map.set(r.id, r); changed.push(r); }
   }
@@ -903,9 +1099,10 @@ const actions = {
   manualWithCode: () => { const c = S.searchCtx || {}; closeSheet(); startDraft({ tipo: c.tipo || S.addTipo, codice: c.code || '' }, S.intoDraft); },
   pick: el => pickCandidate(S.candidates[+el.dataset.v]),
   closeScanner: () => Scanner.stop(),
+  scanPhoto: () => $('#scanPhotoInput').click(),
 
   scanForDraft: () => { const t = S.draft.tipo; Scanner.start(code => { S.draft.codice = code; handleCode(code, t, true); }); },
-  searchForDraft: () => { S.intoDraft = true; sheetSearch(S.draft.tipo, [S.draft.titolo, S.draft.tipo === 'musica' ? S.draft.autore : ''].filter(Boolean).join(' ')); },
+  searchForDraft: () => { S.intoDraft = true; sheetSearch(S.draft.tipo, [S.draft.titolo, isMusic(S.draft.tipo) ? S.draft.autore : ''].filter(Boolean).join(' ')); },
   draftTipo: el => { S.draft.tipo = el.dataset.v; render(); },
   rateDraft: el => { const v = +el.dataset.v; S.draft.valutazione = S.draft.valutazione === v ? 0 : v; el.parentElement.outerHTML = starsHTML(S.draft.valutazione, 'rateDraft'); },
   addPhoto: () => $('#photoInput').click(),
@@ -997,6 +1194,7 @@ $('#photoInput').addEventListener('change', async e => {
   }
   render();
 });
+$('#scanPhotoInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f && Scanner.onCode) Scanner.fromPhoto(f); });
 $('#importInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importBackup(f); });
 
 window.addEventListener('online', () => scheduleSync(800));
