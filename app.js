@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '1.4.1';
+const VERSION = '1.5.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -622,8 +622,22 @@ async function discogs(params) {
       descrizione: '', fonte: 'Discogs', _discogsId: r.id, sub: [(r.format || []).join(', '), r.country].filter(Boolean).join(' · ') };
   });
 }
+// Apple accetta richieste da altri siti solo in modalità JSONP (script con callback)
+let jsonpN = 0;
+function jsonp(url, ms = 12000) {
+  return new Promise((res, rej) => {
+    const name = '__scaffaleCb' + (++jsonpN) + Date.now().toString(36);
+    const sc = document.createElement('script');
+    const done = () => { clearTimeout(t); try { delete window[name]; } catch (e) { window[name] = undefined; } sc.remove(); };
+    const t = setTimeout(() => { done(); rej(new Error('timeout')); }, ms);
+    window[name] = data => { done(); res(data); };
+    sc.onerror = () => { done(); rej(new Error('jsonp')); };
+    sc.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + name;
+    document.head.appendChild(sc);
+  });
+}
 async function itunes(term, entity) {
-  const d = await fj(`https://itunes.apple.com/search?country=it&lang=it_it&limit=10&entity=${entity}&term=${encodeURIComponent(term)}`);
+  const d = await jsonp(`https://itunes.apple.com/search?country=it&lang=it_it&limit=10&entity=${entity}&term=${encodeURIComponent(term)}`);
   return (d.results || []).map(r => ({
     tipo: entity === 'movie' ? 'film' : '',
     titolo: entity === 'album' ? r.collectionName : r.trackName, autore: r.artistName || '', anno: year(r.releaseDate),
@@ -634,6 +648,37 @@ async function itunes(term, entity) {
     codice: '', fonte: entity === 'movie' ? 'Apple TV' : 'Apple Music', _itunesCollection: entity === 'album' ? r.collectionId : null,
   }));
 }
+
+// Film — Wikidata (gratuito, nessuna chiave) + Wikipedia per trama e locandina
+const WD = 'https://www.wikidata.org/w/api.php?format=json&origin=*&';
+const FILM_CLASSES = new Set(['Q11424', 'Q24869', 'Q506240', 'Q202866', 'Q29168811', 'Q93204', 'Q226730', 'Q24862', 'Q5398426', 'Q1259759', 'Q20650540', 'Q581714', 'Q117467246']);
+const wdIds = (e, p) => ((e.claims || {})[p] || []).map(c => c.mainsnak?.datavalue?.value?.id).filter(Boolean);
+const wdLabel = e => e && ((e.labels?.it || e.labels?.en || {}).value || '');
+async function wikidataFilms(q) {
+  const s = await fj(WD + 'action=wbsearchentities&type=item&limit=15&language=it&uselang=it&search=' + encodeURIComponent(q));
+  const ids = (s.search || []).map(x => x.id); if (!ids.length) return [];
+  const g = await fj(WD + 'action=wbgetentities&props=claims|labels|sitelinks&languages=it|en&sitefilter=itwiki|enwiki&ids=' + ids.join('|'));
+  const films = ids.map(id => g.entities?.[id]).filter(e => e && wdIds(e, 'P31').some(c => FILM_CLASSES.has(c))).slice(0, 8);
+  if (!films.length) return [];
+  const extra = [...new Set(films.flatMap(e => [...wdIds(e, 'P57').slice(0, 2), ...wdIds(e, 'P136').slice(0, 2), ...wdIds(e, 'P272').slice(0, 1)]))].slice(0, 50);
+  let L = {};
+  if (extra.length) { try { L = (await fj(WD + 'action=wbgetentities&props=labels&languages=it|en&ids=' + extra.join('|'))).entities || {}; } catch (e) {} }
+  return films.map(e => {
+    const time = (((e.claims?.P577 || [])[0] || {}).mainsnak?.datavalue?.value?.time) || '';
+    const dur = (((e.claims?.P2047 || [])[0] || {}).mainsnak?.datavalue?.value?.amount) || '';
+    const wiki = e.sitelinks?.itwiki ? { lang: 'it', title: e.sitelinks.itwiki.title } : e.sitelinks?.enwiki ? { lang: 'en', title: e.sitelinks.enwiki.title } : null;
+    return { tipo: 'film', titolo: wdLabel(e), anno: year(time), autore: wdIds(e, 'P57').slice(0, 2).map(id => wdLabel(L[id])).filter(Boolean).join(', '),
+      genere: wdIds(e, 'P136').slice(0, 2).map(id => wdLabel(L[id])).filter(Boolean).join(', '),
+      editore: wdIds(e, 'P272').slice(0, 1).map(id => wdLabel(L[id])).filter(Boolean).join(''),
+      durata: dur ? Math.round(Math.abs(parseFloat(dur))) + ' min' : '', descrizione: '', coverUrl: '', fonte: 'Wikidata', _wiki: wiki };
+  });
+}
+async function wikipediaInfo(w) {
+  const d = await fj(`https://${w.lang}.wikipedia.org/w/api.php?format=json&origin=*&action=query&redirects=1&prop=pageimages|extracts&exintro=1&explaintext=1&exsentences=6&piprop=thumbnail&pithumbsize=600&titles=` + encodeURIComponent(w.title));
+  const pg = Object.values(d.query?.pages || {})[0] || {};
+  return { descrizione: (pg.extract || '').trim(), coverUrl: pg.thumbnail?.source || '' };
+}
+const filmKey = c => String(c.titolo).toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, '') + '|' + (c.anno || '');
 
 // Film
 async function tmdb(q) {
@@ -676,8 +721,15 @@ async function searchByTitle(tipo, q) {
     ]);
     return fitMusic([...dc.slice(0, 6), ...mb.slice(0, 6), ...it.slice(0, 4)], tipo);
   }
-  const t = await settled([tmdb(q)]);
-  return t.length ? t : settled([itunes(q, 'movie')]);
+  const [t, it, wd] = await Promise.all([settled([tmdb(q)]), settled([itunes(q, 'movie')]), settled([wikidataFilms(q)])]);
+  // TMDB (se c'è la chiave) e Apple hanno le locandine: vengono prima; Wikidata completa regista, anno e i film mancanti
+  const out = []; const idx = new Map();
+  [...t, ...it, ...wd].forEach(c => {
+    const k = filmKey(c);
+    if (idx.has(k)) { const a = out[idx.get(k)]; ['autore', 'genere', 'durata', 'editore'].forEach(f => { if (!a[f] && c[f]) a[f] = c[f]; }); if (!a._wiki && c._wiki) a._wiki = c._wiki; if (!String(a.fonte).includes(c.fonte)) a.fonte += ' + ' + c.fonte; }
+    else { idx.set(k, out.length); out.push(c); }
+  });
+  return out.slice(0, 14);
 }
 
 async function searchByCode(tipo, code) {
@@ -758,9 +810,13 @@ async function enrich(c) {
       if (!c.catalogo && r.labels && r.labels[0] && r.labels[0].catno !== 'none') c.catalogo = r.labels[0].catno;
       if (!c.paese && r.country) c.paese = r.country;
     } else if (c._itunesCollection) {
-      const r = await fj(`https://itunes.apple.com/lookup?entity=song&country=it&id=${c._itunesCollection}`);
+      const r = await jsonp(`https://itunes.apple.com/lookup?entity=song&country=it&id=${c._itunesCollection}`);
       c.tracklist = (r.results || []).filter(x => x.wrapperType === 'track').map(t => `${t.trackNumber}. ${t.trackName}`).join('\n');
-    } else if (c._tmdbId) {
+    }
+    if (c._wiki && (!c.descrizione || !c.coverUrl)) {
+      try { const w = await wikipediaInfo(c._wiki); if (!c.descrizione) c.descrizione = w.descrizione; if (!c.coverUrl) c.coverUrl = w.coverUrl; } catch (e) {}
+    }
+    if (c._tmdbId) {
       const k = encodeURIComponent(cfg('tmdbKey'));
       const m = await fj(`https://api.themoviedb.org/3/movie/${c._tmdbId}?language=it-IT&append_to_response=credits&api_key=${k}`);
       c.autore = ((m.credits?.crew || []).filter(x => x.job === 'Director').map(x => x.name)).join(', ');
