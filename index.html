@@ -20,6 +20,35 @@
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
+<div id="splash" class="splash" translate="no" aria-hidden="true">
+  <div class="splash-disc">
+  <svg class="splash-logo" viewBox="30 30 140 140" aria-hidden="true">
+    <path d="M100 30 A70 70 0 0 0 100 170 Z" fill="#0B0B0E"/>
+    <path d="M100 42 A58 58 0 0 0 100 158" fill="none" stroke="#3A3842" stroke-width="2"/>
+    <path d="M100 52 A48 48 0 0 0 100 148" fill="none" stroke="#3A3842" stroke-width="2"/>
+    <path d="M100 62 A38 38 0 0 0 100 138" fill="none" stroke="#3A3842" stroke-width="2"/>
+    <path d="M100 78 A22 22 0 0 0 100 122 Z" fill="#F59A2C"/>
+    <path d="M100 30 A70 70 0 0 1 100 170 Z" fill="#F3EFE6"/>
+    <g stroke="#BDB4A6" stroke-width="3" stroke-linecap="round">
+      <line x1="110" y1="60" x2="147" y2="60"/><line x1="110" y1="72" x2="154" y2="72"/><line x1="110" y1="84" x2="158" y2="84"/><line x1="110" y1="96" x2="150" y2="96"/>
+      <line x1="110" y1="108" x2="160" y2="108"/><line x1="110" y1="120" x2="157" y2="120"/><line x1="110" y1="132" x2="140" y2="132"/><line x1="110" y1="144" x2="144" y2="144"/>
+    </g>
+    <line x1="100" y1="30" x2="100" y2="170" stroke="#E8483A" stroke-width="4"/>
+    <circle cx="100" cy="100" r="5" fill="#1C1B22"/>
+  </svg>
+  </div>
+  <div class="splash-name">Spinyl</div>
+</div>
+<script>
+  // Schermata di apertura: il logo gira per 3 secondi, poi sfuma. Un tocco la salta.
+  (function () {
+    var s = document.getElementById('splash'), done = false;
+    function hide() { if (done) return; done = true; s.classList.add('out'); setTimeout(function () { s.remove(); }, 450); }
+    var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    setTimeout(hide, reduce ? 1200 : 3000);
+    s.addEventListener('click', hide);
+  })();
+</script>
 <div id="app"></div>
 
 <div id="sheetWrap" class="sheet-wrap hidden" aria-hidden="true">
