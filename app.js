@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -273,16 +273,14 @@ function renderGrid() {
     return;
   }
   if (!L.length) { g.innerHTML = `<div class="empty" style="grid-column:1/-1"><p>Nessun risultato.</p></div>`; return; }
+  const label = i => { const T = TIPI[i.tipo]; if (!T) return ''; const f = i.formato || ''; return f && f.toLowerCase().startsWith(T.label.toLowerCase()) ? f : [T.label, f].filter(Boolean).join(' · '); };
   g.innerHTML = L.map(i => `
-    <button class="card" data-a="open" data-id="${esc(i.id)}">
+    <button class="card t-${esc(i.tipo)}" data-a="open" data-id="${esc(i.id)}">
       ${coverHTML(i)}
+      <i class="stripe"></i>
       ${i.prestatoA ? `<span class="tag loan">In prestito</span>` : i.desiderio ? `<span class="tag">Desiderio</span>` : ''}
-      <div class="meta"><b>${esc(i.titolo || 'Senza titolo')}</b><span>${esc([i.autore, i.anno].filter(Boolean).join(' · ') || TIPI[i.tipo]?.label)}</span></div>
+      <div class="meta"><b>${esc(i.titolo || 'Senza titolo')}</b><span>${esc([i.autore, i.anno].filter(Boolean).join(' · ') || '—')}</span><em>${esc(label(i))}</em></div>
     </button>`).join('');
-  // etichetta tipo sulle copertine quando si guarda "Tutti"
-  if (S.filter === 'tutti' || S.filter === 'desideri' || S.filter === 'prestito') {
-    g.querySelectorAll('.card').forEach((el, idx) => { const it = L[idx]; el.querySelector('.cover').insertAdjacentHTML('beforeend', `<span class="kind">${esc(it.formato || TIPI[it.tipo]?.label || '')}</span>`); });
-  }
   hydratePhotos(g);
 }
 
