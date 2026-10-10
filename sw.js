@@ -1,5 +1,5 @@
 // Scaffale — service worker: l'app funziona anche offline
-const VERSION = 'scaffale-v1.2.0';
+const VERSION = 'scaffale-v1.3.0';
 const SHELL = ['./', './index.html', './app.css', './app.js', './config.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 const LIBS = /(unpkg\.com|cdn\.jsdelivr\.net|fastly\.jsdelivr\.net)\/(npm\/)?(@zxing|barcode-detector|zxing-wasm)/;
@@ -23,7 +23,7 @@ self.addEventListener('fetch', e => {
   }
   if (url.origin !== location.origin) return;
   // File dell'app: prima la rete (per avere gli aggiornamenti), poi la cache
-  e.respondWith(fetch(req).then(res => {
+  e.respondWith(fetch(req, { cache: 'no-cache' }).then(res => {
     if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); }
     return res;
   }).catch(() => caches.match(req, { ignoreSearch: true }).then(hit => hit || caches.match('./index.html'))));

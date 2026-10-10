@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -89,7 +89,7 @@ const BASE = window.SCAFFALE_CONFIG || {};
 function cfg(k) {
   const local = localStorage.getItem('cfg_' + k);
   if (local) return local;
-  return { clientId: BASE.GOOGLE_CLIENT_ID, tmdbKey: BASE.TMDB_API_KEY, discogsToken: BASE.DISCOGS_TOKEN }[k] || '';
+  return { clientId: BASE.GOOGLE_CLIENT_ID, tmdbKey: BASE.TMDB_API_KEY, discogsToken: BASE.DISCOGS_TOKEN, booksKey: BASE.GOOGLE_BOOKS_KEY }[k] || '';
 }
 function setCfg(k, v) { v = String(v || '').trim(); v ? localStorage.setItem('cfg_' + k, v) : localStorage.removeItem('cfg_' + k); }
 
@@ -455,6 +455,7 @@ function viewSettings() {
     <div class="section"><h3>Ricerca online</h3>
       <p class="note" style="margin:10px 0">Libri: Google Libri + Open Library. Vinili, CD e cassette: MusicBrainz + Apple Music (+ Discogs con il token). Film: Apple TV. Con le chiavi facoltative qui sotto la ricerca migliora.</p>
       <details class="adv"><summary>Chiavi facoltative e configurazione avanzata</summary>
+        <label class="field"><span>Chiave Google Libri (libri, facoltativa)</span><input id="cfg-booksKey" value="${esc(cfg('booksKey'))}" autocomplete="off"></label>
         <label class="field"><span>Chiave API TMDB (film, consigliata)</span><input id="cfg-tmdbKey" value="${esc(cfg('tmdbKey'))}" autocomplete="off"></label>
         <label class="field"><span>Token Discogs (vinili, CD, cassette)</span><input id="cfg-discogsToken" value="${esc(cfg('discogsToken'))}" autocomplete="off"></label>
         <label class="field"><span>Client ID Google</span><input id="cfg-clientId" value="${esc(cfg('clientId'))}" autocomplete="off"></label>
@@ -519,7 +520,8 @@ const cleanProductTitle = s => String(s || '')
 
 // Libri
 async function googleBooks(q) {
-  const d = await fj('https://www.googleapis.com/books/v1/volumes?maxResults=10&printType=books&q=' + encodeURIComponent(q));
+  const key = cfg('booksKey');
+  const d = await fj('https://www.googleapis.com/books/v1/volumes?maxResults=12&printType=books&q=' + encodeURIComponent(q) + (key ? '&key=' + encodeURIComponent(key) : ''));
   return (d.items || []).map(it => {
     const v = it.volumeInfo || {}; const ids = v.industryIdentifiers || [];
     const isbn = ids.find(x => x.type === 'ISBN_13') || ids.find(x => x.type === 'ISBN_10');
@@ -528,6 +530,33 @@ async function googleBooks(q) {
     return { tipo: 'libro', titolo: [v.title, v.subtitle].filter(Boolean).join(': '), autore: (v.authors || []).join(', '), anno: year(v.publishedDate),
       editore: v.publisher || '', descrizione: stripHtml(v.description), genere: (v.categories || []).join(', '), pagine: v.pageCount || '',
       coverUrl: img || '', codice: isbn ? isbn.identifier : '', fonte: 'Google Libri' };
+  });
+}
+// ISBN: converte tra 10 e 13 cifre (alcune edizioni sono registrate solo in un formato)
+function isbnVariants(c) {
+  c = String(c).replace(/[^\dX]/gi, '').toUpperCase(); const out = [c];
+  if (/^\d{9}[\dX]$/.test(c)) {
+    const b = '978' + c.slice(0, 9); let s = 0; b.split('').forEach((d, i) => { s += +d * (i % 2 ? 3 : 1); });
+    out.push(b + ((10 - (s % 10)) % 10));
+  } else if (/^978\d{10}$/.test(c)) {
+    const b = c.slice(3, 12); let s = 0; b.split('').forEach((d, i) => { s += +d * (10 - i); });
+    const k = (11 - (s % 11)) % 11; out.push(b + (k === 10 ? 'X' : k));
+  }
+  return out;
+}
+// Riempie i campi vuoti di un risultato con quelli di un altro
+const BOOK_FIELDS = ['titolo', 'autore', 'anno', 'editore', 'descrizione', 'genere', 'pagine', 'coverUrl', 'codice'];
+function mergeBook(a, b) { if (!b) return a; BOOK_FIELDS.forEach(k => { if (!a[k] && b[k]) a[k] = b[k]; }); if (b.fonte && !String(a.fonte).includes(b.fonte)) a.fonte += ' + ' + b.fonte; return a; }
+const bookKey = c => (String(c.titolo).split(':')[0] + '|' + String(c.autore).split(',')[0]).toLowerCase().normalize('NFD').replace(/[^a-z0-9|]/g, '');
+async function openLibrarySearch(params) {
+  const fields = 'key,title,subtitle,author_name,first_publish_year,publish_year,publisher,isbn,cover_i,number_of_pages_median,subject';
+  const d = await fj(`https://openlibrary.org/search.json?limit=12&fields=${fields}&${params}`);
+  return (d.docs || []).map(b => {
+    const isbn = (b.isbn || []).find(x => x.length === 13) || (b.isbn || [])[0] || '';
+    return { tipo: 'libro', titolo: [b.title, b.subtitle].filter(Boolean).join(': '), autore: (b.author_name || []).slice(0, 3).join(', '),
+      anno: b.first_publish_year ? String(b.first_publish_year) : '', editore: (b.publisher || [])[0] || '', pagine: b.number_of_pages_median || '',
+      genere: (b.subject || []).slice(0, 3).join(', '), coverUrl: b.cover_i ? `https://covers.openlibrary.org/b/id/${b.cover_i}-L.jpg` : '',
+      codice: isbn, descrizione: '', fonte: 'Open Library' };
   });
 }
 async function openLibraryIsbn(isbn) {
@@ -625,7 +654,12 @@ function fitMusic(list, tipo) {
 }
 
 async function searchByTitle(tipo, q) {
-  if (tipo === 'libro') return settled([googleBooks(q)]);
+  if (tipo === 'libro') {
+    const [gb, ol] = await Promise.all([settled([googleBooks(q)]), settled([openLibrarySearch('q=' + encodeURIComponent(q))])]);
+    const out = gb.slice(); const idx = new Map(out.map((c, i) => [bookKey(c), i]));
+    ol.forEach(c => { const k = bookKey(c); if (idx.has(k)) mergeBook(out[idx.get(k)], c); else { idx.set(k, out.length); out.push(c); } });
+    return out.slice(0, 16);
+  }
   if (isMusic(tipo)) {
     const fmt = { vinile: 'Vinyl', cd: 'CD', cassetta: 'Cassette' }[tipo];
     const mbFmt = { vinile: 'vinyl', cd: 'cd', cassetta: 'cassette' }[tipo];
@@ -644,12 +678,19 @@ async function searchByCode(tipo, code) {
   code = String(code).replace(/\D/g, '');
   const isIsbn = /^(978|979)\d{10}$/.test(code) || /^\d{9}[\dX]$/i.test(code);
   if (tipo === 'libro' || isIsbn) {
-    const [gb, ol] = await Promise.all([settled([googleBooks('isbn:' + code)]), settled([openLibraryIsbn(code)])]);
-    const list = gb.length ? gb : ol;
+    const vs = isbnVariants(code);
+    const [gb, ol] = await Promise.all([
+      settled(vs.map(v => googleBooks('isbn:' + v))),
+      settled(vs.map(v => openLibraryIsbn(v))),
+    ]);
+    let olx = ol;
+    if (!gb.length && !ol.length) olx = await settled([openLibrarySearch('isbn=' + vs[0])]);
+    const seen = new Set(); let list = gb.filter(c => { const k = bookKey(c); if (seen.has(k)) return false; seen.add(k); return true; });
+    if (!list.length) list = olx.slice(0, 1);
     list.forEach(c => {
+      mergeBook(c, olx.find(o => bookKey(o) === bookKey(c)) || (list.length === 1 ? olx[0] : null));
       c.codice = code; c.tipo = 'libro';
-      if (!c.coverUrl) c.coverUrl = ol[0]?.coverUrl || `https://covers.openlibrary.org/b/isbn/${code}-L.jpg?default=false`;
-      if (!c.pagine && ol[0]?.pagine) c.pagine = ol[0].pagine;
+      if (!c.coverUrl) c.coverUrl = `https://covers.openlibrary.org/b/isbn/${code}-L.jpg?default=false`;
     });
     return { tipo: 'libro', list };
   }
@@ -1141,7 +1182,7 @@ const actions = {
   export: () => exportBackup(),
   import: () => $('#importInput').click(),
   saveCfg: () => {
-    ['tmdbKey', 'discogsToken', 'clientId'].forEach(k => { const el = $('#cfg-' + k); if (el) setCfg(k, el.value); });
+    ['booksKey', 'tmdbKey', 'discogsToken', 'clientId'].forEach(k => { const el = $('#cfg-' + k); if (el) setCfg(k, el.value); });
     toast('Impostazioni salvate'); render();
   },
 };
