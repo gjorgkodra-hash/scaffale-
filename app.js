@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '1.5.0';
+const VERSION = '1.6.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -36,6 +36,9 @@ const SPARS = ['DDD', 'ADD', 'AAD', 'DDA'];
 const NASTRI = ['Tipo I (normale)', 'Tipo II (cromo)', 'Tipo IV (metal)'];
 const RIDUZIONI = ['Nessuna', 'Dolby B', 'Dolby C', 'Dolby S', 'Dolby HX Pro', 'dbx'];
 const ORIGINI = ['Originale stampata', 'Registrata in casa'];
+const LUNGHEZZE = ['C46', 'C60', 'C90', 'C100', 'C120'];
+const MARCHE = ['TDK', 'Maxell', 'BASF', 'Sony', 'Memorex', 'Philips', 'Agfa', 'Fuji', "That's", 'Denon', 'Scotch'];
+const TAPE_TEMPLATE = 'Lato A\n1. \n2. \n3. \n\nLato B\n1. \n2. \n3. ';
 const SPUNTE = {
   vinile:   [['inserto', 'Inserti / poster presenti']],
   cd:       [['booklet', 'Booklet presente'], ['obi', 'Obi strip'], ['custodiaRotta', 'Custodia da sostituire']],
@@ -45,7 +48,7 @@ const EMPTY = () => ({
   id: uid(), tipo: 'libro', titolo: '', autore: '', anno: '', editore: '', codice: '', formato: '', genere: '',
   descrizione: '', tracklist: '', pagine: '', durata: '', condizione: '', posizione: '', prezzo: '', valutazione: 0,
   catalogo: '', paese: '', confezione: '', condCustodia: '', numDischi: '', spars: '', matrice: '', ifpi: '',
-  tipoNastro: '', riduzione: '', origine: '',
+  tipoNastro: '', riduzione: '', origine: '', lunghezzaNastro: '', marcaNastro: '',
   note: '', commenti: [], foto: [], coverUrl: '', prestatoA: '', prestatoIl: '', desiderio: false,
   createdAt: Date.now(), updatedAt: Date.now(),
 });
@@ -304,7 +307,7 @@ function viewDetail(it) {
     [T.autore, it.autore], ['Anno', it.anno], [T.editore, it.editore], ['N. catalogo', M && it.catalogo], ['Paese', M && it.paese],
     ['Formato', it.formato], ['Confezione', M && it.confezione], ['Dischi', M && it.numDischi && +it.numDischi > 1 && it.numDischi],
     ['Codice SPARS', it.tipo === 'cd' && it.spars], ['Nastro', it.tipo === 'cassetta' && it.tipoNastro],
-    ['Riduzione rumore', it.tipo === 'cassetta' && it.riduzione], ['Origine', it.tipo === 'cassetta' && it.origine],
+    ['Riduzione rumore', it.tipo === 'cassetta' && it.riduzione], ['Durata nastro', it.tipo === 'cassetta' && it.lunghezzaNastro], ['Marca nastro', it.tipo === 'cassetta' && it.marcaNastro], ['Origine', it.tipo === 'cassetta' && it.origine],
     ['Genere', it.genere], ['Pagine', it.tipo === 'libro' && it.pagine], ['Durata', it.tipo === 'film' && it.durata],
     [M ? 'Condizione ' + T.supporto.toLowerCase() : 'Condizione', it.condizione], ['Condizione ' + (T.custodia || '').toLowerCase(), M && it.condCustodia],
     ['Dettagli', spunte],
@@ -360,7 +363,7 @@ function viewEdit() {
       <h3>Edizione</h3>
       <div class="two">${sel('confezione', 'Confezione', T.confezioni)}${f('numDischi', d.tipo === 'cassetta' ? 'N. cassette' : 'N. dischi', 'inputmode="numeric"')}</div>
       ${d.tipo === 'cd' ? `<div class="two">${sel('spars', 'Codice SPARS', SPARS)}<div></div></div>` : ''}
-      ${d.tipo === 'cassetta' ? `<div class="two">${sel('tipoNastro', 'Tipo di nastro', NASTRI)}${sel('riduzione', 'Riduzione rumore', RIDUZIONI)}</div>${sel('origine', 'Origine', ORIGINI)}` : ''}
+      ${d.tipo === 'cassetta' ? `<div class="two">${sel('tipoNastro', 'Tipo di nastro', NASTRI)}${sel('riduzione', 'Riduzione rumore', RIDUZIONI)}</div><div class="two">${sel('lunghezzaNastro', 'Durata nastro', LUNGHEZZE)}<label class="field"><span>Marca nastro</span><input data-f="marcaNastro" list="dl-marche" value="${esc(d.marcaNastro)}"></label></div>${sel('origine', 'Origine', ORIGINI)}<datalist id="dl-marche">${MARCHE.map(x => `<option value="${esc(x)}">`).join('')}</datalist>` : ''}
       ${(SPUNTE[d.tipo] || []).map(([k, l]) => chk(k, l)).join('')}
       ${d.tipo !== 'cassetta' ? `<details class="adv" ${d.matrice || d.ifpi ? 'open' : ''}><summary>Dettagli avanzati (per collezionisti)</summary>
         <label class="field"><span>Matrice / runout (scritte incise vicino al centro)</span><textarea data-f="matrice" rows="2">${esc(d.matrice)}</textarea></label>
@@ -393,7 +396,7 @@ function viewEdit() {
       ${d.tipo === 'film' ? f('durata', 'Durata') : ''}
       <label class="field"><span>${T.codice}</span><div class="with-btn"><input data-f="codice" value="${esc(d.codice)}" inputmode="numeric"><button type="button" data-a="scanForDraft" aria-label="Scansiona">${ic('scan')}</button></div></label>
       <label class="field"><span>Descrizione</span><textarea data-f="descrizione" rows="4">${esc(d.descrizione)}</textarea></label>
-      ${isMusic(d.tipo) ? `<label class="field"><span>Tracce</span><textarea data-f="tracklist" rows="4">${esc(d.tracklist)}</textarea></label>` : ''}
+      ${isMusic(d.tipo) ? `<label class="field"><span>Tracce</span><textarea data-f="tracklist" rows="${d.tipo === 'cassetta' ? 6 : 4}" placeholder="${d.tipo === 'cassetta' ? 'Lato A&#10;1. …&#10;&#10;Lato B&#10;1. …' : ''}">${esc(d.tracklist)}</textarea>${d.tipo === 'cassetta' && !d.tracklist ? '<button type="button" class="more" data-a="tapeTemplate">+ Modello Lato A / Lato B</button>' : ''}</label>` : ''}
     </div>
 
     ${edizione}
@@ -503,7 +506,7 @@ function resultsHTML(list) {
   S.candidates = list;
   return list.map((c, i) => `
     <button class="result" data-a="pick" data-v="${i}">
-      <div class="th">${c.coverUrl ? `<img src="${esc(c.coverUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}</div>
+      <div class="th">${c.coverUrl ? `<img src="${esc(c.coverUrl)}" ${c._coverAlt ? `data-alt="${esc(c._coverAlt)}"` : ''} alt="" loading="lazy" referrerpolicy="no-referrer" onerror="if(this.dataset.alt){this.src=this.dataset.alt;this.dataset.alt=''}else{this.remove()}">` : ''}</div>
       <div><b>${esc(c.titolo)}</b><span>${esc([c.autore, c.anno, c.editore].filter(Boolean).join(' · '))}</span>${c.sub ? `<span>${esc(c.sub)}</span>` : ''}<em>${esc(c.fonte)}</em></div>
     </button>`).join('');
 }
@@ -591,7 +594,7 @@ async function musicBrainz(query) {
       tipo: m.tipo, titolo: r.title, autore: (r['artist-credit'] || []).map(a => (a.name || a.artist?.name || '') + (a.joinphrase || '')).join(''),
       anno: year(r.date), editore: li.label?.name || '', catalogo: li['catalog-number'] || '', paese: r.country || '',
       formato: m.formato, numDischi: m.numDischi, codice: r.barcode || '',
-      coverUrl: `https://coverartarchive.org/release/${r.id}/front-500`, descrizione: '', genere: '', fonte: 'MusicBrainz', _mbid: r.id,
+      coverUrl: `https://coverartarchive.org/release/${r.id}/front-500`, _coverAlt: r['release-group']?.id ? `https://coverartarchive.org/release-group/${r['release-group'].id}/front-500` : '', descrizione: '', genere: '', fonte: 'MusicBrainz', _mbid: r.id,
       sub: [r.country, (r.media || []).map(m => m.format).filter(Boolean).join(' + ')].filter(Boolean).join(' · '),
     };
   });
@@ -714,12 +717,18 @@ async function searchByTitle(tipo, q) {
   if (isMusic(tipo)) {
     const fmt = { vinile: 'Vinyl', cd: 'CD', cassetta: 'Cassette' }[tipo];
     const mbFmt = { vinile: 'vinyl', cd: 'cd', cassetta: 'cassette' }[tipo];
-    const [dc, mb, it] = await Promise.all([
+    // Sembra un numero di catalogo (es. DGCC-24425, PCS 7088)? Cercalo come tale: identifica l'edizione esatta
+    const looksCat = /\d/.test(q) && /^[a-z0-9][a-z0-9 .\-\/]{2,22}$/i.test(q.trim()) && q.trim().split(/\s+/).length <= 3;
+    const catQ = q.trim().replace(/"/g, '');
+    const [cat, dc, mb, it] = await Promise.all([
+      looksCat ? settled([discogs('catno=' + encodeURIComponent(catQ)), musicBrainz(`catno:"${catQ}"`)]) : Promise.resolve([]),
       settled([discogs('q=' + encodeURIComponent(q) + '&format=' + fmt)]),
       settled([musicBrainz(`${q} AND format:${mbFmt}`)]).then(r => r.length ? r : settled([musicBrainz(q)])),
       settled([itunes(q, 'album')]),
     ]);
-    return fitMusic([...dc.slice(0, 6), ...mb.slice(0, 6), ...it.slice(0, 4)], tipo);
+    cat.forEach(c => { c.sub = ['N. catalogo ' + (c.catalogo || catQ), c.sub].filter(Boolean).join(' · '); });
+    const seen = new Set(); const all = [...cat, ...dc.slice(0, 6), ...mb.slice(0, 6), ...it.slice(0, 4)].filter(c => { const k = (c._discogsId || c._mbid || '') + ''; if (k && seen.has(k)) return false; if (k) seen.add(k); return true; });
+    return fitMusic(all, tipo);
   }
   const [t, it, wd] = await Promise.all([settled([tmdb(q)]), settled([itunes(q, 'movie')]), settled([wikidataFilms(q)])]);
   // TMDB (se c'è la chiave) e Apple hanno le locandine: vengono prima; Wikidata completa regista, anno e i film mancanti
@@ -790,6 +799,9 @@ async function enrich(c) {
   try {
     if (c._mbid) {
       const r = await fj(`https://musicbrainz.org/ws/2/release/${c._mbid}?inc=recordings+genres+labels+release-groups&fmt=json`);
+      if (c._coverAlt) {
+        try { const h = await fetch(`https://coverartarchive.org/release/${c._mbid}`, { method: 'GET' }); if (!h.ok) c.coverUrl = c._coverAlt; } catch (e) {}
+      }
       const tracks = (r.media || []).flatMap((m, mi, all) => (m.tracks || []).map(t => `${all.length > 1 ? (mi + 1) + '-' : ''}${t.number}. ${t.title}`));
       c.tracklist = tracks.join('\n');
       const g = [...(r.genres || []), ...((r['release-group'] || {}).genres || [])].sort((a, b) => (b.count || 0) - (a.count || 0)).map(x => x.name);
@@ -1215,6 +1227,7 @@ const actions = {
   addPhoto: () => $('#photoInput').click(),
   rmPhoto: el => { S.draft.foto = S.draft.foto.filter(p => p !== el.dataset.v); render(); },
   rmCover: () => { S.draft.coverUrl = ''; render(); },
+  tapeTemplate: () => { S.draft.tracklist = TAPE_TEMPLATE; render(); const t = $('[data-f=tracklist]'); if (t) { t.focus(); t.setSelectionRange(10, 10); } },
   cancelEdit: () => { discardDraftPhotos(); S.draft = null; history.back(); },
   save: async () => {
     const d = S.draft;
