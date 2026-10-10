@@ -1,7 +1,7 @@
 {
-  "name": "Scaffale",
-  "short_name": "Scaffale",
-  "description": "Inventario personale di libri, dischi e film",
+  "name": "Spinyl",
+  "short_name": "Spinyl",
+  "description": "La tua collezione di libri, vinili, CD, cassette e film",
   "lang": "it",
   "start_url": "./",
   "scope": "./",

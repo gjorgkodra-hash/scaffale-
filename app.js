@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '1.6.0';
+const VERSION = '1.7.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -232,7 +232,7 @@ function viewList() {
   const needLogin = cfg('clientId') && S.syncState === 'login' && S.dirty;
   return `
   <header class="top">
-    <div class="grow"><h1>Scaffale</h1></div>
+    <div class="grow"><h1>Spinyl</h1></div>
     ${syncBtn()}
     <button class="iconbtn" data-a="settings" aria-label="Impostazioni">${ic('gear')}</button>
   </header>
@@ -471,7 +471,7 @@ function viewSettings() {
         <div class="stack" style="padding-top:12px"><button class="btn block" data-a="saveCfg">Salva impostazioni</button></div>
       </details>
     </div>
-    <p class="note" style="text-align:center">Scaffale ${VERSION} · ${live().length} pezzi</p>
+    <p class="note" style="text-align:center">Spinyl ${VERSION} · ${live().length} pezzi</p>
   </div>`;
 }
 
@@ -1181,10 +1181,10 @@ async function exportBackup() {
   const used = new Set(items.filter(i => !i.deleted).flatMap(i => i.foto || []));
   for (const id of used) { const p = await DB.get('photos', id); if (p && p.blob) photos[id] = await blobToDataURL(p.blob); }
   const data = { app: 'Scaffale', versione: 1, esportato: new Date().toISOString(), items, fotoDati: photos };
-  const name = `scaffale-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  const name = `spinyl-backup-${new Date().toISOString().slice(0, 10)}.json`;
   const file = new File([JSON.stringify(data)], name, { type: 'application/json' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: 'Backup Scaffale' }); return; } catch (e) { if (e.name === 'AbortError') return; }
+    try { await navigator.share({ files: [file], title: 'Backup Spinyl' }); return; } catch (e) { if (e.name === 'AbortError') return; }
   }
   const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
