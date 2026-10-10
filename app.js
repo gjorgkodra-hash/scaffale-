@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '1.4.0';
+const VERSION = '1.4.1';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -207,7 +207,7 @@ function render() {
   if (S.view === 'detail' && byId(S.id) && !byId(S.id).deleted) app.innerHTML = viewDetail(byId(S.id));
   else if (S.view === 'edit' && S.draft) app.innerHTML = viewEdit();
   else if (S.view === 'settings') app.innerHTML = viewSettings();
-  else { S.view = 'list'; app.innerHTML = viewList(); renderGrid(); }
+  else { S.view = 'list'; app.innerHTML = viewList(); renderGrid(); centerChip(false); }
   hydratePhotos(app);
 }
 
@@ -244,6 +244,14 @@ function viewList() {
   <button class="fab" data-a="add">${ic('plus')}Aggiungi</button>`;
 }
 
+// Porta il filtro selezionato al centro della barra dei filtri
+function centerChip(smooth) {
+  const box = $('.chips'), el = box && box.querySelector('.chip.on');
+  if (!el) return;
+  const left = el.offsetLeft - (box.clientWidth - el.offsetWidth) / 2;
+  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  box.scrollTo({ left: Math.max(0, left), behavior: smooth && !reduce ? 'smooth' : 'auto' });
+}
 function filtered() {
   const q = S.q.trim().toLowerCase();
   let L = live().filter(i => {
@@ -1128,7 +1136,11 @@ async function importBackup(file) {
 const actions = {
   closeSheet, back: () => history.back(),
   settings: () => go('settings'),
-  filter: el => { S.filter = el.dataset.v; localStorage.setItem('filter', S.filter); render(); },
+  filter: el => {
+    S.filter = el.dataset.v; localStorage.setItem('filter', S.filter);
+    document.querySelectorAll('.chips .chip').forEach(c => c.classList.toggle('on', c === el));
+    renderGrid(); centerChip(true);
+  },
   open: el => { closeSheet(); go('detail', el.dataset.id); },
   add: () => sheetAdd(),
   addTipo: el => { S.addTipo = el.dataset.v; sheetAdd(); },

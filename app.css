@@ -78,7 +78,7 @@ svg.i { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-widt
 .searchbar label { display: flex; align-items: center; gap: 8px; background: var(--card); border-radius: 22px; padding: 0 16px; color: var(--muted); }
 .searchbar input { flex: 1; border: 0; background: none; outline: none; padding: 12px 0; color: var(--ink); min-width: 0; font-size: 16px; }
 .searchbar input::placeholder { color: var(--muted); }
-.chips { display: flex; gap: 8px; overflow-x: auto; padding: 10px 16px 6px; scrollbar-width: none; }
+.chips { position: relative; scroll-behavior: auto; display: flex; gap: 8px; overflow-x: auto; padding: 10px 16px 6px; scrollbar-width: none; }
 .chips::-webkit-scrollbar { display: none; }
 .chip { flex: none; height: 36px; padding: 0 14px; border-radius: 18px; border: 2px solid var(--line); background: transparent; font-size: 14px; font-weight: 500; color: var(--ink); display: inline-flex; align-items: center; }
 .chip[data-v=libro] { border-color: var(--libro); }
