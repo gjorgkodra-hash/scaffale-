@@ -100,7 +100,7 @@ svg.i { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-widt
 .card:active { transform: scale(.98); }
 .cover { position: relative; aspect-ratio: 1 / 1; overflow: hidden; background: var(--deep); }
 .grid .cover { aspect-ratio: 1 / 1; }
-.cover img { width: 100%; height: 100%; object-fit: cover; position: absolute; inset: 0; }
+.cover img { width: 100%; height: 100%; object-fit: cover; position: absolute; inset: 0; z-index: 3; background: var(--deep); }
 .stripe { display: block; height: 4px; }
 .card.t-libro .stripe { background: linear-gradient(90deg, var(--libro) 50%, var(--vinile) 50%); }
 .card.t-vinile .stripe, .card.t-musica .stripe { background: linear-gradient(90deg, var(--vinile) 50%, var(--cd) 50%); }
@@ -136,7 +136,13 @@ svg.i { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-widt
     radial-gradient(circle at 72% 62%, #1c1b22 0 9%, #3a3842 9.5% 15%, transparent 15.5%),
     linear-gradient(90deg, var(--libro) 0 25%, var(--vinile) 25% 50%, var(--cd) 50% 75%, var(--tape) 75%) top / 100% 12px no-repeat,
     #f3efe6; }
-.ph.t-vinile span, .ph.t-musica span, .ph.t-cd span, .ph.t-cassetta span { display: none; }
+.ph span { display: none; }
+.ph.t-libro::after { content: ""; position: absolute; left: 24%; right: 16%; top: 30%; height: 30%;
+  background:
+    linear-gradient(#1c1b22, #1c1b22) 0 0 / 80% 12% no-repeat,
+    linear-gradient(#1c1b22, #1c1b22) 0 32% / 55% 12% no-repeat,
+    linear-gradient(rgba(28,27,34,.45), rgba(28,27,34,.45)) 0 100% / 40% 8% no-repeat;
+  opacity: .55; }
 
 .empty { text-align: center; padding: 60px 30px; color: var(--muted); }
 .empty h2 { color: var(--ink); font-weight: 800; font-style: italic; font-size: 24px; margin: 14px 0 6px; }
