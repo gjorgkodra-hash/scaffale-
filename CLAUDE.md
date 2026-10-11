@@ -16,3 +16,5 @@ dati in IndexedDB sul telefono, copia su Google Drive dell'utente, pubblicata co
   tutto passa dalla funzione `supabase/functions/community/index.ts`, che riconosce l'utente dal token Google
   (Drive `about`). Si entra con un codice invito; l'amministratore (gjorgkodra@gmail.com) entra senza codice.
   Dopo modifiche alla funzione: ridistribuirla su Supabase. La chiave `COMMUNITY_KEY` in config.js è la anon key (pubblica).
+- Attenzione negli script Python: `open(f,'w').write(open(f).read()...)` svuota il file prima di leggerlo (è successo due volte a `sw.js`).
+  Leggere prima in una variabile, poi scrivere. Il test "sw.js non vuoto" lo segnala: non fare push con test falliti.
