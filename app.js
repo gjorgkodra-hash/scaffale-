@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.1.0';
+const VERSION = '2.2.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -149,7 +149,7 @@ const BASE = window.SCAFFALE_CONFIG || {};
 function cfg(k) {
   const local = localStorage.getItem('cfg_' + k);
   if (local) return local;
-  return { clientId: BASE.GOOGLE_CLIENT_ID, tmdbKey: BASE.TMDB_API_KEY, discogsToken: BASE.DISCOGS_TOKEN, booksKey: BASE.GOOGLE_BOOKS_KEY }[k] || '';
+  return { clientId: BASE.GOOGLE_CLIENT_ID, tmdbKey: BASE.TMDB_API_KEY, discogsToken: BASE.DISCOGS_TOKEN, booksKey: BASE.GOOGLE_BOOKS_KEY, visionKey: BASE.GOOGLE_VISION_KEY }[k] || '';
 }
 function setCfg(k, v) { v = String(v || '').trim(); v ? localStorage.setItem('cfg_' + k, v) : localStorage.removeItem('cfg_' + k); }
 
@@ -679,6 +679,7 @@ function viewSettings() {
         <label class="field"><span>Chiave Google Libri (libri, facoltativa)</span><input id="cfg-booksKey" value="${esc(cfg('booksKey'))}" autocomplete="off"></label>
         <label class="field"><span>Chiave API TMDB (film, consigliata)</span><input id="cfg-tmdbKey" value="${esc(cfg('tmdbKey'))}" autocomplete="off"></label>
         <label class="field"><span>Token Discogs (vinili, CD, cassette)</span><input id="cfg-discogsToken" value="${esc(cfg('discogsToken'))}" autocomplete="off"></label>
+        <label class="field"><span>Chiave Google Cloud Vision (riconosce anche le copertine senza scritte, facoltativa)</span><input id="cfg-visionKey" value="${esc(cfg('visionKey'))}" autocomplete="off"></label>
         <label class="field"><span>Client ID Google</span><input id="cfg-clientId" value="${esc(cfg('clientId'))}" autocomplete="off"></label>
         <div class="stack" style="padding-top:12px"><button class="btn block" data-a="saveCfg">Salva impostazioni</button></div>
       </details>
@@ -695,23 +696,30 @@ function openSheet(html) {
 function closeSheet() { $('#sheetWrap').classList.add('hidden'); $('#sheet').innerHTML = ''; }
 
 function sheetAdd() {
-  S.pickWish = false;
+  S.pickWish = false; S.coverMode = null;
   const tipoSeg = `<div class="seg seg5" style="margin-bottom:14px">${Object.entries(TIPI).map(([k, v]) => `<button class="${S.addTipo === k ? 'on' : ''}" data-a="addTipo" data-v="${k}">${v.label}</button>`).join('')}</div>`;
   openSheet(`<h2>Aggiungi</h2>${tipoSeg}
     <button class="bigbtn" data-a="addScan"><span class="ic">${ic('scan')}</span><span><b>Scansiona il codice a barre</b><small>Il modo più veloce: compila tutto da solo</small></span></button>
+    <button class="bigbtn" data-a="addCover"><span class="ic">${ic('camera')}</span><span><b>Foto della copertina</b><small>Riconosce titolo e autore dalla copertina</small></span></button>
     <button class="bigbtn" data-a="addSearch"><span class="ic">${ic('search')}</span><span><b>Cerca per titolo</b><small>Se il codice manca o non viene trovato</small></span></button>
     <button class="bigbtn" data-a="addManual"><span class="ic">${ic('hand')}</span><span><b>Inserisci a mano</b><small>Per edizioni rare o fatte in casa</small></span></button>
     <button class="bigbtn" data-a="addBatch"><span class="ic">${ic('bolt')}</span><span><b>Scansione a raffica</b><small>Tanti pezzi di fila, li controlli alla fine</small></span></button>`);
 }
 
-function sheetSearch(tipo, prefill = '', code = '') {
-  S.searchCtx = { tipo, code };
-  openSheet(`<h2>Cerca ${tipo === 'cd' ? 'CD' : TIPI[tipo].label.toLowerCase()}</h2>
+const searchPlaceholder = tipo => isMusic(tipo) ? 'Artista e titolo' : tipo === 'libro' ? 'Titolo o autore' : 'Titolo del film';
+function sheetSearch(tipo, prefill = '', code = '', opts = {}) {
+  S.searchCtx = { tipo, code, cover: !!opts.cover };
+  const title = opts.cover ? 'Dalla copertina' : `Cerca ${tipo === 'cd' ? 'CD' : TIPI[tipo].label.toLowerCase()}`;
+  openSheet(`<h2>${title}</h2>
+    ${opts.cover ? `<div class="coverhead">${S.coverShotUrl ? `<img src="${S.coverShotUrl}" alt="">` : ''}<p class="note">${prefill ? (opts.how === 'vision' ? 'Ho riconosciuto la copertina: correggi il testo se serve.' : 'Ho letto le scritte della copertina: correggi il testo se serve.') : 'Non sono riuscito a leggere la copertina: scrivi titolo e autore.'}</p></div>
+      <div class="seg seg5" style="margin-bottom:4px">${Object.entries(TIPI).map(([k, v]) => `<button type="button" class="${tipo === k ? 'on' : ''}" data-a="searchTipo" data-v="${k}">${v.label}</button>`).join('')}</div>` : ''}
     ${code ? `<p class="lead">Codice ${esc(code)} non trovato. Prova con il titolo${isMusic(tipo) ? ' e l’artista' : ''}.</p>` : ''}
-    <form class="searchform" id="titleSearch"><input id="titleQ" type="search" placeholder="${isMusic(tipo) ? 'Artista e titolo' : tipo === 'libro' ? 'Titolo o autore' : 'Titolo del film'}" value="${esc(prefill)}" autocomplete="off"><button class="btn primary" type="submit">Cerca</button></form>
+    <form class="searchform" id="titleSearch"><input id="titleQ" type="search" placeholder="${searchPlaceholder(tipo)}" value="${esc(prefill)}" autocomplete="off" translate="no"><button class="btn primary" type="submit">Cerca</button></form>
+    ${opts.cover && !cfg('visionKey') ? '<p class="note" style="margin:-4px 2px 10px">Suggerimento iPhone: tocca il campo, poi “Scansiona testo” per copiare le scritte con la fotocamera.</p>' : ''}
     <div id="results" class="results"></div>
     ${code ? `<button class="btn block" style="margin-top:12px" data-a="manualWithCode">Inserisci a mano</button>` : ''}`);
-  setTimeout(() => $('#titleQ')?.focus(), 250);
+  if (opts.auto && prefill) setTimeout(() => { const f = $('#titleSearch'); if (f) f.requestSubmit ? f.requestSubmit() : f.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); }, 50);
+  else setTimeout(() => $('#titleQ')?.focus(), 250);
 }
 
 function loadingHTML(msg) { return `<div class="loading"><div class="spinner"></div>${esc(msg)}</div>`; }
@@ -1088,7 +1096,7 @@ async function enrich(c) {
 /* ── Flusso: scansione → ricerca → modulo ──────────────────── */
 async function handleCode(code, tipo, intoDraft) {
   code = String(code).replace(/\s/g, '');
-  S.intoDraft = intoDraft === true; S.pickWish = false;
+  S.intoDraft = intoDraft === true; S.pickWish = false; S.coverMode = null;
   if (!intoDraft) {
     const dup = live().find(i => i.codice && i.codice.replace(/\D/g, '') === code.replace(/\D/g, ''));
     if (dup) {
@@ -1118,7 +1126,12 @@ async function pickCandidate(c) {
   openSheet(`<h2>Un attimo…</h2>${loadingHTML('Recupero i dettagli')}`);
   const data = await enrich({ ...c });
   closeSheet();
-  if (S.checkPrice && data.codice && sameCode(data.codice, S.checkPrice.code) && (!data.discogsId || String(data.discogsId) === S.checkPrice.id)) {
+  let shotId = null;
+  if (S.coverMode === 'add' && S.coverShot && !data.coverUrl && !S.intoDraft) {
+    shotId = uid(); await DB.put('photos', { id: shotId, blob: S.coverShot }); data.foto = [shotId];
+  }
+  S.coverMode = null;
+  if (S.checkPrice && ((S.checkPrice.cand && S.checkPrice.cand === c) || (data.codice && S.checkPrice.code && sameCode(data.codice, S.checkPrice.code))) && (!data.discogsId || String(data.discogsId) === S.checkPrice.id)) {
     data.discogsId = S.checkPrice.id; data.valoreDiscogs = { ...S.checkPrice.p, match: 'barcode' };
   }
   if (S.pickWish) { // "Aggiungi ai desideri" dal controllo veloce: salva subito
@@ -1127,6 +1140,7 @@ async function pickCandidate(c) {
     await saveItem(it); toast('Aggiunto ai desideri'); return go('detail', it.id);
   }
   startDraft(data, S.intoDraft);
+  if (shotId) S.newPhotos.push(shotId);
 }
 
 function startDraft(data, intoDraft) {
@@ -1478,54 +1492,67 @@ function rowHTML(it, action) {
 }
 
 /* ── "Ce l'ho già?" ────────────────────────────────────────── */
-function startCheck() { closeSheet(); Scanner.start(code => checkCode(code), { mode: 'check' }); }
+function startCheck() { closeSheet(); S.coverMode = null; Scanner.start(code => checkCode(code), { mode: 'check' }); }
+const CHECK_AGAIN = () => `<div class="row" style="gap:10px"><button class="btn block" data-a="check">${ic('check', 18)}Altro codice</button><button class="btn block" data-a="checkCover">${ic('camera', 18)}Copertina</button></div>`;
+const PRICE_BOX = '<div class="section pricebox" id="checkPrice"></div>';
+// Mostra "Ce l'hai già" / "È nei desideri" se il pezzo è nella collezione; altrimenti false
+function checkKnown(owned, wish, code, token, cand) {
+  if (owned.length) {
+    openSheet(`<div class="verdict ok"><b>✓</b>Ce l'hai già</div><div class="results">${owned.map(i => rowHTML(i, 'open')).join('')}</div>${PRICE_BOX}
+      <div class="stack" style="padding-top:14px">${CHECK_AGAIN()}</div>`);
+    checkPrice(owned[0], cand, code, token); return true;
+  }
+  if (wish.length) {
+    openSheet(`<div class="verdict wish"><b>★</b>È nella tua lista desideri</div><div class="results">${wish.map(i => rowHTML(i, 'open')).join('')}</div>${PRICE_BOX}
+      <div class="stack" style="padding-top:14px"><button class="btn primary block" data-a="gotIt" data-id="${esc(wish[0].id)}" ${code ? `data-code="${esc(code)}"` : ''}>L'ho comprato!</button>${CHECK_AGAIN()}</div>`);
+    checkPrice(wish[0], cand, code, token); return true;
+  }
+  return false;
+}
 async function checkCode(code) {
   code = String(code).replace(/\D/g, ''); S.checkPrice = null;
   const hits = live().filter(i => i.codice && sameCode(i.codice, code));
-  const owned = hits.filter(i => !i.desiderio), wish = hits.filter(i => i.desiderio);
-  S.check = { code, res: null };
-  const again = `<button class="btn block" data-a="check">${ic('check', 18)}Controlla un altro</button>`;
-  const priceBox = '<div class="section pricebox" id="checkPrice"></div>';
-  if (owned.length) {
-    openSheet(`<div class="verdict ok"><b>✓</b>Ce l'hai già</div><div class="results">${owned.map(i => rowHTML(i, 'open')).join('')}</div>${priceBox}
-      <div class="stack" style="padding-top:14px">${again}</div>`);
-    return checkPrice(owned[0], null, code);
-  }
-  if (wish.length) {
-    openSheet(`<div class="verdict wish"><b>★</b>È nella tua lista desideri</div><div class="results">${wish.map(i => rowHTML(i, 'open')).join('')}</div>${priceBox}
-      <div class="stack" style="padding-top:14px"><button class="btn primary block" data-a="gotIt" data-id="${esc(wish[0].id)}">L'ho comprato!</button>${again}</div>`);
-    return checkPrice(wish[0], null, code);
-  }
+  S.check = { code, token: code, res: null };
+  if (checkKnown(hits.filter(i => !i.desiderio), hits.filter(i => i.desiderio), code, code, null)) return;
   openSheet(`<h2>Controllo ${esc(code)}…</h2>${loadingHTML('Non è nella collezione: cerco cos’è')}`);
   let res = { tipo: '', list: [] };
   try { res = await identifyCode(code); } catch (e) {}
-  if ($('#sheetWrap').classList.contains('hidden') || !S.check || S.check.code !== code) return; // chiuso nel frattempo
+  if ($('#sheetWrap').classList.contains('hidden') || !S.check || S.check.token !== code) return; // chiuso nel frattempo
+  showCheckResult(code, res, code);
+}
+function showCheckResult(code, res, token) {
   S.check.res = res;
   const c = res.list[0];
   const other = c ? live().filter(i => sameWork(i, c)) : [];
   const otherWish = other.filter(i => i.desiderio);
-  if (otherWish.length && !other.some(i => !i.desiderio)) {
-    openSheet(`<div class="verdict wish"><b>★</b>È nella tua lista desideri</div><div class="results">${otherWish.map(i => rowHTML(i, 'open')).join('')}</div>${priceBox}
-      <div class="stack" style="padding-top:14px"><button class="btn primary block" data-a="gotIt" data-id="${esc(otherWish[0].id)}" data-code="${esc(code)}">L'ho comprato!</button>${again}</div>`);
-    return checkPrice(null, c, code);
-  }
+  if (otherWish.length && !other.some(i => !i.desiderio)) return checkKnown([], otherWish, code, token, c);
   openSheet(`<div class="verdict no"><b>✕</b>Non ce l'hai</div>
     ${c ? `<div class="results">${rowHTML(c)}</div>${res.list.length > 1 ? '<p class="note" style="margin:8px 2px 0">Ci sono più edizioni con questo codice: scegli la tua quando lo aggiungi.</p>' : ''}`
       : `<p class="lead" style="margin-top:0">Codice ${esc(code)} non trovato nei database online.</p>`}
     ${other.length ? `<p class="note warnnote">Hai già lo stesso titolo in un'altra edizione:</p><div class="results">${other.map(i => rowHTML(i, 'open')).join('')}</div>` : ''}
-    ${c ? priceBox : ''}
+    ${c ? PRICE_BOX : ''}
     <div class="stack" style="padding-top:14px">
       <button class="btn primary block" data-a="checkAdd" data-v="own">Aggiungi alla collezione</button>
       <button class="btn block" data-a="checkAdd" data-v="wish">Aggiungi ai desideri</button>
-      ${again}
+      ${CHECK_AGAIN()}
     </div>`);
-  if (c) checkPrice(null, c, code);
+  if (c) checkPrice(null, c, code, token);
+}
+// Controllo partito da una foto della copertina: il risultato scelto viene confrontato con la collezione
+function checkFromCandidate(c) {
+  const code = c.codice ? String(c.codice).replace(/\D/g, '') : '';
+  const token = 'cover' + Date.now().toString(36);
+  S.check = { code, token, res: null }; S.checkPrice = null;
+  const sameKind = i => i.tipo === c.tipo || (isMusic(i.tipo) && isMusic(c.tipo));
+  const hits = live().filter(i => (code && i.codice && sameCode(i.codice, code)) || (sameKind(i) && sameWork(i, c)));
+  if (checkKnown(hits.filter(i => !i.desiderio), hits.filter(i => i.desiderio), code, token, c)) { S.check.res = { tipo: c.tipo, list: [c] }; return; }
+  showCheckResult(code, { tipo: c.tipo, list: [c] }, token);
 }
 // "Quanto vale?" durante il controllo veloce
-async function checkPrice(item, cand, code) {
+async function checkPrice(item, cand, code, token = code) {
   const box = $('#checkPrice'); if (!box) return;
-  const base = { ...(cand || {}), ...(item || {}) }; if (!base.codice) base.codice = code;
-  const set = html => { const b = $('#checkPrice'); if (b && S.check && S.check.code === code) b.innerHTML = '<h3>Quanto vale?</h3>' + html; };
+  const base = { ...(cand || {}), ...(item || {}) }; if (!base.codice && code) base.codice = code;
+  const set = html => { const b = $('#checkPrice'); if (b && S.check && S.check.token === token) b.innerHTML = '<h3>Quanto vale?</h3>' + html; };
   if (!isMusic(base.tipo)) {
     const mv = item && !item.desiderio ? marketValue(item) : { v: 0 };
     return set(`${mv.v ? `<div class="value"><b>${esc(money(mv.v, mv.cur))}</b><span>valore inserito da te</span></div>` : ''}<p class="note pnote">Per libri e film non esiste un listino gratuito: guarda a quanto sono stati venduti davvero.</p>${soldLinks(base)}`);
@@ -1538,7 +1565,7 @@ async function checkPrice(item, cand, code) {
     if (!id) { const m = await discogsLookupId({ ...base, discogsId: '' }); if (m) { id = m.id; match = m.match; } }
     if (!id) return set(`<p class="note pnote">Edizione non trovata su Discogs.</p>${soldLinks(base)}`);
     const p = await discogsPrices(String(id));
-    S.checkPrice = { id: String(id), p, code };
+    S.checkPrice = { id: String(id), p, code, cand };
     if (item) { // aggiorna anche il valore del pezzo che hai già
       item.discogsId = String(id); item.valoreDiscogs = { ...p, match: (item.valoreDiscogs && item.valoreDiscogs.match) || match }; saveItem(item);
     }
@@ -1552,7 +1579,7 @@ function checkAdd(el) {
   const wish = el.dataset.v === 'wish'; const { code, res } = S.check || {};
   const list = (res && res.list) || [];
   S.intoDraft = false; S.pickWish = wish;
-  if (!list.length) { closeSheet(); S.pickWish = false; return startDraft({ tipo: (res && res.tipo) || (/^(978|979)/.test(code) ? 'libro' : S.addTipo), codice: code, desiderio: wish }, false); }
+  if (!list.length) { closeSheet(); S.pickWish = false; return startDraft({ tipo: (res && res.tipo) || (/^(978|979)/.test(code || '') ? 'libro' : S.addTipo), codice: code || '', desiderio: wish }, false); }
   if (list.length === 1) return pickCandidate(list[0]);
   S.candidates = list; S.searchCtx = { tipo: res.tipo, code };
   openSheet(`<h2>Quale di questi?</h2><div class="results">${resultsHTML(list)}</div>
@@ -2067,6 +2094,9 @@ function showUpdateBar() {
   document.body.appendChild(b);
 }
 const NEWS = {
+  '2.2': [
+    ['Foto copertina', 'Fotografa la copertina di un disco o di un libro: Spinyl lo riconosce e cerca dati e prezzi.'],
+  ],
   '2.1': [
     ['Quanto vale?', 'Scansionando un disco con “Ce l’ho già?” vedi subito i prezzi Discogs per ogni condizione; per libri e film i venduti su eBay e AbeBooks.'],
     ['Tab Valore', 'Nella lista, il filtro “Valore”: totale per categoria, diviso per condizione, con il prezzo di ogni pezzo.'],
@@ -2094,6 +2124,92 @@ function maybeWhatsNew() {
     <button class="btn primary block" style="margin-top:6px" data-a="closeSheet">Inizia</button>`), 600);
 }
 
+/* ── Riconoscere un pezzo dalla foto della copertina ───────── */
+// 1) Google Cloud Vision, se c'è la chiave: riconosce anche le copertine senza scritte
+// 2) altrimenti lettura del testo sul telefono (Tesseract, gratuito, nessun dato inviato)
+const TESS_URLS = ['https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js', 'https://unpkg.com/tesseract.js@5.1.1/dist/tesseract.min.js'];
+let ocrWorkerP = null;
+function ocrStatus(msg) { const l = $('#ocrStatus .loading'); if (l && l.lastChild) l.lastChild.textContent = msg; }
+async function ocrImage(blob) {
+  if (!(await loadFirst(TESS_URLS, () => window.Tesseract && window.Tesseract.createWorker))) throw new Error('ocr-load');
+  if (!ocrWorkerP) {
+    ocrStatus('Preparo il lettore di testo (solo la prima volta)…');
+    ocrWorkerP = Tesseract.createWorker('eng', 1, {
+      logger: m => { if (m && m.status === 'recognizing text') ocrStatus(`Leggo le scritte… ${Math.round((m.progress || 0) * 100)}%`); },
+    }).catch(e => { ocrWorkerP = null; throw e; });
+  }
+  const worker = await ocrWorkerP;
+  const { data } = await worker.recognize(blob);
+  let lines = (data && data.lines) || [];
+  if (!lines.length && data && data.blocks) lines = data.blocks.flatMap(b => (b.paragraphs || []).flatMap(p => p.lines || []));
+  lines = lines.map(l => ({ text: l.text, h: l.bbox ? l.bbox.y1 - l.bbox.y0 : 0, conf: l.confidence }));
+  if (!lines.length && data && data.text) lines = String(data.text).split('\n').map(t => ({ text: t, h: 0 }));
+  return lines;
+}
+// Dalle righe lette tiene le scritte più grandi (di solito titolo e autore), nell'ordine in cui compaiono
+function ocrQuery(lines) {
+  const L = lines.map(l => ({
+    t: String(l.text || '').replace(/[^\p{L}\p{N}'’&.,:!? -]/gu, ' ').split(/\s+/).filter(w => w.length > 1 || /^[\p{N}&aeiouAEIOU]$/u.test(w)).join(' ').trim(),
+    h: l.h || 0, c: l.conf == null ? 100 : l.conf,
+  })).filter(l => l.t.length >= 2 && /\p{L}{2,}/u.test(l.t) && l.c >= 45);
+  const maxH = Math.max(0, ...L.map(l => l.h));
+  const top = L.slice().sort((a, b) => b.h - a.h).filter(l => !maxH || l.h >= maxH * 0.45).slice(0, 3); // solo le scritte grandi
+  return L.filter(l => top.includes(l)).map(l => l.t).join(' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+}
+async function visionAnnotate(blob) {
+  const small = await compressImage(blob, 1024, 0.85);
+  const b64 = (await blobToDataURL(small)).split(',')[1];
+  const r = await fetch('https://vision.googleapis.com/v1/images:annotate?key=' + encodeURIComponent(cfg('visionKey')), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requests: [{ image: { content: b64 }, features: [{ type: 'WEB_DETECTION', maxResults: 8 }, { type: 'TEXT_DETECTION', maxResults: 1 }] }] }),
+  });
+  if (!r.ok) throw new Error('vision ' + r.status);
+  const d = ((await r.json()).responses || [])[0] || {};
+  const w = d.webDetection || {};
+  return {
+    guess: (w.bestGuessLabels || []).map(x => x.label).filter(Boolean),
+    entities: (w.webEntities || []).filter(e => e.description && (e.score || 0) >= 0.5).map(e => e.description),
+    text: (d.fullTextAnnotation && d.fullTextAnnotation.text) || ((d.textAnnotations || [])[0] || {}).description || '',
+  };
+}
+const VISION_JUNK = /\b(vinyl|vinile|vinilo|records?|lp|album|cover|copertina|portada|book|libro|cd|compact disc|cassette|cassetta|dvd|blu-?ray|poster|art|artwork|edition|paperback|hardcover|novel|romanzo|discogs|amazon|ebay)\b/gi;
+function visionQuery(v) {
+  const g = String(v.guess[0] || '').replace(VISION_JUNK, ' ').replace(/\s+/g, ' ').trim();
+  if (g.split(' ').length >= 2) return g.slice(0, 90);
+  const junk = new RegExp(VISION_JUNK.source, 'i');
+  const ent = v.entities.filter(e => !junk.test(e)).slice(0, 2).join(' ');
+  const txt = String(v.text).split('\n').map(t => t.trim()).filter(t => /\p{L}{2,}/u.test(t)).slice(0, 3).join(' ');
+  return [g, ent || txt].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().slice(0, 90);
+}
+async function recognizeCover(file) {
+  const mode = S.coverMode || 'add';
+  const tipo = S.coverTipo || S.addTipo || 'libro';
+  let blob;
+  try { blob = await compressImage(file, 1600, 0.9); } catch (e) { return toast('Formato foto non supportato'); }
+  if (S.coverShotUrl) URL.revokeObjectURL(S.coverShotUrl);
+  S.coverShot = blob; S.coverShotUrl = URL.createObjectURL(blob); S.coverMode = mode;
+  const useVision = !!cfg('visionKey');
+  const token = S.coverToken = uid();
+  openSheet(`<h2>Leggo la copertina…</h2><div class="coverhead"><img src="${S.coverShotUrl}" alt=""></div>
+    <div id="ocrStatus">${loadingHTML(useVision ? 'Riconosco la copertina…' : 'Leggo le scritte sulla copertina…')}</div>`);
+  let q = '', how = '';
+  if (useVision) {
+    try { q = visionQuery(await visionAnnotate(blob)); how = 'vision'; }
+    catch (e) { console.warn(e); toast('Google Vision non risponde: provo a leggere le scritte', 3000); }
+  }
+  if (!q) {
+    try { q = ocrQuery(await ocrImage(blob)); how = 'ocr'; }
+    catch (e) { console.warn(e); }
+  }
+  if (S.coverToken !== token || $('#sheetWrap').classList.contains('hidden')) return; // annullato
+  S.coverMode = mode;
+  sheetSearch(tipo, q, '', { cover: true, auto: !!q, how });
+}
+function startCover(mode, tipo) {
+  S.coverMode = mode; S.coverTipo = tipo;
+  const inp = $('#coverInput'); if (inp) inp.click();
+}
+
 /* ── Azioni ────────────────────────────────────────────────── */
 const actions = {
   closeSheet, back: () => history.back(),
@@ -2107,7 +2223,7 @@ const actions = {
   add: () => sheetAdd(),
   addTipo: el => { S.addTipo = el.dataset.v; sheetAdd(); },
   addScan: () => { closeSheet(); const t = S.addTipo; Scanner.start(code => handleCode(code, t, false)); },
-  addSearch: () => { S.intoDraft = false; S.pickWish = false; sheetSearch(S.addTipo); },
+  addSearch: () => { S.intoDraft = false; S.pickWish = false; S.coverMode = null; sheetSearch(S.addTipo); },
   addManual: () => { closeSheet(); startDraft({ tipo: S.addTipo }, false); },
   manualWithCode: () => {
     const c = S.searchCtx || {}; closeSheet();
@@ -2115,7 +2231,12 @@ const actions = {
     const wish = !!S.pickWish; S.pickWish = false;
     startDraft({ tipo: c.tipo || S.addTipo, codice: c.code || '', desiderio: wish }, S.intoDraft);
   },
-  pick: el => (S.batchTarget ? batchAssign(S.candidates[+el.dataset.v]) : pickCandidate(S.candidates[+el.dataset.v])),
+  pick: el => {
+    const c = S.candidates[+el.dataset.v];
+    if (S.batchTarget) return batchAssign(c);
+    if (S.coverMode === 'check') { S.coverMode = null; return checkFromCandidate(c); }
+    return pickCandidate(c);
+  },
   closeScanner: () => {
     const wasBatch = Scanner.continuous; Scanner.stop();
     if (wasBatch && S.view !== 'batch' && S.batch.length) go('batch');
@@ -2124,7 +2245,7 @@ const actions = {
   scanPhoto: () => $('#scanPhotoInput').click(),
 
   scanForDraft: () => { const t = S.draft.tipo; Scanner.start(code => { S.draft.codice = code; handleCode(code, t, true); }); },
-  searchForDraft: () => { S.intoDraft = true; S.pickWish = false; sheetSearch(S.draft.tipo, [S.draft.titolo, isMusic(S.draft.tipo) ? S.draft.autore : ''].filter(Boolean).join(' ')); },
+  searchForDraft: () => { S.intoDraft = true; S.pickWish = false; S.coverMode = null; sheetSearch(S.draft.tipo, [S.draft.titolo, isMusic(S.draft.tipo) ? S.draft.autore : ''].filter(Boolean).join(' ')); },
   draftTipo: el => { S.draft.tipo = el.dataset.v; render(); },
   rateDraft: el => { const v = +el.dataset.v; S.draft.valutazione = S.draft.valutazione === v ? 0 : v; el.parentElement.outerHTML = starsHTML(S.draft.valutazione, 'rateDraft'); },
   addPhoto: () => $('#photoInput').click(),
@@ -2165,7 +2286,7 @@ const actions = {
   export: () => exportBackup(),
   import: () => $('#importInput').click(),
   saveCfg: () => {
-    ['booksKey', 'tmdbKey', 'discogsToken', 'clientId'].forEach(k => { const el = $('#cfg-' + k); if (el) setCfg(k, el.value); });
+    ['booksKey', 'tmdbKey', 'discogsToken', 'visionKey', 'clientId'].forEach(k => { const el = $('#cfg-' + k); if (el) setCfg(k, el.value); });
     toast('Impostazioni salvate'); render();
   },
 };
@@ -2194,6 +2315,14 @@ Object.assign(actions, {
   batchChoose: el => { const r = S.batch.find(x => x.id === el.dataset.v); if (!r || !r.alts) return; S.batchTarget = r.id; S.candidates = r.alts; openSheet(`<h2>Quale di questi?</h2><div class="results">${resultsHTML(r.alts)}</div>`); },
   batchSearch: el => { const r = S.batch.find(x => x.id === el.dataset.v); if (!r) return; S.intoDraft = false; S.pickWish = false; sheetSearch(r.tipo, '', r.code); S.batchTarget = r.id; },
   batchSave: () => batchSave(),
+  addCover: () => { closeSheet(); startCover('add', S.addTipo); },
+  checkCover: () => { closeSheet(); startCover('check', S.coverTipo || localStorage.getItem('coverTipo') || 'vinile'); },
+  scanCover: () => { const check = Scanner.mode === 'check'; Scanner.stop(); startCover(check ? 'check' : 'add', check ? (S.coverTipo || localStorage.getItem('coverTipo') || 'vinile') : S.addTipo); },
+  searchTipo: el => {
+    const t = el.dataset.v; S.searchCtx.tipo = t; S.coverTipo = t; try { localStorage.setItem('coverTipo', t); } catch (e) {}
+    document.querySelectorAll('[data-a=searchTipo]').forEach(b => b.classList.toggle('on', b === el));
+    const q = $('#titleQ'); if (q) { q.placeholder = tr(searchPlaceholder(t)); if (q.value.trim()) $('#titleSearch').requestSubmit(); }
+  },
   batchForce: el => { const r = S.batch.find(x => x.id === el.dataset.v); if (r) { r.force = !r.force; saveBatch(); render(); } },
   exportCsv: () => exportCsv(),
   importCsv: () => $('#csvInput').click(),
@@ -2253,6 +2382,7 @@ $('#photoInput').addEventListener('change', async e => {
 });
 $('#scanPhotoInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f && Scanner.onCode) Scanner.fromPhoto(f); });
 $('#importInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importBackup(f); });
+$('#coverInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) recognizeCover(f); else S.coverMode = null; });
 $('#csvInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importCsvFile(f); });
 
 window.addEventListener('online', () => { scheduleSync(800); runBatch(); runCovers(); });

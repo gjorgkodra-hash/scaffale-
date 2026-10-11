@@ -241,6 +241,22 @@
     ['Importa ed esporta', 'Import and export', 'Importa y exporta'],
     ['Da Goodreads, Letterboxd e Discogs; tabella CSV per Excel.', 'From Goodreads, Letterboxd and Discogs; CSV table for Excel.', 'Desde Goodreads, Letterboxd y Discogs; tabla CSV para Excel.'],
 
+    // Versione 2.2 — foto della copertina
+    ['Foto della copertina', 'Cover photo', 'Foto de la portada'], ['🖼️ Foto della copertina', '🖼️ Cover photo', '🖼️ Foto de la portada'],
+    ['Riconosce titolo e autore dalla copertina', 'Recognises title and author from the cover', 'Reconoce título y autor por la portada'],
+    ['Dalla copertina', 'From the cover', 'Desde la portada'], ['Altro codice', 'Another code', 'Otro código'], ['Copertina', 'Cover', 'Portada'],
+    ['Ho riconosciuto la copertina: correggi il testo se serve.', 'Cover recognised: fix the text if needed.', 'He reconocido la portada: corrige el texto si hace falta.'],
+    ['Ho letto le scritte della copertina: correggi il testo se serve.', 'I read the text on the cover: fix it if needed.', 'He leído el texto de la portada: corrígelo si hace falta.'],
+    ['Non sono riuscito a leggere la copertina: scrivi titolo e autore.', 'I couldn’t read the cover: type the title and author.', 'No he podido leer la portada: escribe título y autor.'],
+    ['Suggerimento iPhone: tocca il campo, poi “Scansiona testo” per copiare le scritte con la fotocamera.', 'iPhone tip: tap the field, then “Scan Text” to copy the words with the camera.', 'Consejo para iPhone: toca el campo y luego “Escanear texto” para copiar el texto con la cámara.'],
+    ['Leggo la copertina…', 'Reading the cover…', 'Leyendo la portada…'], ['Riconosco la copertina…', 'Recognising the cover…', 'Reconociendo la portada…'],
+    ['Leggo le scritte sulla copertina…', 'Reading the text on the cover…', 'Leyendo el texto de la portada…'],
+    ['Preparo il lettore di testo (solo la prima volta)…', 'Preparing the text reader (first time only)…', 'Preparando el lector de texto (solo la primera vez)…'],
+    ['Google Vision non risponde: provo a leggere le scritte', 'Google Vision isn’t responding: trying to read the text instead', 'Google Vision no responde: intento leer el texto'],
+    ['Chiave Google Cloud Vision (riconosce anche le copertine senza scritte, facoltativa)', 'Google Cloud Vision key (also recognises covers without text, optional)', 'Clave de Google Cloud Vision (reconoce también portadas sin texto, opcional)'],
+    ['Foto copertina', 'Cover photo', 'Foto de portada'],
+    ['Riconosci dalla copertina', 'Recognise from the cover', 'Reconocer por la portada'],
+    ['Fotografa la copertina di un disco o di un libro: Spinyl lo riconosce e cerca dati e prezzi.', 'Photograph a record or book cover: Spinyl recognises it and looks up details and prices.', 'Fotografía la portada de un disco o un libro: Spinyl lo reconoce y busca datos y precios.'],
     // Versione 2.1 — prezzi
     ['Tab Valore', 'Value tab', 'Pestaña Valor'],
     ['Scansionando un disco con “Ce l’ho già?” vedi subito i prezzi Discogs per ogni condizione; per libri e film i venduti su eBay e AbeBooks.', 'Scan a record with “Do I have it?” to see Discogs prices for every condition straight away; for books and films, sold listings on eBay and AbeBooks.', 'Al escanear un disco con “¿Ya lo tengo?” ves al momento los precios de Discogs por estado; para libros y películas, los vendidos en eBay y AbeBooks.'],
@@ -313,6 +329,7 @@
     [/^(\d+) dai desideri alla collezione$/, (m, l) => l === 'en' ? `${m[1]} moved from wishlist to collection` : `${m[1]} pasan de deseos a la colección`],
     [/^Importa (\d+) pezzi$/, (m, l) => l === 'en' ? `Import ${m[1]} items` : `Importar ${m[1]} artículos`],
     [/^Novità di Spinyl (.+)$/, (m, l) => (l === 'en' ? 'What’s new in Spinyl ' : 'Novedades de Spinyl ') + m[1]],
+    [/^Leggo le scritte… (\d+)%$/, (m, l) => (l === 'en' ? 'Reading the text… ' : 'Leyendo el texto… ') + m[1] + '%'],
 
     [/^\((\d+) copie\)$/, (m, l) => l === 'en' ? `(${m[1]} copies)` : `(${m[1]} copias)`],
     [/^tutti i (\d+) pezzi hanno un valore$/, (m, l) => l === 'en' ? `all ${m[1]} items have a value` : `los ${m[1]} artículos tienen valor`],
