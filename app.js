@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.4.0';
+const VERSION = '2.5.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -205,7 +205,7 @@ function go(view, id, replace) {
 }
 window.addEventListener('popstate', e => {
   closeSheet(); Scanner.stop();
-  const st = e.state || { view: 'list' };
+  const st = e.state || { view: S.main || 'list' };
   if (S.view === 'edit' && st.view !== 'edit') discardDraftPhotos();
   S.view = st.view; S.id = st.id;
   if (S.view === 'edit' && !S.draft) S.view = 'list';
@@ -270,6 +270,7 @@ function render() {
   else if (S.view === 'settings') app.innerHTML = viewSettings();
   else if (S.view === 'stats') app.innerHTML = viewStats();
   else if (S.view === 'batch') app.innerHTML = viewBatch();
+  else if (S.view === 'home') { app.innerHTML = viewHome(); renderFeed(); loadFeed(); }
   else { S.view = 'list'; app.innerHTML = viewList(); renderGrid(); centerChip(false); }
   hydratePhotos(app);
 }
@@ -287,6 +288,21 @@ function counts() {
   return c;
 }
 
+// Intestazione comune a Novità e Collezione, con le due schede
+function mainHeader(active) {
+  return `<header class="top">
+    <div class="grow"><h1>Spinyl</h1></div>
+    <button class="iconbtn" data-a="check" aria-label="Ce l'ho già?">${ic('check')}</button>
+    <button class="iconbtn" data-a="stats" aria-label="Statistiche">${ic('chart')}</button>
+    ${syncBtn()}
+    <button class="iconbtn" data-a="settings" aria-label="Impostazioni">${ic('gear')}</button>
+  </header>
+  <nav class="maintabs" role="tablist">
+    <button role="tab" class="${active === 'home' ? 'on' : ''}" data-a="mainTab" data-v="home">Novità</button>
+    <button role="tab" class="${active === 'list' ? 'on' : ''}" data-a="mainTab" data-v="list">Collezione<b>${live().filter(i => !i.desiderio).length}</b></button>
+  </nav>`;
+}
+
 function viewList() {
   const c = counts();
   const compact = v => new Intl.NumberFormat(LOC(), { style: 'currency', currency: 'EUR', notation: 'compact', maximumFractionDigits: v >= 1000 ? 1 : 0 }).format(v);
@@ -296,13 +312,7 @@ function viewList() {
   const needLogin = cfg('clientId') && S.syncState === 'login' && S.dirty;
   const queued = S.batch.length;
   return `
-  <header class="top">
-    <div class="grow"><h1>Spinyl</h1></div>
-    <button class="iconbtn" data-a="check" aria-label="Ce l'ho già?">${ic('check')}</button>
-    <button class="iconbtn" data-a="stats" aria-label="Statistiche">${ic('chart')}</button>
-    ${syncBtn()}
-    <button class="iconbtn" data-a="settings" aria-label="Impostazioni">${ic('gear')}</button>
-  </header>
+  ${mainHeader('list')}
   <div class="searchbar"><label>${ic('search', 18)}<input id="q" type="search" placeholder="Cerca titolo, autore, codice, note…" value="${esc(S.q)}" autocomplete="off"></label></div>
   <nav class="chips">${chips}</nav>
   ${needLogin ? `<div class="banner">Ci sono modifiche da salvare su Drive.<button data-a="login">Accedi</button></div>` : ''}
@@ -1441,7 +1451,7 @@ async function restoreCopy(id, label) {
 
 // Si può lasciare la pagina un attimo (per il rinnovo dell'accesso) senza perdere niente?
 function safeToLeave() {
-  return S.view === 'list' && !S.draft && !Scanner.active && $('#sheetWrap').classList.contains('hidden') && !(S.valuing) && !batchRunning;
+  return (S.view === 'list' || S.view === 'home') && !S.draft && !Scanner.active && $('#sheetWrap').classList.contains('hidden') && !(S.valuing) && !batchRunning;
 }
 
 /* ── Sincronizzazione ──────────────────────────────────────── */
@@ -1901,7 +1911,7 @@ async function valueAll() {
   }
   const done = S.valuing.done; S.valuing = null;
   toast(done === 1 ? 'Aggiornato 1 valore' : `Aggiornati ${done} valori`);
-  if (S.view === 'stats' || S.view === 'list') render();
+  if (S.view === 'stats' || S.view === 'list' || S.view === 'home') render();
 }
 
 /* ── Statistiche e "pesca a caso" ──────────────────────────── */
@@ -2215,6 +2225,9 @@ function showUpdateBar() {
   document.body.appendChild(b);
 }
 const NEWS = {
+  '2.5': [
+    ['Home Novità', 'La prima pagina mostra i nuovi album dei tuoi artisti, i nuovi libri dei tuoi autori, i film al cinema e cosa stai leggendo.'],
+  ],
   '2.4': [
     ['Copie automatiche', 'Ogni giorno Spinyl tiene una copia della collezione su Drive (le ultime 10): da Impostazioni puoi tornare indietro.'],
     ['Accesso a Google più comodo', 'Quando l’accesso scade, Spinyl lo rinnova da solo se sei ancora collegato a Google. E le modifiche fatte su due telefoni non si sovrascrivono più.'],
@@ -2342,6 +2355,200 @@ function startCover(mode, tipo) {
   const inp = $('#coverInput'); if (inp) inp.click();
 }
 
+/* ── Home "Novità" ─────────────────────────────────────────── */
+// Righe dalla tua collezione (calcolate al momento) + righe online (aggiornate al massimo ogni 12 ore)
+const FEED_TTL = 12 * 3600e3;
+const FEED_ROWS = [
+  { key: 'artisti', title: 'Dai tuoi artisti', icon: '💿', need: () => topNames(i => isMusic(i.tipo)).length },
+  { key: 'autori', title: 'Dai tuoi autori', icon: '📚', need: () => topNames(i => i.tipo === 'libro').length },
+  { key: 'registi', title: 'Dai tuoi registi', icon: '🎞️', need: () => cfg('tmdbKey') && topNames(i => i.tipo === 'film').length },
+  { key: 'cinema', title: 'Al cinema', icon: '🎬', need: () => cfg('tmdbKey') },
+  { key: 'arrivo', title: 'In arrivo al cinema', icon: '🍿', need: () => cfg('tmdbKey') },
+  { key: 'offerte', title: 'Desideri in vendita', icon: '⭐', need: () => cfg('discogsToken') && live().some(i => i.desiderio && isMusic(i.tipo)) },
+  { key: 'continua', title: 'Continua', icon: '📖', local: true },
+  { key: 'ricorda', title: 'Da ricordare', icon: '⏰', local: true },
+  { key: 'annofa', title: 'Un anno fa', icon: '🕰️', local: true },
+];
+const isoDay = ms => new Date(ms).toISOString().slice(0, 10);
+const owned = c => live().some(i => !i.desiderio && sameWork(i, c) && (i.tipo === c.tipo || (isMusic(i.tipo) && isMusic(c.tipo))));
+const wished = c => live().some(i => i.desiderio && sameWork(i, c));
+// Gli autori / artisti / registi più presenti nella collezione
+function topNames(filter, n = 8) {
+  const m = new Map();
+  live().filter(i => !i.desiderio && filter(i) && i.autore).forEach(i => {
+    const name = String(i.autore).split(/,|;| & | feat\. /i)[0].trim(); if (!name || /^(various|vari|aa\.? ?vv\.?)/i.test(name)) return;
+    const k = norm(name); const e = m.get(k) || [name, 0]; e[1]++; m.set(k, e);
+  });
+  return [...m.values()].sort((a, b) => b[1] - a[1]).slice(0, n).map(e => e[0]);
+}
+function localRow(key) {
+  const own = live().filter(i => !i.desiderio);
+  if (key === 'continua') return own.filter(i => i.stato === 'in').concat(own.filter(i => i.stato === 'da')).slice(0, 15);
+  if (key === 'ricorda') return own.filter(i => i.prestatoA && loanDays(i) > PRESTITO_GIORNI).sort((a, b) => loanDays(b) - loanDays(a));
+  if (key === 'annofa') {
+    const target = Date.now() - 365 * 864e5;
+    return own.filter(i => Math.abs((i.createdAt || 0) - target) < 21 * 864e5).slice(0, 15);
+  }
+  return [];
+}
+// Fonti online
+async function feedTmdb(kind) {
+  const k = cfg('tmdbKey'); const reg = { it: 'IT', en: 'GB', es: 'ES' }[LNG()] || 'IT';
+  const d = await fj(`https://api.themoviedb.org/3/movie/${kind}?region=${reg}&language=${LOC()}&api_key=${encodeURIComponent(k)}`);
+  const todayIso = isoDay(Date.now());
+  return (d.results || []).filter(m => kind !== 'upcoming' || (m.release_date || '') >= todayIso)
+    .sort((a, b) => kind === 'upcoming' ? String(a.release_date).localeCompare(String(b.release_date)) : (b.popularity || 0) - (a.popularity || 0))
+    .slice(0, 15).map(m => ({ tipo: 'film', titolo: m.title, anno: year(m.release_date), uscita: m.release_date || '', descrizione: m.overview || '',
+      coverUrl: m.poster_path ? 'https://image.tmdb.org/t/p/w342' + m.poster_path : '', _tmdbId: m.id, fonte: 'TMDB' }));
+}
+async function feedArtists() {
+  const since = isoDay(Date.now() - 150 * 864e5); const out = [];
+  for (const a of topNames(i => isMusic(i.tipo))) {
+    try {
+      const q = `artist:"${a.replace(/"/g, '')}" AND firstreleasedate:[${since} TO *] AND (primarytype:album OR primarytype:ep)`;
+      const d = await fj('https://musicbrainz.org/ws/2/release-group/?fmt=json&limit=6&query=' + encodeURIComponent(q));
+      (d['release-groups'] || []).filter(g => (g.score || 0) >= 85 && (g['artist-credit'] || []).some(c => norm(c.name || (c.artist || {}).name) === norm(a)))
+        .forEach(g => out.push({ tipo: 'vinile', titolo: g.title, autore: a, anno: year(g['first-release-date']), uscita: g['first-release-date'] || '',
+          coverUrl: `https://coverartarchive.org/release-group/${g.id}/front-250`, fonte: 'MusicBrainz', sub: g['primary-type'] || '' }));
+    } catch (e) { if (!navigator.onLine) break; }
+    await sleep(1100); // MusicBrainz: una richiesta al secondo
+  }
+  return dedupeFeed(out).sort((a, b) => String(b.uscita).localeCompare(String(a.uscita))).slice(0, 15);
+}
+async function feedAuthors() {
+  const since = isoDay(Date.now() - 365 * 864e5); const out = []; const key = cfg('booksKey');
+  await Promise.all(topNames(i => i.tipo === 'libro').map(async a => {
+    const url = 'https://www.googleapis.com/books/v1/volumes?maxResults=10&printType=books&orderBy=newest&q=' + encodeURIComponent(`inauthor:"${a}"`);
+    let d; try { d = await fj(url + (key ? '&key=' + encodeURIComponent(key) : '')); } catch (e) { try { d = await fj(url); } catch (e2) { return; } }
+    (d.items || []).forEach(it => {
+      const v = it.volumeInfo || {}; const pub = String(v.publishedDate || '');
+      if (pub.length < 7 || pub < since.slice(0, pub.length) || !(v.authors || []).some(x => norm(x).includes(norm(a)) || norm(a).includes(norm(x)))) return;
+      let img = v.imageLinks && (v.imageLinks.thumbnail || v.imageLinks.smallThumbnail); if (img) img = img.replace('http://', 'https://').replace('&edge=curl', '');
+      const ids = v.industryIdentifiers || []; const isbn = ids.find(x => x.type === 'ISBN_13') || ids[0];
+      out.push({ tipo: 'libro', titolo: [v.title, v.subtitle].filter(Boolean).join(': '), autore: (v.authors || []).join(', '), anno: year(pub), uscita: pub,
+        editore: v.publisher || '', descrizione: stripHtml(v.description), coverUrl: img || '', codice: isbn ? isbn.identifier : '', pagine: v.pageCount || '', fonte: 'Google Libri' });
+    });
+  }));
+  return dedupeFeed(out).sort((a, b) => String(b.uscita).localeCompare(String(a.uscita))).slice(0, 15);
+}
+async function feedDirectors() {
+  const k = encodeURIComponent(cfg('tmdbKey')); const since = isoDay(Date.now() - 240 * 864e5); const out = [];
+  for (const name of topNames(i => i.tipo === 'film', 6)) {
+    try {
+      const p = await fj(`https://api.themoviedb.org/3/search/person?query=${encodeURIComponent(name)}&api_key=${k}`);
+      const person = (p.results || []).find(x => x.known_for_department === 'Directing') || (p.results || [])[0]; if (!person) continue;
+      const c = await fj(`https://api.themoviedb.org/3/person/${person.id}/movie_credits?language=${LOC()}&api_key=${k}`);
+      (c.crew || []).filter(m => m.job === 'Director' && (m.release_date || '9999') >= since).forEach(m => out.push({ tipo: 'film', titolo: m.title, autore: name,
+        anno: year(m.release_date), uscita: m.release_date || '', descrizione: m.overview || '', coverUrl: m.poster_path ? 'https://image.tmdb.org/t/p/w342' + m.poster_path : '', _tmdbId: m.id, fonte: 'TMDB' }));
+    } catch (e) { if (!navigator.onLine) break; }
+  }
+  return dedupeFeed(out).sort((a, b) => String(b.uscita || '9999').localeCompare(String(a.uscita || '9999'))).slice(0, 15);
+}
+async function feedOffers() {
+  const out = [];
+  for (const it of live().filter(i => i.desiderio && isMusic(i.tipo)).slice(0, 10)) {
+    try {
+      const m = await discogsLookupId(it); if (!m) continue;
+      const p = await discogsPrices(m.id);
+      if (p.min != null && p.n > 0) out.push({ id: it.id, local: true, prezzo: p.min, cur: p.cur, n: p.n });
+    } catch (e) { if (!navigator.onLine) break; }
+    await sleep(2200);
+  }
+  return out.sort((a, b) => a.prezzo - b.prezzo);
+}
+const dedupeFeed = L => { const seen = new Set(); return L.filter(c => { const k = c.tipo + '|' + norm(c.titolo) + '|' + norm(String(c.autore || '').split(',')[0]); if (seen.has(k)) return false; seen.add(k); return true; }); };
+const FEED_FETCH = { cinema: () => feedTmdb('now_playing'), arrivo: () => feedTmdb('upcoming'), artisti: feedArtists, autori: feedAuthors, registi: feedDirectors, offerte: feedOffers };
+
+let feedLoading = false, feedAgain = false;
+// "Firma" della collezione: se cambiano artisti, autori, registi o desideri, le novità si ricalcolano
+const feedSig = () => JSON.stringify([topNames(i => isMusic(i.tipo)), topNames(i => i.tipo === 'libro'), topNames(i => i.tipo === 'film', 6), live().filter(i => i.desiderio && isMusic(i.tipo)).length, !!cfg('tmdbKey'), !!cfg('discogsToken')]);
+async function loadFeed(force) {
+  if (feedLoading) { if (force || (S.feed && S.feed.sig !== feedSig())) feedAgain = true; return; }
+  if (!S.feed) S.feed = (await getMeta('feed')) || null;
+  const fresh = S.feed && S.feed.lang === LNG() && S.feed.sig === feedSig() && Date.now() - S.feed.at < FEED_TTL;
+  if (fresh && !force) { renderFeed(); return; }
+  if (!navigator.onLine) { renderFeed(); return; }
+  feedLoading = true;
+  const prev = (S.feed && S.feed.rows) || {};
+  S.feed = { at: Date.now(), lang: LNG(), sig: feedSig(), rows: { ...prev }, loading: {} };
+  const rows = FEED_ROWS.filter(r => !r.local && r.need());
+  rows.forEach(r => { S.feed.loading[r.key] = true; });
+  renderFeed();
+  // TMDB e Google Libri in parallelo; MusicBrainz e Discogs vanno piano per i loro limiti
+  await Promise.all(rows.map(async r => {
+    try { S.feed.rows[r.key] = await FEED_FETCH[r.key](); } catch (e) { console.warn('feed', r.key, e); }
+    delete S.feed.loading[r.key]; renderFeed(r.key);
+  }));
+  feedLoading = false;
+  const { loading, ...save } = S.feed; await setMeta('feed', save).catch(() => {});
+  renderFeed();
+  if (feedAgain) { feedAgain = false; if (S.view === 'home') loadFeed(true); }
+}
+function viewHome() {
+  const empty = !live().filter(i => !i.desiderio).length;
+  return `${mainHeader('home')}
+  <div class="home">
+    ${empty ? `<div class="hint"><b>Benvenuto in Spinyl!</b><span>Aggiungi i tuoi primi libri, dischi e film: qui compariranno le novità dei tuoi autori, artisti e registi.</span><button class="btn primary" data-a="add">${ic('plus', 18)}Aggiungi</button></div>` : ''}
+    <div id="feedRows"></div>
+    <p class="note home-foot" id="feedFoot"></p>
+  </div>
+  <button class="fab" data-a="add">${ic('plus')}Aggiungi</button>`;
+}
+function feedCard(c, rowKey, i) {
+  if (c.local || c.id) {
+    const it = byId(c.id) || c; if (!it || it.deleted) return '';
+    const sub = rowKey === 'offerte' ? `da ${money(c.prezzo, c.cur)}` : rowKey === 'ricorda' ? `${it.prestatoA} · ${loanDays(it)} gg` : [it.autore, it.anno].filter(Boolean).join(' · ');
+    return `<button class="fcard t-${esc(it.tipo)}" data-a="open" data-id="${esc(it.id)}">${coverHTML(it)}<b translate="no">${esc(it.titolo)}</b><span ${rowKey === 'offerte' || rowKey === 'ricorda' ? '' : 'translate="no"'}>${esc(sub)}</span></button>`;
+  }
+  const badge = owned(c) ? `<i class="fbadge own">Ce l'hai</i>` : wished(c) ? `<i class="fbadge">★</i>` : '';
+  const when = c.uscita && c.uscita > isoDay(Date.now()) ? new Date(c.uscita + 'T12:00:00').toLocaleDateString(LOC(), { day: 'numeric', month: 'short' }) : '';
+  return `<button class="fcard t-${esc(c.tipo)}" data-a="feedOpen" data-row="${rowKey}" data-i="${i}">${coverHTML(c)}${badge}<b translate="no">${esc(c.titolo)}</b><span translate="no">${esc(when || [c.autore, c.anno].filter(Boolean).join(' · '))}</span></button>`;
+}
+function renderFeed(onlyKey) {
+  const box = $('#feedRows'); if (!box || S.view !== 'home') return;
+  const rowHTML = r => {
+    const list = r.local ? localRow(r.key) : ((S.feed && S.feed.rows && S.feed.rows[r.key]) || []);
+    const loading = S.feed && S.feed.loading && S.feed.loading[r.key];
+    if (!list.length && !loading) return '';
+    const cards = list.length ? list.map((c, i) => feedCard(c, r.key, i)).join('') : Array.from({ length: 4 }, () => '<div class="fcard skel"><div class="cover"></div><b></b><span></span></div>').join('');
+    return `<section class="feedrow" data-row="${r.key}"><h3><span aria-hidden="true">${r.icon}</span> ${esc(r.title)}${loading && list.length ? ' <i class="spinner sm"></i>' : ''}</h3><div class="hscroll">${cards}</div></section>`;
+  };
+  if (onlyKey) {
+    const r = FEED_ROWS.find(x => x.key === onlyKey); const old = box.querySelector(`[data-row="${onlyKey}"]`);
+    const html = rowHTML(r);
+    if (old) { if (html) old.outerHTML = html; else old.remove(); }
+    else if (html) { box.innerHTML = FEED_ROWS.map(rowHTML).join(''); }
+  } else box.innerHTML = FEED_ROWS.map(rowHTML).join('');
+  hydratePhotos(box);
+  const foot = $('#feedFoot');
+  if (foot) foot.innerHTML = S.feed && S.feed.at && !feedLoading ? `<span>Aggiornato il ${esc(fmtDateTime(S.feed.at))}</span> · <button class="more" data-a="feedRefresh">Aggiorna</button>` : feedLoading ? '' : (!navigator.onLine ? '<span>Sei offline: le novità arrivano appena torna la connessione.</span>' : '');
+  if (!box.innerHTML.trim() && !feedLoading) box.innerHTML = `<p class="note" style="padding:20px 4px">Ancora nessuna novità: aggiungi qualche pezzo alla collezione e torna qui.</p>`;
+}
+async function feedOpen(el) {
+  const row = el.dataset.row; const c = ((S.feed.rows || {})[row] || [])[+el.dataset.i]; if (!c) return;
+  S.feedItem = c;
+  const when = c.uscita ? new Date(c.uscita + (c.uscita.length === 10 ? 'T12:00:00' : '')).toLocaleDateString(LOC(), c.uscita.length >= 10 ? { day: 'numeric', month: 'long', year: 'numeric' } : { month: 'long', year: 'numeric' }) : '';
+  const own = owned(c), wish = wished(c);
+  openSheet(`<div class="pickcard">${coverHTML(c)}<div><b translate="no">${esc(c.titolo)}</b><span translate="no">${esc([c.autore, c.editore].filter(Boolean).join(' · '))}</span>
+      ${when ? `<small>${c.uscita > isoDay(Date.now()) ? 'Esce il' : 'Uscito il'} <span translate="no">${esc(when)}</span></small>` : ''}</div></div>
+    ${c.descrizione ? `<div class="prose clamp" translate="no" style="margin-top:12px">${esc(c.descrizione)}</div>` : ''}
+    ${own ? `<div class="verdict ok" style="margin-top:12px"><b>✓</b>Ce l'hai già</div>` : wish ? `<div class="verdict wish" style="margin-top:12px"><b>★</b>È nella tua lista desideri</div>` : ''}
+    ${linksHTML(c).replace('class="section"', 'class="section" style="margin-top:12px"')}
+    <div class="stack" style="padding-top:12px">
+      ${!own && !wish ? `<button class="btn primary block" data-a="feedWish">Aggiungi ai desideri</button>` : ''}
+      ${!own ? `<button class="btn block" data-a="feedOwn">Ce l'ho: aggiungi alla collezione</button>` : ''}
+    </div>`);
+}
+async function feedAdd(wish) {
+  const c = S.feedItem; if (!c) return;
+  openSheet(`<h2>Un attimo…</h2>${loadingHTML('Recupero i dettagli')}`);
+  const data = await enrich({ ...c }); delete data.uscita;
+  if (!data.formato && TIPI[data.tipo]) data.formato = '';
+  closeSheet();
+  if (wish) { const it = normalize({ ...EMPTY(), ...data, desiderio: true }); await saveItem(it); toast('Aggiunto ai desideri'); renderFeed(); return; }
+  S.intoDraft = false; startDraft(data, false);
+}
+
 /* ── Azioni ────────────────────────────────────────────────── */
 const actions = {
   closeSheet, back: () => history.back(),
@@ -2447,6 +2654,11 @@ Object.assign(actions, {
   batchChoose: el => { const r = S.batch.find(x => x.id === el.dataset.v); if (!r || !r.alts) return; S.batchTarget = r.id; S.candidates = r.alts; openSheet(`<h2>Quale di questi?</h2><div class="results">${resultsHTML(r.alts)}</div>`); },
   batchSearch: el => { const r = S.batch.find(x => x.id === el.dataset.v); if (!r) return; S.intoDraft = false; S.pickWish = false; sheetSearch(r.tipo, '', r.code); S.batchTarget = r.id; },
   batchSave: () => batchSave(),
+  mainTab: el => { S.main = el.dataset.v; try { localStorage.setItem('mainTab', S.main); } catch (e) {} go(S.main, null, true); },
+  feedOpen: el => feedOpen(el),
+  feedWish: () => feedAdd(true),
+  feedOwn: () => feedAdd(false),
+  feedRefresh: () => loadFeed(true),
   allowMass: () => { S.allowMass = true; sync(); toast('Sincronizzazione…', 1200); },
   showCopies: async () => {
     openSheet(`<h2>Copie di sicurezza</h2>${loadingHTML('Leggo le copie su Drive…')}`);
@@ -2546,7 +2758,8 @@ document.addEventListener('visibilitychange', () => {
   S.dirty = !!(await getMeta('dirty'));
   S.lastSync = (await getMeta('lastSync')) || 0;
   S.batch = ((await getMeta('batch')) || []).map(r => (r.status === 'busy' ? { ...r, status: 'wait' } : r));
-  history.replaceState({ view: 'list' }, '');
+  S.main = localStorage.getItem('mainTab') === 'list' ? 'list' : 'home'; S.view = S.main;
+  history.replaceState({ view: S.main }, '');
   if (window.I18N) I18N.start();
   render();
   if (localStorage.getItem('gtoken')) localStorage.setItem('gEverLogged', '1'); // chi ha già fatto l'accesso in passato

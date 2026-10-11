@@ -103,10 +103,24 @@ def make_route(no_vision=False):
                 if bc.startswith('0000'): return await J({'results': []})
                 return await J({'results': DSOTM if bc.startswith('5099') or 'pink' in qq else NEVERMIND})
             return await J({})
-        if h == 'musicbrainz.org': return await J({'releases': []})
+        if h == 'musicbrainz.org':
+            if '/release-group/' in p.path:
+                return await J({'release-groups': [{'id': 'rg1', 'title': 'Nuovo album', 'score': 100, 'first-release-date': '2026-09-20', 'primary-type': 'Album', 'artist-credit': [{'name': 'Pink Floyd'}]}]})
+            return await J({'releases': []})
+        if h == 'api.themoviedb.org':
+            film = lambda i, t, d: {'id': i, 'title': t, 'release_date': d, 'overview': 'Trama di ' + t, 'poster_path': '/p%d.png' % i, 'popularity': 100 - i}
+            if p.path.endswith('/movie/now_playing'): return await J({'results': [film(1, 'Film in sala', '2026-10-01'), film(2, 'Altro film', '2026-09-25')]})
+            if p.path.endswith('/movie/upcoming'): return await J({'results': [film(3, 'Film in arrivo', '2099-12-01'), film(4, 'Già uscito', '2020-01-01')]})
+            if p.path.endswith('/search/person'): return await J({'results': [{'id': 77, 'known_for_department': 'Directing'}]})
+            if p.path.endswith('/movie_credits'): return await J({'crew': [dict(film(5, 'Nuovo film del regista', '2099-05-01'), job='Director'), dict(film(6, 'Vecchio', '1990-01-01'), job='Director')]})
+            if re.search(r'/movie/\d+$', p.path): return await J({'credits': {'crew': [{'job': 'Director', 'name': 'Regista Prova'}], 'cast': []}, 'runtime': 120, 'genres': [{'name': 'Dramma'}]})
+            return await J({'results': []})
+        if h == 'image.tmdb.org': return await r.fulfill(status=200, content_type='image/png', body=IMG['a'])
         if h == 'coverartarchive.org': return await r.fulfill(status=404, body='')
         if h == 'www.googleapis.com' and '/books/' in p.path:
             qq = q.get('q', [''])[0]
+            if 'inauthor' in qq and 'Rowling' in qq:
+                return await J({'items': [{'volumeInfo': {'title': 'Il nuovo libro', 'authors': ['J.K. Rowling'], 'publishedDate': '2026-09-01'}}, {'volumeInfo': {'title': 'Vecchio libro', 'authors': ['J.K. Rowling'], 'publishedDate': '2001-01-01'}}]})
             if '9788806219352' in qq: return await J({'items': [{'volumeInfo': {'title': 'Il nome della rosa', 'authors': ['Umberto Eco'], 'publishedDate': '1980', 'industryIdentifiers': [{'type': 'ISBN_13', 'identifier': '9788806219352'}]}}]})
             return await J({'items': []})
         if h == 'openlibrary.org': return await J({'docs': []} if p.path == '/search.json' else {})
@@ -131,7 +145,7 @@ async def new_page(b, base, lang='it', init='', no_vision=False):
     page = await ctx.new_page(); errs = []
     page.on('pageerror', lambda e: errs.append(str(e)))
     await page.route('**/*', make_route(no_vision))
-    await page.add_init_script(f"if(!sessionStorage.getItem('t')){{sessionStorage.setItem('t','1'); localStorage.setItem('cfg_lang','{lang}'); localStorage.setItem('cfg_discogsToken','TEST'); localStorage.setItem('seenVersion', '9.9.9'); {init}}}")
+    await page.add_init_script(f"if(!sessionStorage.getItem('t')){{sessionStorage.setItem('t','1'); localStorage.setItem('cfg_lang','{lang}'); localStorage.setItem('cfg_discogsToken','TEST'); localStorage.setItem('seenVersion', '9.9.9'); localStorage.setItem('mainTab', 'list'); {init}}}")
     await page.goto(base + '/index.html'); await page.wait_for_timeout(800)
     return page, errs
 
@@ -240,11 +254,33 @@ async def t_silent_login(b, base):
     check('nessun ciclo di tentativi', len(OAUTH['hits']) == n)
     check('nessun errore JavaScript', not ec, ec)
 
+async def t_home(b, base):
+    print('\nHome "Novità"')
+    page, errs = await new_page(b, base)
+    items = ITEMS + [dict(id='i6', tipo='film', titolo='Blade Runner', autore='Ridley Scott', anno='1982')]
+    await page.evaluate(SEED, items)
+    await page.evaluate("S.main='home'; go('home', null, true)")
+    await page.wait_for_function("!feedLoading && S.feed && S.feed.rows && S.feed.rows.artisti", timeout=30000); await page.wait_for_timeout(300)
+    rows = await page.evaluate("[...document.querySelectorAll('.feedrow')].map(r=>r.dataset.row)")
+    for k in ['continua', 'ricorda', 'cinema', 'arrivo', 'artisti', 'autori', 'registi']:
+        check(f'riga {k}', k in rows, rows)
+    check('in arrivo: solo film futuri', await page.evaluate("S.feed.rows.arrivo.map(f=>f.titolo).join()") == 'Film in arrivo')
+    check('autori: solo libri recenti', await page.evaluate("S.feed.rows.autori.map(f=>f.titolo).join()") == 'Il nuovo libro')
+    await page.screenshot(path=os.path.join(os.path.dirname(__file__), 'home.png'), full_page=True)
+    n0 = await page.evaluate("live().filter(i=>i.desiderio).length")
+    await page.click('.feedrow[data-row=cinema] .fcard'); await page.wait_for_timeout(200)
+    await page.click('[data-a=feedWish]'); await page.wait_for_timeout(800)
+    check('aggiunto ai desideri dalla Home', await page.evaluate("live().filter(i=>i.desiderio).length") == n0 + 1)
+    await page.click('.maintabs [data-v=list]'); check('scheda Collezione', await page.evaluate("S.view") == 'list')
+    page2, errs2 = await new_page(b, base); await page2.wait_for_timeout(300)
+    check('si riapre sull\'ultima scheda', await page2.evaluate("S.view") == 'list')
+    check('nessun errore JavaScript', not (errs + errs2), errs + errs2)
+
 async def main():
     base = serve()
     async with async_playwright() as pw:
         b = await pw.chromium.launch()
-        for t in (t_basics, t_check_and_value, t_batch_import, t_cover, t_sync, t_silent_login):
+        for t in (t_basics, t_check_and_value, t_batch_import, t_cover, t_sync, t_silent_login, t_home):
             try: await t(b, base)
             except Exception as e: check(t.__name__ + ' (eccezione)', False, repr(e)[:300])
         await b.close()

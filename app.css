@@ -470,3 +470,30 @@ details.adv summary { padding: 12px 0; color: var(--muted); font-size: 14px; cur
 .scan-cover { width: 100%; min-height: 50px; padding: 14px; border-radius: 25px; background: rgba(255,255,255,.16); color: #fff; font-weight: 700; border: 2px solid rgba(255,255,255,.4); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
 .scanner.batch .scan-cover { display: none; }
 .result .grow { flex: 1; min-width: 0; }
+
+/* ── Home "Novità" (2.5) ───────────────── */
+.maintabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 2px 16px 8px; padding: 4px; background: var(--card); border-radius: 22px; }
+.maintabs button { padding: 10px 6px; border-radius: 18px; font-weight: 700; font-size: 15px; color: var(--muted); display: flex; justify-content: center; align-items: baseline; gap: 6px; }
+.maintabs button.on { background: var(--ink); color: var(--bg); }
+.maintabs b { font-family: var(--mono); font-weight: 500; font-size: 12px; opacity: .75; }
+.home { padding: 0 0 calc(var(--safe-b) + 110px); }
+.hint { margin: 8px 16px 6px; padding: 16px; border-radius: var(--r); background: var(--card); display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.hint b { font-size: 18px; font-weight: 800; font-style: italic; }
+.hint span { color: var(--muted); font-size: 14px; line-height: 1.45; }
+.feedrow { margin: 10px 0 6px; }
+.feedrow h3 { font-family: var(--sans); font-size: 19px; font-weight: 800; letter-spacing: -.3px; margin: 8px 16px 10px; display: flex; align-items: center; gap: 8px; }
+.hscroll { display: flex; gap: 12px; overflow-x: auto; padding: 0 16px 6px; scroll-snap-type: x proximity; scrollbar-width: none; }
+.hscroll::-webkit-scrollbar { display: none; }
+.fcard { flex: none; width: 116px; text-align: left; display: flex; flex-direction: column; gap: 3px; position: relative; scroll-snap-align: start; }
+.fcard .cover { width: 116px; aspect-ratio: 1; border-radius: 14px; margin-bottom: 4px; }
+.fcard.t-libro .cover, .fcard.t-film .cover { aspect-ratio: 2 / 3; }
+.fcard b { font-size: 14px; font-weight: 700; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.fcard span { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fbadge { position: absolute; top: 6px; right: 6px; z-index: 4; font-style: normal; font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 999px; background: var(--accent); color: #1c1b22; }
+.fbadge.own { background: var(--tape); }
+.fcard.skel .cover { background: var(--card); animation: pulse 1.2s infinite; aspect-ratio: 2 / 3; }
+.fcard.skel b, .fcard.skel span { height: 10px; border-radius: 5px; background: var(--card); }
+.fcard.skel span { width: 60%; }
+.spinner.sm { width: 14px; height: 14px; border-width: 2px; display: inline-block; }
+.home-foot { text-align: center; margin: 18px 16px 0; }
+.home-foot .more { padding: 0; font-size: 13px; }

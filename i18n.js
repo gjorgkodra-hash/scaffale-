@@ -241,6 +241,18 @@
     ['Importa ed esporta', 'Import and export', 'Importa y exporta'],
     ['Da Goodreads, Letterboxd e Discogs; tabella CSV per Excel.', 'From Goodreads, Letterboxd and Discogs; CSV table for Excel.', 'Desde Goodreads, Letterboxd y Discogs; tabla CSV para Excel.'],
 
+    // Versione 2.5 — Home "Novità"
+    ['Novità', 'What’s new', 'Novedades'], ['Collezione', 'Collection', 'Colección'], ['Continua', 'Continue', 'Continuar'],
+    ['Da ricordare', 'To remember', 'Para recordar'], ['Al cinema', 'In cinemas', 'En cines'], ['In arrivo al cinema', 'Coming to cinemas', 'Próximamente en cines'],
+    ['Dai tuoi artisti', 'From your artists', 'De tus artistas'], ['Dai tuoi autori', 'From your authors', 'De tus autores'], ['Dai tuoi registi', 'From your directors', 'De tus directores'],
+    ['Desideri in vendita', 'Wishlist on sale', 'Deseos a la venta'], ['Un anno fa', 'A year ago', 'Hace un año'], ['Benvenuto in Spinyl!', 'Welcome to Spinyl!', '¡Bienvenido a Spinyl!'],
+    ['Aggiungi i tuoi primi libri, dischi e film: qui compariranno le novità dei tuoi autori, artisti e registi.', 'Add your first books, records and films: new releases from your authors, artists and directors will show up here.', 'Añade tus primeros libros, discos y películas: aquí aparecerán las novedades de tus autores, artistas y directores.'],
+    ["Ce l'hai", 'Owned', 'Lo tienes'], ['Esce il', 'Out on', 'Sale el'], ['Uscito il', 'Released on', 'Salió el'],
+    ["Ce l'ho: aggiungi alla collezione", 'I own it: add to collection', 'Lo tengo: añadir a la colección'],
+    ['Sei offline: le novità arrivano appena torna la connessione.', 'You’re offline: news arrives as soon as the connection is back.', 'Estás sin conexión: las novedades llegan al volver la conexión.'],
+    ['Ancora nessuna novità: aggiungi qualche pezzo alla collezione e torna qui.', 'No news yet: add a few items to your collection and come back.', 'Aún no hay novedades: añade algunos artículos a tu colección y vuelve.'],
+    ['Home Novità', 'What’s new home', 'Inicio de novedades'],
+    ['La prima pagina mostra i nuovi album dei tuoi artisti, i nuovi libri dei tuoi autori, i film al cinema e cosa stai leggendo.', 'The first page shows new albums from your artists, new books from your authors, films in cinemas and what you’re reading.', 'La primera página muestra los nuevos álbumes de tus artistas, los nuevos libros de tus autores, las películas en cines y lo que estás leyendo.'],
     // Versione 2.4 — solidità
     ['Copie di sicurezza su Drive', 'Backup copies on Drive', 'Copias de seguridad en Drive'], ['Copie di sicurezza', 'Backup copies', 'Copias de seguridad'],
     ['Leggo le copie su Drive…', 'Reading copies on Drive…', 'Leyendo copias en Drive…'],
@@ -346,6 +358,7 @@
     [/^Ripristinare la collezione com'era il (.+)\? Le modifiche fatte dopo andranno perse\.$/, (m, l) => l === 'en' ? `Restore the collection as it was on ${m[1]}? Changes made since will be lost.` : `¿Restaurar la colección como estaba el ${m[1]}? Se perderán los cambios posteriores.`],
     [/^Ripristinata la copia del (.+)$/, (m, l) => (l === 'en' ? 'Restored the copy from ' : 'Restaurada la copia del ') + m[1]],
     [/^Questo telefono sta per eliminare (\d+) pezzi da Drive: conferma nelle Impostazioni$/, (m, l) => l === 'en' ? `This phone is about to delete ${m[1]} items from Drive: confirm in Settings` : `Este teléfono va a eliminar ${m[1]} artículos de Drive: confirma en Ajustes`],
+    [/^da (\d[\d.,]*\s*€|€\s*\d[\d.,]*)$/, (m, l) => (l === 'en' ? 'from ' : 'desde ') + m[1]],
     [/^Leggo le scritte… (\d+)%$/, (m, l) => (l === 'en' ? 'Reading the text… ' : 'Leyendo el texto… ') + m[1] + '%'],
 
     [/^\((\d+) copie\)$/, (m, l) => l === 'en' ? `(${m[1]} copies)` : `(${m[1]} copias)`],
