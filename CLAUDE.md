@@ -12,3 +12,7 @@ dati in IndexedDB sul telefono, copia su Google Drive dell'utente, pubblicata co
 - Mai mettere il token Discogs in `config.js` (dà accesso all'account): ogni utente lo inserisce nelle Impostazioni.
 - Test: `pip install playwright && python -m playwright install chromium && python tests/run_tests.py`
   (tutti i servizi esterni sono simulati). Girano anche su GitHub Actions a ogni push.
+- Community: progetto Supabase `spinyl` (id `rixpxmjphydezosyhjzz`, eu-central-1). Tabelle con RLS senza policy:
+  tutto passa dalla funzione `supabase/functions/community/index.ts`, che riconosce l'utente dal token Google
+  (Drive `about`). Si entra con un codice invito; l'amministratore (gjorgkodra@gmail.com) entra senza codice.
+  Dopo modifiche alla funzione: ridistribuirla su Supabase. La chiave `COMMUNITY_KEY` in config.js è la anon key (pubblica).

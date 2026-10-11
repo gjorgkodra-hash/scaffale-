@@ -20,6 +20,10 @@ window.SCAFFALE_CONFIG = {
   // FACOLTATIVO — migliora molto la ricerca dei film (gratis su themoviedb.org)
   TMDB_API_KEY: '580db0b4055f2c04a1895794292a65fd',
 
+  // Community: funzione Supabase + chiave pubblica "anon" (pubblica per natura: i dati passano solo dalla funzione, che verifica l'utente Google)
+  COMMUNITY_URL: 'https://rixpxmjphydezosyhjzz.supabase.co/functions/v1/community',
+  COMMUNITY_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpeHB4bWpwaHlkZXpvc3loanp6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE3MzkyNjksImV4cCI6MjEwNzMxNTI2OX0.o9W_h4lbs3aPz7qeC09UbbhqTUa11OU6KehENucmQEo',
+
   // NON inserire qui il token Discogs: questo file è pubblico e il token dà accesso all'account.
   // Ogni utente lo mette nelle Impostazioni dell'app.
   DISCOGS_TOKEN: ''

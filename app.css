@@ -505,3 +505,22 @@ details.adv summary { padding: 12px 0; color: var(--muted); font-size: 14px; cur
 .fcard.art .cover { width: 220px; aspect-ratio: 16 / 10; object-fit: cover; background: var(--card); display: grid; place-items: center; font-size: 34px; }
 .fcard.art b { -webkit-line-clamp: 3; }
 .fcard .akind { font-style: normal; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--cd); }
+.community .cavg { display: flex; align-items: baseline; gap: 8px; margin: 2px 0 10px; }
+.community .cavg b { font-size: 20px; }
+.community .cavg span { color: var(--muted); font-size: 13px; }
+.cmine { display: flex; flex-direction: column; gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+.cmine textarea { width: 100%; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; font: inherit; resize: vertical; }
+.crev { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.crev:last-of-type { border-bottom: 0; }
+.chead { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.chead small { color: var(--muted); font-size: 12px; margin-left: auto; }
+.cstars { color: var(--cd); font-size: 13px; letter-spacing: 1px; }
+.cstars i { font-style: normal; color: var(--line); }
+.crev p { margin: 6px 0 0; white-space: pre-wrap; line-height: 1.45; }
+.ccom { margin: 8px 0 0 12px; padding-left: 10px; border-left: 2px solid var(--line); font-size: 14px; }
+.cacts { display: inline-flex; gap: 14px; margin-top: 6px; }
+.cacts button { color: var(--muted); font-size: 12px; font-weight: 600; }
+.ccom .cacts { margin-left: 8px; }
+.creply { margin-top: 8px; }
+.crules { margin: 10px 0; }
+label.check { display: flex; gap: 10px; align-items: center; margin: 6px 0 12px; font-size: 14px; }

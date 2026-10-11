@@ -73,6 +73,39 @@ NEVERMIND = [{'id': 5555, 'title': 'Nirvana - Nevermind', 'year': '1991', 'label
 GRADES = ['Mint (M)', 'Near Mint (NM or M-)', 'Very Good Plus (VG+)', 'Very Good (VG)', 'Good Plus (G+)', 'Good (G)', 'Fair (F)', 'Poor (P)']
 OAUTH = {'mode': 'ok', 'hits': []}
 
+# Community finta: stessa logica essenziale della funzione Supabase
+COMM = {'members': {}, 'invites': {'AMICO1': 0}, 'reviews': [], 'comments': [], 'n': 0}
+def comm_handle(tok, b):
+    import itertools
+    if not tok: return 401, {'error': 'login'}
+    gid = 'g-' + tok; me = COMM['members'].get(gid); a = b.get('action')
+    nid_ = lambda: (COMM.__setitem__('n', COMM['n'] + 1), 'c%d' % COMM['n'])[1]
+    if a == 'me': return 200, {'member': me}
+    if a == 'join':
+        if me: return 200, {'member': me}
+        if COMM['invites'].get(b.get('code', '').upper(), 9) >= 5: return 403, {'error': 'invito'}
+        if any(m['nick'] == b.get('nick') for m in COMM['members'].values()): return 409, {'error': 'nick-preso'}
+        COMM['invites'][b['code'].upper()] += 1
+        me = COMM['members'][gid] = {'id': nid_(), 'nick': b['nick'], 'admin': False}; return 200, {'member': me}
+    if not me: return 403, {'error': 'membro'}
+    if a == 'invite': c = 'NEW%d' % len(COMM['invites']); COMM['invites'][c] = 0; return 200, {'code': c}
+    if a == 'review':
+        COMM['reviews'] = [r for r in COMM['reviews'] if not (r['work'] == b['work'] and r['mid'] == me['id'])]
+        COMM['reviews'].insert(0, {'id': nid_(), 'work': b['work'], 'tipo': b['tipo'], 'titolo': b['titolo'], 'autore': b.get('autore', ''), 'cover': b.get('cover', ''), 'stars': b.get('stars'), 'body': b.get('body', ''), 'mid': me['id'], 'nick': me['nick'], 'at': '2026-10-11T10:00:00Z', 'hidden': False})
+        return 200, {'ok': True}
+    if a == 'comment': COMM['comments'].append({'id': nid_(), 'review': b['review'], 'body': b['body'], 'mid': me['id'], 'nick': me['nick'], 'at': '2026-10-11T11:00:00Z'}); return 200, {'ok': True}
+    if a == 'report':
+        for r in COMM['reviews']:
+            if r['id'] == b['id']: r['hidden'] = True
+        return 200, {'ok': True}
+    if a == 'work':
+        L = [r for r in COMM['reviews'] if r['work'] == b['work'] and not r['hidden']]
+        st = [r['stars'] for r in L if r['stars']]
+        return 200, {'avg': round(sum(st) / len(st), 1) if st else None, 'n': len(st), 'reviews': [{'id': r['id'], 'nick': r['nick'], 'mine': r['mid'] == me['id'], 'stars': r['stars'], 'body': r['body'], 'at': r['at'],
+            'comments': [{'id': c['id'], 'nick': c['nick'], 'mine': c['mid'] == me['id'], 'body': c['body'], 'at': c['at']} for c in COMM['comments'] if c['review'] == r['id']]} for r in L]}
+    if a == 'recent': return 200, {'reviews': [{'work': r['work'], 'tipo': r['tipo'], 'titolo': r['titolo'], 'autore': r['autore'], 'cover': r['cover'], 'stars': r['stars'], 'body': r['body'], 'nick': r['nick'], 'at': r['at']} for r in COMM['reviews'] if not r['hidden']]}
+    return 400, {'error': 'azione'}
+
 def make_route(no_vision=False):
     async def route(r):
         u = r.request.url; p = urlparse(u); q = parse_qs(p.query); h = p.netloc
@@ -137,6 +170,10 @@ def make_route(no_vision=False):
         if h == 'openlibrary.org': return await J({'docs': []} if p.path == '/search.json' else {})
         if h == 'itunes.apple.com':
             cb = q.get('callback', [''])[0]; return await r.fulfill(status=200, content_type='text/javascript', body=f'{cb}({{"results":[]}});')
+        if h.endswith('.supabase.co'):
+            if r.request.method == 'OPTIONS': return await r.fulfill(status=200, headers={'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': 'POST'})
+            st, o = comm_handle(r.request.headers.get('x-google-token', ''), json.loads(r.request.post_data or '{}'))
+            return await J(o, st)
         if h == 'api.rss2json.com':
             src = q.get('rss_url', [''])[0]
             return await J({'status': 'ok', 'items': [{'title': 'Articolo da ' + src, 'link': src + '#1', 'pubDate': '2026-10-10 09:00:00', 'thumbnail': 'https://img.test/a.png', 'description': ''}]})
@@ -240,6 +277,39 @@ def t_files():
     check('sw.js non vuoto e con la stessa versione di app.js', f"scaffale-v{v}" in sw and 'fetch' in sw)
     for f in ['index.html', 'app.css', 'i18n.js', 'config.js']: check(f'{f} non vuoto', (root / f).stat().st_size > 200)
 
+async def t_community(b, base):
+    print('\nCommunity')
+    tok = lambda n: f"localStorage.setItem('gtoken', JSON.stringify({{t:'{n}', exp: Date.now()+3600e3}}));"
+    page, errs = await new_page(b, base, init=tok('ANNA'))
+    await page.evaluate(SEED, ITEMS)
+    await page.evaluate("go('detail','i1')"); await page.wait_for_timeout(300)
+    check('scheda: invito a entrare', await page.evaluate("!!document.querySelector('[data-a=commJoin]')"))
+    await page.evaluate("commJoinSheet()"); await page.fill('#commNick', 'Anna'); await page.fill('#commCode', 'amico1')
+    await page.evaluate("commJoin()"); await page.wait_for_timeout(300)
+    check('senza accettare le regole non entra', await page.evaluate("!commMe()"))
+    await page.check('#commOk'); await page.evaluate("commJoin()"); await page.wait_for_function("!!commMe()", timeout=5000)
+    await page.wait_for_selector('#commBody .cmine', timeout=5000)
+    await page.evaluate("S.commStars=4; document.querySelector('#commText').value='Capolavoro, stampa ottima'; commSend()")
+    await page.wait_for_selector('.crev', timeout=5000)
+    check('recensione pubblicata con voto medio', '4' in await page.evaluate("document.querySelector('.cavg').textContent"))
+    # un secondo utente con un'edizione diversa dello stesso album vede la recensione
+    page2, errs2 = await new_page(b, base, init=tok('BRUNO'))
+    await page2.evaluate(SEED, [dict(id='x1', tipo='cd', titolo='The Dark Side of the Moon (Remastered)', autore='Pink Floyd')])
+    await page2.evaluate("commJoinSheet()"); await page2.fill('#commNick', 'Bruno'); await page2.fill('#commCode', 'AMICO1'); await page2.check('#commOk')
+    await page2.evaluate("commJoin()"); await page2.wait_for_function("!!commMe()", timeout=5000)
+    await page2.evaluate("go('detail','x1')"); await page2.wait_for_selector('.crev', timeout=5000)
+    check('stessa opera su edizioni diverse', 'Capolavoro' in await page2.evaluate("document.querySelector('.crev').textContent"))
+    await page2.evaluate("commReply(document.querySelector('[data-a=commReply]').dataset.id)")
+    await page2.fill('form.creply textarea', 'Concordo!'); await page2.evaluate("document.querySelector('form.creply').requestSubmit()")
+    await page2.wait_for_selector('.ccom', timeout=5000)
+    check('risposta a una recensione', 'Concordo' in await page2.evaluate("document.querySelector('.ccom').textContent"))
+    await page2.evaluate("S.main='home'; go('home', null, true)")
+    await page2.wait_for_function("S.feed && S.feed.rows && (S.feed.rows.community||[]).length", timeout=15000)
+    check('riga Dalla community nella Home', await page2.evaluate("S.feed.rows.community[0].nick") == 'Anna')
+    await page.evaluate("go('settings')")
+    check('impostazioni: invita un amico', await page.evaluate("!!document.querySelector('[data-a=commInvite]')"))
+    check('nessun errore JavaScript', not (errs + errs2), errs + errs2)
+
 async def t_batch_import(b, base):
     print('\nScansione a raffica e importazione')
     page, errs = await new_page(b, base)
@@ -340,7 +410,7 @@ async def main():
     base = serve()
     async with async_playwright() as pw:
         b = await pw.chromium.launch()
-        for t in (t_basics, t_check_and_value, t_auto_online, t_book_rating, t_batch_import, t_cover, t_sync, t_silent_login, t_home):
+        for t in (t_basics, t_check_and_value, t_auto_online, t_book_rating, t_community, t_batch_import, t_cover, t_sync, t_silent_login, t_home):
             try: await t(b, base)
             except Exception as e: check(t.__name__ + ' (eccezione)', False, repr(e)[:300])
         await b.close()
