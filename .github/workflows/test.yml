@@ -1,0 +1,18 @@
+# Ad ogni modifica pubblicata, GitHub avvia i test automatici di Spinyl in un browser vero.
+name: Test
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install playwright==1.47.0
+      - run: python -m playwright install --with-deps chromium
+      - run: python tests/run_tests.py
