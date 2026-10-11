@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.6.5';
+const VERSION = '2.7.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -2323,6 +2323,10 @@ const NEWS = {
   '2.5': [
     ['Home Novità', 'La prima pagina mostra i nuovi album dei tuoi artisti, i nuovi libri dei tuoi autori, i film al cinema e cosa stai leggendo.'],
   ],
+  '2.7': [
+    ['Articoli', 'Nella Home gli articoli più recenti su libri, musica, vinili e cinema dalle riviste.'],
+    ['Una sola riga cinema', 'Film in sala e in arrivo insieme, con la data di uscita.'],
+  ],
   '2.6': [
     ['Nuovi album e nuovi libri', 'Nella Home anche le uscite della settimana, non solo quelle dei tuoi artisti e autori.'],
     ['Prezzo e voto in automatico', 'Quando apri un disco, Spinyl cerca da solo il prezzo su Discogs e il voto medio della community.'],
@@ -2498,7 +2502,7 @@ const FEED_ROWS = [
   { key: 'album', title: 'Nuovi album', icon: '🎧', need: () => true },
   { key: 'libri', title: 'Nuovi libri', icon: '📖', need: () => true },
   { key: 'cinema', title: 'Al cinema', icon: '🎬', need: () => cfg('tmdbKey') },
-  { key: 'arrivo', title: 'In arrivo al cinema', icon: '🍿', need: () => cfg('tmdbKey') },
+  { key: 'articoli', title: 'Articoli', icon: '📰', need: () => true },
   { key: 'offerte', title: 'Desideri in vendita', icon: '⭐', need: () => cfg('discogsToken') && live().some(i => i.desiderio && isMusic(i.tipo)) },
   { key: 'continua', title: 'Continua', icon: '🔖', local: true },
   { key: 'ricorda', title: 'Da ricordare', icon: '⏰', local: true },
@@ -2535,6 +2539,46 @@ async function feedTmdb(kind) {
     .sort((a, b) => kind === 'upcoming' ? String(a.release_date).localeCompare(String(b.release_date)) : (b.popularity || 0) - (a.popularity || 0))
     .slice(0, 15).map(m => ({ tipo: 'film', titolo: m.title, anno: year(m.release_date), uscita: m.release_date || '', descrizione: m.overview || '',
       coverUrl: m.poster_path ? 'https://image.tmdb.org/t/p/w342' + m.poster_path : '', _tmdbId: m.id, fonte: 'TMDB' }));
+}
+// Una sola riga cinema: prima i film in sala, poi quelli in arrivo (con la data)
+async function feedCinema() {
+  const [now, next] = await Promise.all([feedTmdb('now_playing').catch(() => []), feedTmdb('upcoming').catch(() => [])]);
+  const seen = new Set(); return [...now.slice(0, 10), ...next.slice(0, 8)].filter(m => !seen.has(m._tmdbId) && seen.add(m._tmdbId));
+}
+// Articoli da riviste e blog su libri, musica, vinili e cinema (RSS letti tramite rss2json, che permette la lettura dal telefono)
+const ARTICLE_FEEDS = {
+  it: [['libri', 'Il Libraio', 'https://www.illibraio.it/feed/'], ['libri', 'Il Post', 'https://www.ilpost.it/cultura/libri/feed/'],
+    ['musica', 'Rolling Stone Italia', 'https://www.rollingstone.it/musica/feed/'], ['musica', 'Il Post', 'https://www.ilpost.it/cultura/musica/feed/'],
+    ['cinema', 'BadTaste', 'https://www.badtaste.it/feed/'], ['cinema', 'Il Post', 'https://www.ilpost.it/cultura/cinema/feed/'], ['vinili', 'Discogs Digs', 'https://www.discogs.com/digs/feed/']],
+  en: [['vinili', 'Discogs Digs', 'https://www.discogs.com/digs/feed/'], ['musica', 'Pitchfork', 'https://pitchfork.com/feed/feed-news/rss'], ['libri', 'Literary Hub', 'https://lithub.com/feed/'], ['cinema', 'IndieWire', 'https://www.indiewire.com/feed/']],
+  es: [['musica', 'Jenesaispop', 'https://jenesaispop.com/feed/'], ['cinema', 'Espinof', 'https://www.espinof.com/index.xml'], ['libri', 'Zenda', 'https://www.zendalibros.com/feed/'], ['vinili', 'Discogs Digs', 'https://www.discogs.com/digs/feed/']],
+};
+const ART_KIND = { libri: 'Libri', musica: 'Musica', cinema: 'Cinema', vinili: 'Vinili' };
+const firstImg = h => (String(h || '').match(/<img[^>]+src=["']([^"']+)/i) || [])[1] || '';
+async function feedArticles() {
+  const weeks = Date.now() - 21 * 864e5;
+  const rss = async () => {
+    const res = await Promise.allSettled((ARTICLE_FEEDS[LNG()] || ARTICLE_FEEDS.it).map(async ([kind, src, url]) => {
+      const d = await fj('https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(url));
+      if (d.status !== 'ok') throw new Error(d.message || 'rss');
+      return (d.items || []).map(a => ({ tipo: 'articolo', kind, fonte: src, titolo: stripHtml(a.title), link: a.link, at: Date.parse(String(a.pubDate || '').replace(' ', 'T') + 'Z') || 0,
+        coverUrl: [a.thumbnail, a.enclosure && /image|jpe?g|png|webp/i.test((a.enclosure.type || '') + a.enclosure.link) ? a.enclosure.link : '', firstImg(a.content), firstImg(a.description)].find(x => /^https?:/.test(x || '')) || '' }))
+        .filter(a => a.link && a.titolo && (!a.at || a.at > weeks)).slice(0, 6);
+    }));
+    const lists = res.filter(r => r.status === 'fulfilled').map(r => r.value);
+    if (!lists.length) throw new Error((res.find(r => r.reason) || {}).reason || 'rss');
+    // alterna le fonti, così non c'è solo cinema o solo musica
+    const out = []; for (let i = 0; i < 6; i++) lists.forEach(l => l[i] && out.push(l[i]));
+    return out;
+  };
+  const guardian = async () => {
+    const res = await Promise.all([['libri', 'books'], ['musica', 'music'], ['cinema', 'film']].map(([kind, sec]) =>
+      fj(`https://content.guardianapis.com/search?section=${sec}&order-by=newest&page-size=6&show-fields=thumbnail&api-key=test`).then(d => ((d.response || {}).results || []).map(a => ({
+        tipo: 'articolo', kind, fonte: 'The Guardian', titolo: a.webTitle, link: a.webUrl, at: Date.parse(a.webPublicationDate) || 0, coverUrl: (a.fields || {}).thumbnail || '' }))).catch(() => [])));
+    const out = []; for (let i = 0; i < 6; i++) res.forEach(l => l[i] && out.push(l[i]));
+    return out;
+  };
+  return (await firstOf('articoli', [['RSS', rss], ['Guardian', guardian]])).slice(0, 24);
 }
 async function feedArtists() {
   const since = isoDay(Date.now() - 150 * 864e5); const out = [];
@@ -2651,7 +2695,7 @@ async function feedBooks() {
   return dedupeFeed(L).sort((a, b) => String(b.uscita).localeCompare(String(a.uscita))).slice(0, 18);
 }
 const dedupeFeed = L => { const seen = new Set(); return L.filter(c => { const k = c.tipo + '|' + norm(c.titolo) + '|' + norm(String(c.autore || '').split(',')[0]); if (seen.has(k)) return false; seen.add(k); return true; }); };
-const FEED_FETCH = { album: feedAlbums, libri: feedBooks, cinema: () => feedTmdb('now_playing'), arrivo: () => feedTmdb('upcoming'), artisti: feedArtists, autori: feedAuthors, registi: feedDirectors, offerte: feedOffers };
+const FEED_FETCH = { album: feedAlbums, libri: feedBooks, cinema: feedCinema, articoli: feedArticles, artisti: feedArtists, autori: feedAuthors, registi: feedDirectors, offerte: feedOffers };
 
 let feedLoading = false, feedAgain = false;
 // "Firma" della collezione: se cambiano artisti, autori, registi o desideri, le novità si ricalcolano
@@ -2692,6 +2736,11 @@ function viewHome() {
   <button class="fab" data-a="add">${ic('plus')}Aggiungi</button>`;
 }
 function feedCard(c, rowKey, i) {
+  if (c.link) {
+    const ago = c.at ? Math.max(0, Math.round((Date.now() - c.at) / 864e5)) : null;
+    return `<a class="fcard art" href="${esc(c.link)}" target="_blank" rel="noopener">${c.coverUrl ? `<img class="cover" src="${esc(c.coverUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'cover noimg',textContent:'📰'}))">` : '<div class="cover noimg">📰</div>'}
+      <i class="akind">${esc(ART_KIND[c.kind] || '')}</i><b translate="no">${esc(c.titolo)}</b><span><span translate="no">${esc(c.fonte)}</span>${ago != null ? ` · ${ago === 0 ? 'oggi' : ago === 1 ? 'ieri' : ago + ' gg fa'}` : ''}</span></a>`;
+  }
   if (c.local || c.id) {
     const it = byId(c.id) || c; if (!it || it.deleted) return '';
     const sub = rowKey === 'offerte' ? `da ${money(c.prezzo, c.cur)}` : rowKey === 'ricorda' ? `${it.prestatoA} · ${loanDays(it)} gg` : [it.autore, it.anno].filter(Boolean).join(' · ');

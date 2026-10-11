@@ -501,3 +501,7 @@ details.adv summary { padding: 12px 0; color: var(--muted); font-size: 14px; cur
 .webrate { display: flex; align-items: baseline; gap: 6px; font-size: 14px; color: var(--muted); margin-top: 2px; }
 .webrate b { color: var(--ink); font-weight: 700; }
 .feederr { display: inline-block; margin-top: 6px; font-size: 11px; opacity: .7; word-break: break-word; }
+.fcard.art { width: 220px; color: inherit; text-decoration: none; }
+.fcard.art .cover { width: 220px; aspect-ratio: 16 / 10; object-fit: cover; background: var(--card); display: grid; place-items: center; font-size: 34px; }
+.fcard.art b { -webkit-line-clamp: 3; }
+.fcard .akind { font-style: normal; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--cd); }

@@ -137,6 +137,9 @@ def make_route(no_vision=False):
         if h == 'openlibrary.org': return await J({'docs': []} if p.path == '/search.json' else {})
         if h == 'itunes.apple.com':
             cb = q.get('callback', [''])[0]; return await r.fulfill(status=200, content_type='text/javascript', body=f'{cb}({{"results":[]}});')
+        if h == 'api.rss2json.com':
+            src = q.get('rss_url', [''])[0]
+            return await J({'status': 'ok', 'items': [{'title': 'Articolo da ' + src, 'link': src + '#1', 'pubDate': '2026-10-10 09:00:00', 'thumbnail': 'https://img.test/a.png', 'description': ''}]})
         if h == 'api.deezer.com':
             cb = q.get('callback', [''])[0]
             data = {'data': [{'title': 'Album della settimana', 'release_date': '2026-10-09', 'cover_big': 'https://img.test/b.png', 'artist': {'name': 'Artista Nuovo'}}]}
@@ -314,9 +317,11 @@ async def t_home(b, base):
     await page.evaluate("S.main='home'; go('home', null, true)")
     await page.wait_for_function("!feedLoading && S.feed && S.feed.rows && S.feed.rows.artisti", timeout=30000); await page.wait_for_timeout(300)
     rows = await page.evaluate("[...document.querySelectorAll('.feedrow')].map(r=>r.dataset.row)")
-    for k in ['continua', 'ricorda', 'cinema', 'arrivo', 'artisti', 'autori', 'registi', 'album', 'libri']:
+    for k in ['continua', 'ricorda', 'cinema', 'articoli', 'artisti', 'autori', 'registi', 'album', 'libri']:
         check(f'riga {k}', k in rows, rows)
-    check('in arrivo: solo film futuri', await page.evaluate("S.feed.rows.arrivo.map(f=>f.titolo).join()") == 'Film in arrivo')
+    check('cinema: in sala + solo i futuri in arrivo', await page.evaluate("S.feed.rows.cinema.map(f=>f.titolo).join()") == 'Film in sala,Altro film,Film in arrivo')
+    check('articoli da più fonti', await page.evaluate("new Set(S.feed.rows.articoli.map(a=>a.kind)).size") >= 3)
+    check('articolo apre il sito', await page.evaluate("!!document.querySelector('.feedrow[data-row=articoli] a.fcard[target=_blank]')"))
     check('nuovi album da Deezer', await page.evaluate("S.feed.rows.album.map(f=>f.titolo).join()") == 'Album della settimana')
     check('nuovi libri', await page.evaluate("S.feed.rows.libri.map(f=>f.titolo).join()") == 'Romanzo appena uscito')
     check('autori: solo libri recenti', await page.evaluate("S.feed.rows.autori.map(f=>f.titolo).join()") == 'Il nuovo libro')
