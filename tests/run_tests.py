@@ -372,7 +372,7 @@ async def t_community(b, base):
     await page2.evaluate("commJoin()"); await page2.wait_for_function("!!commMe()", timeout=5000)
     await page2.evaluate("go('detail','x1')"); await page2.wait_for_selector('.crev', timeout=5000)
     check('stessa opera su edizioni diverse', 'Capolavoro' in await page2.evaluate("document.querySelector('.crev').textContent"))
-    await page2.evaluate("commReply(document.querySelector('[data-a=commReply]').dataset.id)")
+    await page2.evaluate("document.querySelector('form.creply').classList.remove('hidden')")
     await page2.fill('form.creply textarea', 'Concordo!'); await page2.evaluate("document.querySelector('form.creply').requestSubmit()")
     await page2.wait_for_selector('.ccom', timeout=5000)
     check('risposta a una recensione', 'Concordo' in await page2.evaluate("document.querySelector('.ccom').textContent"))
