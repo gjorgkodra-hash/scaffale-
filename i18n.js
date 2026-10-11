@@ -241,6 +241,17 @@
     ['Importa ed esporta', 'Import and export', 'Importa y exporta'],
     ['Da Goodreads, Letterboxd e Discogs; tabella CSV per Excel.', 'From Goodreads, Letterboxd and Discogs; CSV table for Excel.', 'Desde Goodreads, Letterboxd y Discogs; tabla CSV para Excel.'],
 
+    // Versione 2.4 — solidità
+    ['Copie di sicurezza su Drive', 'Backup copies on Drive', 'Copias de seguridad en Drive'], ['Copie di sicurezza', 'Backup copies', 'Copias de seguridad'],
+    ['Leggo le copie su Drive…', 'Reading copies on Drive…', 'Leyendo copias en Drive…'],
+    ['Non riesco a leggere Drive: controlla la connessione o accedi di nuovo.', 'I can’t read Drive: check the connection or sign in again.', 'No puedo leer Drive: revisa la conexión o inicia sesión de nuevo.'],
+    ['Ripristina', 'Restore', 'Restaurar'], ['Ancora nessuna copia: la prima viene creata alla prossima modifica.', 'No copies yet: the first one is made at your next change.', 'Aún no hay copias: la primera se crea con el próximo cambio.'],
+    ['Ripristino…', 'Restoring…', 'Restaurando…'], ['Copia non leggibile', 'Copy not readable', 'Copia ilegible'],
+    ['Sì, elimina anche da Drive', 'Yes, delete from Drive too', 'Sí, eliminar también de Drive'],
+    ['Copie automatiche', 'Automatic copies', 'Copias automáticas'],
+    ['Ogni giorno Spinyl tiene una copia della collezione su Drive (le ultime 10): da Impostazioni puoi tornare indietro.', 'Every day Spinyl keeps a copy of your collection on Drive (the last 10): you can roll back from Settings.', 'Cada día Spinyl guarda una copia de la colección en Drive (las últimas 10): puedes volver atrás desde Ajustes.'],
+    ['Accesso a Google più comodo', 'Easier Google sign-in', 'Acceso a Google más cómodo'],
+    ['Quando l’accesso scade, Spinyl lo rinnova da solo se sei ancora collegato a Google. E le modifiche fatte su due telefoni non si sovrascrivono più.', 'When sign-in expires, Spinyl renews it by itself if you’re still signed in to Google. And changes made on two phones no longer overwrite each other.', 'Cuando el acceso caduca, Spinyl lo renueva solo si sigues conectado a Google. Y los cambios hechos en dos teléfonos ya no se sobrescriben.'],
     // Versione 2.2 — foto della copertina
     ['Foto della copertina', 'Cover photo', 'Foto de la portada'], ['🖼️ Foto della copertina', '🖼️ Cover photo', '🖼️ Foto de la portada'],
     ['Riconosce titolo e autore dalla copertina', 'Recognises title and author from the cover', 'Reconoce título y autor por la portada'],
@@ -331,6 +342,10 @@
     [/^Importa (\d+) pezzi$/, (m, l) => l === 'en' ? `Import ${m[1]} items` : `Importar ${m[1]} artículos`],
     [/^Novità di Spinyl (.+)$/, (m, l) => (l === 'en' ? 'What’s new in Spinyl ' : 'Novedades de Spinyl ') + m[1]],
     [/^Google Vision questo mese: (\d+) di (\d+) foto su questo telefono$/, (m, l) => l === 'en' ? `Google Vision this month: ${m[1]} of ${m[2]} photos on this phone` : `Google Vision este mes: ${m[1]} de ${m[2]} fotos en este teléfono`],
+    [/^Ogni giorno in cui modifichi la collezione, Spinyl tiene una copia su Drive \(cartella Scaffale › copie\)\. Restano le ultime (\d+)\.$/, (m, l) => l === 'en' ? `Every day you change your collection, Spinyl keeps a copy on Drive (folder Scaffale › copie). The last ${m[1]} are kept.` : `Cada día que cambias la colección, Spinyl guarda una copia en Drive (carpeta Scaffale › copie). Se conservan las últimas ${m[1]}.`],
+    [/^Ripristinare la collezione com'era il (.+)\? Le modifiche fatte dopo andranno perse\.$/, (m, l) => l === 'en' ? `Restore the collection as it was on ${m[1]}? Changes made since will be lost.` : `¿Restaurar la colección como estaba el ${m[1]}? Se perderán los cambios posteriores.`],
+    [/^Ripristinata la copia del (.+)$/, (m, l) => (l === 'en' ? 'Restored the copy from ' : 'Restaurada la copia del ') + m[1]],
+    [/^Questo telefono sta per eliminare (\d+) pezzi da Drive: conferma nelle Impostazioni$/, (m, l) => l === 'en' ? `This phone is about to delete ${m[1]} items from Drive: confirm in Settings` : `Este teléfono va a eliminar ${m[1]} artículos de Drive: confirma en Ajustes`],
     [/^Leggo le scritte… (\d+)%$/, (m, l) => (l === 'en' ? 'Reading the text… ' : 'Leyendo el texto… ') + m[1] + '%'],
 
     [/^\((\d+) copie\)$/, (m, l) => l === 'en' ? `(${m[1]} copies)` : `(${m[1]} copias)`],

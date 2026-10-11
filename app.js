@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.3.1';
+const VERSION = '2.4.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -650,7 +650,8 @@ function viewSettings() {
       <div class="status"><i class="${st[0]}"></i><div>${esc(st[1])}<small>${esc(st[2])}</small></div></div>
       <div class="stack">
         ${has && !tok ? `<button class="btn primary block" data-a="login">${ic('cloud', 18)}Accedi con Google</button>` : ''}
-        ${has && tok ? `<button class="btn dark block" data-a="syncNow">Sincronizza ora</button><button class="btn block" data-a="logout">Esci da Google</button>` : ''}
+        ${S.syncState === 'error' && /pezzi da Drive/.test(S.syncError) ? `<button class="btn primary block" data-a="allowMass">Sì, elimina anche da Drive</button>` : ''}
+        ${has && tok ? `<button class="btn dark block" data-a="syncNow">Sincronizza ora</button><button class="btn block" data-a="showCopies">Copie di sicurezza su Drive</button><button class="btn block" data-a="logout">Esci da Google</button>` : ''}
         <p class="note">I dati sono salvati nel telefono e copiati nella cartella <b>Scaffale</b> del tuo Google Drive (file <i>scaffale.json</i> e cartella <i>foto</i>). Puoi usare l'app anche offline: si sincronizza appena possibile.</p>
       </div>
     </div>
@@ -1335,16 +1336,31 @@ const Drive = {
     const hint = localStorage.getItem('gHint'); if (hint) p.set('login_hint', hint);
     location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + p.toString();
   },
+  // Rinnovo silenzioso: se l'accesso a Google è scaduto ma sei ancora collegato a Google su questo telefono,
+  // un passaggio lampo su Google restituisce un nuovo accesso senza chiedere niente.
+  silentLogin() {
+    const cid = cfg('clientId');
+    if (!cid || !navigator.onLine || !localStorage.getItem('gEverLogged') || this.token()) return false;
+    const last = +localStorage.getItem('gSilentAt') || 0; if (Date.now() - last < 10 * 60000) return false; // al massimo ogni 10 minuti
+    localStorage.setItem('gSilentAt', String(Date.now()));
+    const st = uid(); localStorage.setItem('oauthState', st); localStorage.setItem('oauthSilent', '1');
+    const p = new URLSearchParams({ client_id: cid, redirect_uri: this.redirectUri(), response_type: 'token', scope: SCOPE, include_granted_scopes: 'true', state: st, prompt: 'none' });
+    const hint = localStorage.getItem('gHint'); if (hint) p.set('login_hint', hint);
+    location.replace('https://accounts.google.com/o/oauth2/v2/auth?' + p.toString());
+    return true;
+  },
   handleRedirect() {
     if (!/access_token=|error=/.test(location.hash)) return false;
     const h = new URLSearchParams(location.hash.slice(1));
+    const silent = localStorage.getItem('oauthSilent') === '1'; localStorage.removeItem('oauthSilent');
     history.replaceState({ view: 'list' }, '', location.pathname + location.search);
-    if (h.get('error')) { setTimeout(() => toast('Accesso a Google annullato'), 300); return false; }
+    if (h.get('error')) { if (!silent) setTimeout(() => toast('Accesso a Google annullato'), 300); return false; }
     if (h.get('state') !== localStorage.getItem('oauthState')) return false;
     localStorage.setItem('gtoken', JSON.stringify({ t: h.get('access_token'), exp: Date.now() + (parseInt(h.get('expires_in'), 10) || 3600) * 1000 }));
-    return true;
+    localStorage.setItem('gEverLogged', '1');
+    return silent ? 'silent' : true;
   },
-  logout() { const t = this.token(); localStorage.removeItem('gtoken'); if (t) fetch('https://oauth2.googleapis.com/revoke?token=' + t, { method: 'POST' }).catch(() => {}); },
+  logout() { const t = this.token(); localStorage.removeItem('gtoken'); localStorage.removeItem('gEverLogged'); localStorage.removeItem('gHint'); if (t) fetch('https://oauth2.googleapis.com/revoke?token=' + t, { method: 'POST' }).catch(() => {}); },
   async api(url, opts = {}) {
     const t = this.token(); if (!t) throw new NeedLogin();
     const r = await fetch(url, { ...opts, headers: { ...(opts.headers || {}), Authorization: 'Bearer ' + t } });
@@ -1375,7 +1391,58 @@ const Drive = {
     return (await r.json()).id;
   },
   download(id) { return this.api(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`); },
+  async copy(id, name, parent) {
+    const r = await this.api(`https://www.googleapis.com/drive/v3/files/${id}/copy?fields=id`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, parents: [parent] }) });
+    return (await r.json()).id;
+  },
+  async list(parent) {
+    const q = `'${parent}' in parents and trashed=false`;
+    const r = await this.api('https://www.googleapis.com/drive/v3/files?spaces=drive&pageSize=100&orderBy=name%20desc&fields=files(id,name,size,modifiedTime)&q=' + encodeURIComponent(q));
+    return (await r.json()).files || [];
+  },
+  remove(id) { return this.api(`https://www.googleapis.com/drive/v3/files/${id}`, { method: 'DELETE' }); },
 };
+
+/* ── Copie giornaliere su Drive (le ultime 10) ─────────────── */
+const COPIES_KEEP = 10;
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+async function dailyCopy(m) {
+  if ((await getMeta('lastCopyDay')) === today()) return;
+  if (!m.copies) { m.copies = await Drive.folder('copie', m.folder); await setMeta('drive', m); }
+  const files = await Drive.list(m.copies);
+  if (!files.some(f => f.name === `scaffale-${today()}.json`)) await Drive.copy(m.file, `scaffale-${today()}.json`, m.copies);
+  const all = (await Drive.list(m.copies)).filter(f => /^scaffale-\d{4}-\d{2}-\d{2}\.json$/.test(f.name)).sort((a, b) => b.name.localeCompare(a.name));
+  for (const f of all.slice(COPIES_KEEP)) await Drive.remove(f.id).catch(() => {});
+  await setMeta('lastCopyDay', today());
+}
+async function listCopies() {
+  const m = (await getMeta('drive')) || {};
+  if (!m.folder) return [];
+  if (!m.copies) { const f = await Drive.find(`name='copie' and mimeType='application/vnd.google-apps.folder' and '${m.folder}' in parents and trashed=false`); if (!f[0]) return []; m.copies = f[0].id; await setMeta('drive', m); }
+  return (await Drive.list(m.copies)).filter(f => /^scaffale-\d{4}-\d{2}-\d{2}\.json$/.test(f.name));
+}
+// Ripristina una copia: la collezione torna com'era quel giorno (anche sugli altri telefoni, dopo la sincronizzazione)
+async function restoreCopy(id, label) {
+  if (!confirm(tr(`Ripristinare la collezione com'era il ${label}? Le modifiche fatte dopo andranno perse.`))) return;
+  toast('Ripristino…', 4000);
+  try {
+    const data = await (await Drive.download(id)).json();
+    if (!Array.isArray(data.items)) throw new Error('formato');
+    const now = Date.now();
+    const keep = new Map(data.items.map(i => [i.id, i]));
+    const local = await DB.all('items');
+    const out = data.items.map(i => { const c = { ...normalize(i), updatedAt: now }; delete c._fu; delete c._fub; return c; });
+    local.filter(i => !keep.has(i.id) && !i.deleted).forEach(i => out.push({ id: i.id, deleted: true, createdAt: i.createdAt, updatedAt: now }));
+    if (data.foto) await setMeta('photoMap', { ...((await getMeta('photoMap')) || {}), ...data.foto });
+    await DB.putMany('items', out); await loadItems();
+    S.allowMass = true; closeSheet(); toast(`Ripristinata la copia del ${label}`, 3500); markDirty(); go('list');
+  } catch (e) { toast('Copia non leggibile'); }
+}
+
+// Si può lasciare la pagina un attimo (per il rinnovo dell'accesso) senza perdere niente?
+function safeToLeave() {
+  return S.view === 'list' && !S.draft && !Scanner.active && $('#sheetWrap').classList.contains('hidden') && !(S.valuing) && !batchRunning;
+}
 
 /* ── Sincronizzazione ──────────────────────────────────────── */
 const Sync = { running: false, again: false, timer: null };
@@ -1387,13 +1454,41 @@ function setSync(state, err) {
 function scheduleSync(ms = 2500) { clearTimeout(Sync.timer); Sync.timer = setTimeout(() => sync(), ms); }
 async function markDirty() { S.dirty = true; await setMeta('dirty', true); scheduleSync(); }
 
-function mergeItems(localList, remoteList) {
-  const map = new Map(localList.map(i => [i.id, i])); const changed = [];
-  for (const r of (remoteList || []).map(normalize)) {
-    const l = map.get(r.id);
-    if (!l || (r.updatedAt || 0) > (l.updatedAt || 0)) { map.set(r.id, r); changed.push(r); }
+// Data di modifica di un singolo campo (i pezzi salvati prima della 2.4 usano la data del pezzo)
+const META_KEYS = new Set(['id', 'updatedAt', 'createdAt', '_fu', '_fub']);
+const fieldTs = (it, k) => (it._fu && it._fu[k]) || it._fub || it.updatedAt || 0;
+const stable = o => JSON.stringify(o, Object.keys(o).sort());
+// Unisce due versioni dello stesso pezzo campo per campo: se due telefoni cambiano campi diversi, si tengono entrambe le modifiche
+function mergeOne(l, r) {
+  if ((l.updatedAt || 0) === (r.updatedAt || 0) && stable(l) === stable(r)) return l;
+  if (l.deleted || r.deleted) return (r.updatedAt || 0) > (l.updatedAt || 0) ? r : l; // eliminazione: vince il più recente
+  const out = {}; const fu = {};
+  for (const k of new Set([...Object.keys(l), ...Object.keys(r)])) {
+    if (META_KEYS.has(k)) continue;
+    const tl = fieldTs(l, k), tr = fieldTs(r, k);
+    const useR = tr > tl || (tr === tl && (r.updatedAt || 0) > (l.updatedAt || 0));
+    const src = useR ? r : l;
+    if (k in src) out[k] = src[k];
+    if ((l._fu && l._fu[k]) || (r._fu && r._fu[k])) fu[k] = Math.max(tl, tr);
   }
-  return { all: [...map.values()], changed };
+  out.id = l.id; out.createdAt = Math.min(l.createdAt || Infinity, r.createdAt || Infinity); if (!isFinite(out.createdAt)) out.createdAt = Date.now();
+  out.updatedAt = Math.max(l.updatedAt || 0, r.updatedAt || 0);
+  if (Object.keys(fu).length) { out._fu = fu; out._fub = Math.min(l._fub || l.updatedAt || 0, r._fub || r.updatedAt || 0); }
+  return out;
+}
+function mergeItems(localList, remoteList) {
+  const map = new Map(localList.map(i => [i.id, i])); const changed = []; let remoteBehind = false;
+  const seen = new Set();
+  for (const r of (remoteList || []).map(normalize)) {
+    seen.add(r.id);
+    const l = map.get(r.id);
+    if (!l) { map.set(r.id, r); changed.push(r); continue; }
+    const m = mergeOne(l, r);
+    if (stable(m) !== stable(l)) { map.set(r.id, m); changed.push(m); }
+    if (stable(m) !== stable(r)) remoteBehind = true;
+  }
+  if (localList.some(i => !seen.has(i.id))) remoteBehind = true;
+  return { all: [...map.values()], changed, remoteBehind };
 }
 
 async function sync() {
@@ -1414,7 +1509,13 @@ async function sync() {
       try { remote = await (await Drive.download(m.file)).json(); }
       catch (e) { if (e.status === 404) { m.file = null; await setMeta('drive', m); } else throw e; }
     }
-    const { all, changed } = mergeItems(await DB.all('items'), remote.items);
+    const { all, changed, remoteBehind } = mergeItems(await DB.all('items'), remote.items);
+    // Protezione: se questo telefono sta per cancellare molti pezzi in una volta, chiede conferma
+    const remoteLive = new Set((remote.items || []).filter(i => !i.deleted).map(i => i.id));
+    const goingAway = all.filter(i => i.deleted && remoteLive.has(i.id)).length;
+    if (goingAway >= 15 && goingAway > remoteLive.size * 0.3 && !S.allowMass) {
+      const e = new Error('mass'); e.mass = goingAway; throw e;
+    }
     if (changed.length) await DB.putMany('items', changed);
 
     const photoMap = { ...(remote.foto || {}), ...((await getMeta('photoMap')) || {}) };
@@ -1428,21 +1529,24 @@ async function sync() {
     }
     await setMeta('photoMap', photoMap);
 
-    const remoteIds = new Set((remote.items || []).map(i => i.id + ':' + (i.updatedAt || 0)));
-    const remoteBehind = all.some(i => !remoteIds.has(i.id + ':' + (i.updatedAt || 0)));
     if (S.dirty || uploaded || remoteBehind || !m.file) {
+      if (m.file && remoteLive.size) await dailyCopy(m).catch(e => console.warn('copia', e)); // copia del giorno prima di sovrascrivere
       const data = { app: 'Scaffale', versione: 1, aggiornato: new Date().toISOString(), items: all, foto: photoMap };
       const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
       try { m.file = await Drive.upload('scaffale.json', m.folder, blob, 'application/json', m.file); }
       catch (e) { if (e.status === 404) { m.file = await Drive.upload('scaffale.json', m.folder, blob, 'application/json'); } else throw e; }
       await setMeta('drive', m);
     }
-    S.dirty = false; await setMeta('dirty', false);
+    if (!localStorage.getItem('gHint')) {
+      try { const a = await (await Drive.api('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)')).json(); if (a.user && a.user.emailAddress) localStorage.setItem('gHint', a.user.emailAddress); } catch (e) {}
+    }
+    S.dirty = false; S.allowMass = false; await setMeta('dirty', false);
     S.lastSync = Date.now(); await setMeta('lastSync', S.lastSync);
     if (changed.length) { await loadItems(); if (S.view !== 'edit') render(); }
     setSync('ok');
   } catch (e) {
     if (e instanceof NeedLogin) setSync('login');
+    else if (e.mass) setSync('error', `Questo telefono sta per eliminare ${e.mass} pezzi da Drive: conferma nelle Impostazioni`);
     else if (e.status === 404 && /folder|File not found/i.test(e.detail || '')) { await setMeta('drive', {}); setSync('error', 'Cartella su Drive non trovata, riprova'); }
     else { console.error(e); setSync('error', (e.message || 'Errore') + (e.detail ? ' — ' + String(e.detail).slice(0, 120) : '')); }
   } finally {
@@ -1453,7 +1557,19 @@ async function sync() {
 
 /* ── Salvataggio ───────────────────────────────────────────── */
 async function saveItem(it) {
-  it.updatedAt = Date.now();
+  const now = Date.now();
+  if (!it.deleted) {
+    // ricorda quali campi sono cambiati e quando, per unire bene le modifiche fatte su telefoni diversi
+    let prev = null; try { prev = await DB.get('items', it.id); } catch (e) {}
+    if (prev && !prev.deleted) {
+      if (!it._fu) { it._fu = {}; it._fub = prev.updatedAt || 0; }
+      for (const k of new Set([...Object.keys(it), ...Object.keys(prev)])) {
+        if (META_KEYS.has(k)) continue;
+        if (JSON.stringify(it[k]) !== JSON.stringify(prev[k])) it._fu[k] = now;
+      }
+    }
+  }
+  it.updatedAt = now;
   await DB.put('items', it);
   const idx = S.items.findIndex(x => x.id === it.id);
   idx >= 0 ? (S.items[idx] = it) : S.items.push(it);
@@ -2099,6 +2215,10 @@ function showUpdateBar() {
   document.body.appendChild(b);
 }
 const NEWS = {
+  '2.4': [
+    ['Copie automatiche', 'Ogni giorno Spinyl tiene una copia della collezione su Drive (le ultime 10): da Impostazioni puoi tornare indietro.'],
+    ['Accesso a Google più comodo', 'Quando l’accesso scade, Spinyl lo rinnova da solo se sei ancora collegato a Google. E le modifiche fatte su due telefoni non si sovrascrivono più.'],
+  ],
   '2.2': [
     ['Foto copertina', 'Fotografa la copertina di un disco o di un libro: Spinyl lo riconosce e cerca dati e prezzi.'],
   ],
@@ -2327,6 +2447,18 @@ Object.assign(actions, {
   batchChoose: el => { const r = S.batch.find(x => x.id === el.dataset.v); if (!r || !r.alts) return; S.batchTarget = r.id; S.candidates = r.alts; openSheet(`<h2>Quale di questi?</h2><div class="results">${resultsHTML(r.alts)}</div>`); },
   batchSearch: el => { const r = S.batch.find(x => x.id === el.dataset.v); if (!r) return; S.intoDraft = false; S.pickWish = false; sheetSearch(r.tipo, '', r.code); S.batchTarget = r.id; },
   batchSave: () => batchSave(),
+  allowMass: () => { S.allowMass = true; sync(); toast('Sincronizzazione…', 1200); },
+  showCopies: async () => {
+    openSheet(`<h2>Copie di sicurezza</h2>${loadingHTML('Leggo le copie su Drive…')}`);
+    let files = [];
+    try { files = await listCopies(); } catch (e) { return openSheet(`<h2>Copie di sicurezza</h2><p class="lead">Non riesco a leggere Drive: controlla la connessione o accedi di nuovo.</p>`); }
+    const fmt = n => new Date(n.slice(9, 19) + 'T12:00:00').toLocaleDateString(LOC(), { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+    openSheet(`<h2>Copie di sicurezza</h2>
+      <p class="lead">Ogni giorno in cui modifichi la collezione, Spinyl tiene una copia su Drive (cartella Scaffale › copie). Restano le ultime ${COPIES_KEEP}.</p>
+      ${files.length ? `<div class="results">${files.map(f => `<div class="result static"><div class="grow"><b>${esc(fmt(f.name))}</b><span>${f.size ? Math.round(f.size / 1024) + ' KB' : ''}</span></div><button class="btn" style="min-height:40px" data-a="restoreCopy" data-v="${esc(f.id)}" data-label="${esc(fmt(f.name))}">Ripristina</button></div>`).join('')}</div>`
+        : '<p class="note">Ancora nessuna copia: la prima viene creata alla prossima modifica.</p>'}`);
+  },
+  restoreCopy: el => restoreCopy(el.dataset.v, el.dataset.label),
   addCover: () => { closeSheet(); startCover('add', S.addTipo); },
   checkCover: () => { closeSheet(); startCover('check', S.coverTipo || localStorage.getItem('coverTipo') || 'vinile'); },
   scanCover: () => { const check = Scanner.mode === 'check'; Scanner.stop(); startCover(check ? 'check' : 'add', check ? (S.coverTipo || localStorage.getItem('coverTipo') || 'vinile') : S.addTipo); },
@@ -2400,6 +2532,7 @@ $('#csvInput').addEventListener('change', e => { const f = e.target.files[0]; e.
 window.addEventListener('online', () => { scheduleSync(800); runBatch(); runCovers(); });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
+  if (cfg('clientId') && !Drive.token() && S.dirty && safeToLeave()) { Drive.silentLogin(); return; }
   scheduleSync(800);
   if (S.swReg) S.swReg.update().catch(() => {}); // controlla se è uscita una nuova versione
 });
@@ -2416,7 +2549,11 @@ document.addEventListener('visibilitychange', () => {
   history.replaceState({ view: 'list' }, '');
   if (window.I18N) I18N.start();
   render();
-  if (cfg('clientId')) { if (Drive.token()) { sync(); if (justLogged) toast('Collegato a Google Drive'); } else setSync('login'); }
+  if (localStorage.getItem('gtoken')) localStorage.setItem('gEverLogged', '1'); // chi ha già fatto l'accesso in passato
+  if (cfg('clientId')) {
+    if (Drive.token()) { sync(); if (justLogged === true) toast('Collegato a Google Drive'); }
+    else { setSync('login'); setTimeout(() => { if (safeToLeave()) Drive.silentLogin(); }, 600); }
+  }
   maybeWhatsNew();
   runBatch(); runCovers();
   if ('serviceWorker' in navigator) {
