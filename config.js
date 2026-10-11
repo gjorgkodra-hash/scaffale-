@@ -18,7 +18,7 @@ window.SCAFFALE_CONFIG = {
   VISION_MONTHLY_LIMIT: 100,
 
   // FACOLTATIVO — migliora molto la ricerca dei film (gratis su themoviedb.org)
-  TMDB_API_KEY: '',
+  TMDB_API_KEY: '580db0b4055f2c04a1895794292a65fd',
 
   // NON inserire qui il token Discogs: questo file è pubblico e il token dà accesso all'account.
   // Ogni utente lo mette nelle Impostazioni dell'app.
