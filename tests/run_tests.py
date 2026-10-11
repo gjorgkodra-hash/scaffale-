@@ -228,6 +228,15 @@ async def t_book_rating(b, base):
     check('la cache della Home dipende dalla versione', sig == await page.evaluate("VERSION"))
     check('nessun errore JavaScript', not errs, errs)
 
+def t_files():
+    print('\nFile dell\'app')
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+    sw = (root / 'sw.js').read_text(); app = (root / 'app.js').read_text()
+    v = re.search(r"const VERSION = '([\d.]+)'", app).group(1)
+    check('sw.js non vuoto e con la stessa versione di app.js', f"scaffale-v{v}" in sw and 'fetch' in sw)
+    for f in ['index.html', 'app.css', 'i18n.js', 'config.js']: check(f'{f} non vuoto', (root / f).stat().st_size > 200)
+
 async def t_batch_import(b, base):
     print('\nScansione a raffica e importazione')
     page, errs = await new_page(b, base)
@@ -322,6 +331,7 @@ async def t_home(b, base):
     check('nessun errore JavaScript', not (errs + errs2), errs + errs2)
 
 async def main():
+    t_files()
     base = serve()
     async with async_playwright() as pw:
         b = await pw.chromium.launch()
