@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.8.0';
+const VERSION = '2.8.1';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -271,6 +271,7 @@ function render() {
   else if (S.view === 'stats') app.innerHTML = viewStats();
   else if (S.view === 'batch') app.innerHTML = viewBatch();
   else if (S.view === 'home') { app.innerHTML = viewHome(); renderFeed(); loadFeed(); }
+  else if (S.view === 'community' && COMM_URL) { app.innerHTML = viewCommunity(); loadCommunity(); }
   else { S.view = 'list'; app.innerHTML = viewList(); renderGrid(); centerChip(false); }
   hydratePhotos(app);
 }
@@ -297,8 +298,9 @@ function mainHeader(active) {
     ${syncBtn()}
     <button class="iconbtn" data-a="settings" aria-label="Impostazioni">${ic('gear')}</button>
   </header>
-  <nav class="maintabs" role="tablist">
+  <nav class="maintabs ${COMM_URL ? 'three' : ''}" role="tablist">
     <button role="tab" class="${active === 'home' ? 'on' : ''}" data-a="mainTab" data-v="home">Novità</button>
+    ${COMM_URL ? `<button role="tab" class="${active === 'community' ? 'on' : ''}" data-a="mainTab" data-v="community">Community</button>` : ''}
     <button role="tab" class="${active === 'list' ? 'on' : ''}" data-a="mainTab" data-v="list">Collezione<b>${live().filter(i => !i.desiderio).length}</b></button>
   </nav>`;
 }
@@ -2326,7 +2328,7 @@ const NEWS = {
     ['Home Novità', 'La prima pagina mostra i nuovi album dei tuoi artisti, i nuovi libri dei tuoi autori, i film al cinema e cosa stai leggendo.'],
   ],
   '2.8': [
-    ['Community', 'Recensioni, voti e commenti tra amici su ogni libro, disco e film. Si entra su invito: Impostazioni › Community.'],
+    ['Community', 'Recensioni, voti e commenti tra amici su ogni libro, disco e film, nella nuova scheda Community accanto a Novità. Si entra su invito.'],
   ],
   '2.7': [
     ['Articoli', 'Nella Home gli articoli più recenti su libri, musica, vinili e cinema dalle riviste.'],
@@ -2579,7 +2581,7 @@ async function commSend() {
   if (!S.commStars && !body.trim()) return toast(COMM_ERR.vuota);
   try {
     await comm('review', { work: workKey(it), tipo: it.tipo, titolo: it.titolo, autore: it.autore || '', cover: /^https:/.test(it.coverUrl || '') ? it.coverUrl : '', stars: S.commStars || null, body });
-    toast('Pubblicata'); await loadComm(it, true); S.feed && (S.feed.at = 0);
+    toast('Pubblicata'); await loadComm(it, true); S.commRecent = null;
   } catch (e) { toast(commErrMsg(e)); }
 }
 function commReply(id) { const f = $(`form.creply[data-review="${id}"]`); if (f) { f.classList.toggle('hidden'); const ta = f.querySelector('textarea'); if (!f.classList.contains('hidden')) ta.focus(); } }
@@ -2611,7 +2613,7 @@ async function commJoin() {
   try {
     const r = await comm('join', { nick: nick.trim(), code: code.trim() });
     setCommMe(r.member); localStorage.removeItem('invito'); closeSheet(); toast('Benvenuto nella community!');
-    if (S.feed) S.feed.at = 0; render();
+    render();
   } catch (e) { toast(commErrMsg(e), 3500); }
 }
 function commSettingsHTML() {
@@ -2629,12 +2631,35 @@ async function commInvite() {
     shareText(tr('Ti invito nella community di Spinyl, l\'app per catalogare libri, dischi e film. Apri il link e usa il codice') + ' ' + code + ': ' + link, 'Spinyl');
   } catch (e) { toast(commErrMsg(e)); }
 }
-async function feedCommunity() {
-  const d = await comm('recent');
-  return (d.reviews || []).map(r => ({ ...r, tipo: r.tipo || 'libro' }));
+// Scheda "Community": chi sei, invita, ultime recensioni di tutti
+function viewCommunity() {
+  const me = commMe();
+  let body;
+  if (!me) body = `<div class="hint chero"><b>La community di Spinyl</b><span>Recensioni, voti e commenti tra amici su libri, dischi e film. Si entra con un codice invito; la tua collezione resta privata.</span>
+      <button class="btn primary" data-a="commJoin">Entra nella community</button></div>`;
+  else body = `<div class="cme"><div><span class="note">Sei dentro come</span><b translate="no">${esc(me.nick)}</b></div><button class="btn" data-a="commInvite">${ic('share', 18)}Invita</button></div>
+    <h3 class="chtitle">Ultime recensioni</h3><div id="commList">${loadingHTML('Carico le recensioni…')}</div>
+    <p class="note home-foot">Per scrivere una recensione apri un pezzo della tua collezione.</p>`;
+  return `${mainHeader('community')}<div class="home commtab">${body}</div><button class="fab" data-a="add">${ic('plus')}Aggiungi</button>`;
+}
+async function loadCommunity(force) {
+  if (!commMe()) return;
+  const c = S.commRecent;
+  if (!c || force || Date.now() - c.t > 120e3) {
+    try { S.commRecent = { t: Date.now(), list: ((await comm('recent')).reviews || []).map(r => ({ ...r, tipo: r.tipo || 'libro' })) }; }
+    catch (e) { S.commRecent = null; const b = $('#commList'); if (b) b.innerHTML = e.code === 401 ? `<p class="note">${esc(commErrMsg(e))}</p><div class="stack"><button class="btn block" data-a="commLogin">Accedi con Google</button></div>` : `<p class="note">${esc(commErrMsg(e))}</p>`; return; }
+  }
+  const b = $('#commList'); if (!b || S.view !== 'community') return;
+  const L = S.commRecent.list;
+  b.innerHTML = L.length ? L.map((r, i) => `<button class="crow t-${esc(r.tipo)}" data-a="commOpen" data-i="${i}">${coverHTML({ tipo: r.tipo, titolo: r.titolo, coverUrl: r.cover })}
+      <div><b translate="no">${esc(r.titolo)}</b><span translate="no">${esc(r.autore || '')}</span>
+      <div class="chead"><b translate="no">${esc(r.nick)}</b>${r.stars ? `<span class="cstars">${'★'.repeat(r.stars)}<i>${'★'.repeat(5 - r.stars)}</i></span>` : ''}<small>${esc(commAgo(r.at))}</small></div>
+      ${r.body ? `<p translate="no">${esc(r.body)}</p>` : ''}</div></button>`).join('')
+    : '<p class="note">Ancora nessuna recensione: apri un pezzo della tua collezione e scrivi la prima!</p>';
+  hydratePhotos(b);
 }
 function commOpen(i) {
-  const c = ((S.feed && S.feed.rows && S.feed.rows.community) || [])[i]; if (!c) return;
+  const c = ((S.commRecent && S.commRecent.list) || [])[i]; if (!c) return;
   const it = live().find(x => workKey(x) === c.work);
   if (it) return go('detail', it.id);
   // non ce l'hai: mostro le recensioni in un foglio
@@ -2657,7 +2682,6 @@ const FEED_ROWS = [
   { key: 'registi', title: 'Dai tuoi registi', icon: '🎞️', need: () => cfg('tmdbKey') && topNames(i => i.tipo === 'film').length },
   { key: 'album', title: 'Nuovi album', icon: '🎧', need: () => true },
   { key: 'libri', title: 'Nuovi libri', icon: '📖', need: () => true },
-  { key: 'community', title: 'Dalla community', icon: '💬', need: () => !!commMe() },
   { key: 'cinema', title: 'Al cinema', icon: '🎬', need: () => cfg('tmdbKey') },
   { key: 'articoli', title: 'Articoli', icon: '📰', need: () => true },
   { key: 'offerte', title: 'Desideri in vendita', icon: '⭐', need: () => cfg('discogsToken') && live().some(i => i.desiderio && isMusic(i.tipo)) },
@@ -2852,11 +2876,11 @@ async function feedBooks() {
   return dedupeFeed(L).sort((a, b) => String(b.uscita).localeCompare(String(a.uscita))).slice(0, 18);
 }
 const dedupeFeed = L => { const seen = new Set(); return L.filter(c => { const k = c.tipo + '|' + norm(c.titolo) + '|' + norm(String(c.autore || '').split(',')[0]); if (seen.has(k)) return false; seen.add(k); return true; }); };
-const FEED_FETCH = { album: feedAlbums, libri: feedBooks, cinema: feedCinema, articoli: feedArticles, community: feedCommunity, artisti: feedArtists, autori: feedAuthors, registi: feedDirectors, offerte: feedOffers };
+const FEED_FETCH = { album: feedAlbums, libri: feedBooks, cinema: feedCinema, articoli: feedArticles, artisti: feedArtists, autori: feedAuthors, registi: feedDirectors, offerte: feedOffers };
 
 let feedLoading = false, feedAgain = false;
 // "Firma" della collezione: se cambiano artisti, autori, registi o desideri, le novità si ricalcolano
-const feedSig = () => JSON.stringify([VERSION, !!commMe(), topNames(i => isMusic(i.tipo)), topNames(i => i.tipo === 'libro'), topNames(i => i.tipo === 'film', 6), live().filter(i => i.desiderio && isMusic(i.tipo)).length, !!cfg('tmdbKey'), !!cfg('discogsToken')]);
+const feedSig = () => JSON.stringify([VERSION, topNames(i => isMusic(i.tipo)), topNames(i => i.tipo === 'libro'), topNames(i => i.tipo === 'film', 6), live().filter(i => i.desiderio && isMusic(i.tipo)).length, !!cfg('tmdbKey'), !!cfg('discogsToken')]);
 async function loadFeed(force) {
   if (feedLoading) { if (force || (S.feed && S.feed.sig !== feedSig())) feedAgain = true; return; }
   if (!S.feed) S.feed = (await getMeta('feed')) || null;
@@ -2893,9 +2917,6 @@ function viewHome() {
   <button class="fab" data-a="add">${ic('plus')}Aggiungi</button>`;
 }
 function feedCard(c, rowKey, i) {
-  if (c.work) {
-    return `<button class="fcard t-${esc(c.tipo)}" data-a="commOpen" data-i="${i}">${coverHTML({ tipo: c.tipo, titolo: c.titolo, coverUrl: c.cover })}<b translate="no">${esc(c.titolo)}</b><span><span translate="no">${c.stars ? '★ ' + c.stars + ' · ' : ''}${esc(c.nick)}</span></span></button>`;
-  }
   if (c.link) {
     const ago = c.at ? Math.max(0, Math.round((Date.now() - c.at) / 864e5)) : null;
     return `<a class="fcard art" href="${esc(c.link)}" target="_blank" rel="noopener">${c.coverUrl ? `<img class="cover" src="${esc(c.coverUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'cover noimg',textContent:'📰'}))">` : '<div class="cover noimg">📰</div>'}
@@ -3101,7 +3122,7 @@ Object.assign(actions, {
   commReport: el => commReport(el.dataset.kind, el.dataset.id),
   commInvite: () => commInvite(),
   commOpen: el => commOpen(+el.dataset.i),
-  commWish: el => { const c = ((S.feed && S.feed.rows && S.feed.rows.community) || [])[+el.dataset.i]; if (!c) return; S.feedItem = { tipo: c.tipo, titolo: c.titolo, autore: c.autore, coverUrl: c.cover }; feedAdd(true); },
+  commWish: el => { const c = ((S.commRecent && S.commRecent.list) || [])[+el.dataset.i]; if (!c) return; S.feedItem = { tipo: c.tipo, titolo: c.titolo, autore: c.autore, coverUrl: c.cover }; feedAdd(true); },
   commMore: () => { S.commAll = true; const it = byId(S.id); if (it) renderComm(it); },
   forceUpdate: () => forceUpdate(),
 });
@@ -3178,7 +3199,7 @@ document.addEventListener('visibilitychange', () => {
   S.dirty = !!(await getMeta('dirty'));
   S.lastSync = (await getMeta('lastSync')) || 0;
   S.batch = ((await getMeta('batch')) || []).map(r => (r.status === 'busy' ? { ...r, status: 'wait' } : r));
-  S.main = localStorage.getItem('mainTab') === 'list' ? 'list' : 'home'; S.view = S.main;
+  S.main = ['list', 'community'].includes(localStorage.getItem('mainTab')) ? localStorage.getItem('mainTab') : 'home'; S.view = S.main;
   history.replaceState({ view: S.main }, '');
   if (window.I18N) I18N.start();
   render();

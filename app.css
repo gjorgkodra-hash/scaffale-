@@ -524,3 +524,17 @@ details.adv summary { padding: 12px 0; color: var(--muted); font-size: 14px; cur
 .creply { margin-top: 8px; }
 .crules { margin: 10px 0; }
 label.check { display: flex; gap: 10px; align-items: center; margin: 6px 0 12px; font-size: 14px; }
+.maintabs.three { grid-template-columns: 1fr 1fr 1fr; }
+.maintabs.three button { font-size: 14px; padding: 10px 2px; }
+.commtab { padding: 0 16px 120px; }
+.chero { margin: 8px 0; }
+.cme { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--card); border-radius: var(--r); padding: 14px 16px; margin: 8px 0 16px; }
+.cme div { display: flex; flex-direction: column; }
+.cme b { font-size: 18px; }
+.chtitle { font-size: 20px; margin: 4px 0 8px; }
+.crow { display: grid; grid-template-columns: 64px 1fr; gap: 12px; width: 100%; text-align: left; padding: 12px 0; border-bottom: 1px solid var(--line); color: inherit; }
+.crow .cover { width: 64px; aspect-ratio: 1; border-radius: 10px; }
+.crow.t-libro .cover, .crow.t-film .cover { aspect-ratio: 2 / 3; }
+.crow > div > b { display: block; font-size: 15px; line-height: 1.25; }
+.crow > div > span { display: block; color: var(--muted); font-size: 13px; margin-bottom: 4px; }
+.crow p { margin: 4px 0 0; font-size: 14px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
