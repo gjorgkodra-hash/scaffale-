@@ -93,7 +93,7 @@ def comm_handle(tok, b):
         COMM['reviews'] = [r for r in COMM['reviews'] if not (r['work'] == b['work'] and r['mid'] == me['id'])]
         COMM['reviews'].insert(0, {'id': nid_(), 'work': b['work'], 'tipo': b['tipo'], 'titolo': b['titolo'], 'autore': b.get('autore', ''), 'cover': b.get('cover', ''), 'stars': b.get('stars'), 'body': b.get('body', ''), 'mid': me['id'], 'nick': me['nick'], 'at': '2026-10-11T10:00:00Z', 'hidden': False})
         return 200, {'ok': True}
-    if a == 'comment': COMM['comments'].append({'id': nid_(), 'review': b['review'], 'body': b['body'], 'mid': me['id'], 'nick': me['nick'], 'at': '2026-10-11T11:00:00Z'}); return 200, {'ok': True}
+    if a == 'comment': COMM['comments'].append({'id': nid_(), 'review': b.get('review'), 'post': b.get('post'), 'body': b['body'], 'mid': me['id'], 'nick': me['nick'], 'at': '2026-10-11T11:00:00Z'}); return 200, {'ok': True}
     if a == 'report':
         for r in COMM['reviews']:
             if r['id'] == b['id']: r['hidden'] = True
@@ -101,8 +101,44 @@ def comm_handle(tok, b):
     if a == 'work':
         L = [r for r in COMM['reviews'] if r['work'] == b['work'] and not r['hidden']]
         st = [r['stars'] for r in L if r['stars']]
-        return 200, {'avg': round(sum(st) / len(st), 1) if st else None, 'n': len(st), 'reviews': [{'id': r['id'], 'nick': r['nick'], 'mine': r['mid'] == me['id'], 'stars': r['stars'], 'body': r['body'], 'at': r['at'],
+        sh = [dict(member=x['member'], nick=x['nick'], mine=x['member'] == me['id'], kind=x['kind'], offer=x['offer'], price=x['price'], formato=x['formato'], note='') for L in COMM.get('shares', {}).values() for x in L if x['work'] == b['work']]
+        ps = [dict(id=p['id'], title=p['title'], excerpt=p['body'][:160], nick=p['nick'], mine=p['mid'] == me['id'], at=p['at']) for p in COMM.get('posts', []) if p['work'] == b['work']]
+        return 200, {'shares': sh, 'posts': ps, 'avg': round(sum(st) / len(st), 1) if st else None, 'n': len(st), 'reviews': [{'id': r['id'], 'nick': r['nick'], 'mine': r['mid'] == me['id'], 'stars': r['stars'], 'body': r['body'], 'at': r['at'],
             'comments': [{'id': c['id'], 'nick': c['nick'], 'mine': c['mid'] == me['id'], 'body': c['body'], 'at': c['at']} for c in COMM['comments'] if c['review'] == r['id']]} for r in L]}
+    if a == 'shares':
+        COMM.setdefault('shares', {})[me['id']] = [dict(x, member=me['id'], nick=me['nick'], at='2026-10-11T12:00:00Z') for x in b.get('items', [])]; return 200, {'ok': True}
+    allsh = [x for L in COMM.get('shares', {}).values() for x in L]
+    if a == 'match':
+        return 200, {'wanted': [x for x in allsh if x['kind'] == 'wish' and x['work'] in b.get('own', []) and x['member'] != me['id']],
+                     'available': [x for x in allsh if x['kind'] == 'own' and x['work'] in b.get('wish', []) and x['member'] != me['id']]}
+    if a == 'offer':
+        key = tuple(sorted([me['id'], b['to']])) + (b['work'],)
+        th = COMM.setdefault('threads', {}).setdefault(key, {'id': 't%d' % len(COMM['threads']), 'titolo': b['titolo'], 'cover': b.get('cover', ''), 'msgs': [], 'members': key[:2]})
+        th['msgs'].append({'id': nid_(), 'from': me['id'], 'body': b.get('body', ''), 'offer': b.get('offer', ''), 'price': b.get('price'), 'at': '2026-10-11T12:00:00Z'})
+        return 200, {'thread': th['id']}
+    ths = list(COMM.get('threads', {}).values())
+    nick = lambda mid: next((m['nick'] for m in COMM['members'].values() if m['id'] == mid), '?')
+    if a == 'send':
+        th = next(x for x in ths if x['id'] == b['thread']); th['msgs'].append({'id': nid_(), 'from': me['id'], 'body': b['body'], 'offer': '', 'price': None, 'at': '2026-10-11T12:05:00Z'}); return 200, {'ok': True}
+    if a in ('threads', 'unread'):
+        mine = [x for x in ths if me['id'] in x['members']]
+        out = [{'id': x['id'], 'other': [m for m in x['members'] if m != me['id']][0], 'nick': nick([m for m in x['members'] if m != me['id']][0]), 'titolo': x['titolo'], 'cover': x['cover'], 'at': x['msgs'][-1]['at'],
+                'unread': x['msgs'][-1]['from'] != me['id'], 'last': {'body': x['msgs'][-1]['body'], 'offer': x['msgs'][-1]['offer'], 'price': x['msgs'][-1]['price'], 'mine': x['msgs'][-1]['from'] == me['id']}} for x in mine]
+        return 200, ({'threads': out} if a == 'threads' else {'unread': sum(1 for o in out if o['unread'])})
+    if a == 'thread':
+        th = next(x for x in ths if x['id'] == b['id']); other = [m for m in th['members'] if m != me['id']][0]
+        return 200, {'thread': {'id': th['id'], 'other': other, 'nick': nick(other), 'titolo': th['titolo'], 'cover': th['cover'], 'blocked': False}, 'messages': [{'id': m['id'], 'mine': m['from'] == me['id'], 'body': m['body'], 'offer': m['offer'], 'price': m['price'], 'at': m['at']} for m in th['msgs']]}
+    if a == 'post':
+        pid = nid_(); COMM.setdefault('posts', []).insert(0, dict(b, id=pid, nick=me['nick'], mid=me['id'], at='2026-10-11T13:00:00Z')); return 200, {'id': pid}
+    if a == 'postGet':
+        p = next(x for x in COMM.get('posts', []) if x['id'] == b['id'])
+        return 200, {'post': {'id': p['id'], 'work': p['work'], 'tipo': p['tipo'], 'titolo': p['titolo'], 'autore': p['autore'], 'cover': p.get('cover', ''), 'title': p['title'], 'body': p['body'], 'nick': p['nick'], 'mine': p['mid'] == me['id'], 'at': p['at']},
+            'comments': [{'id': c['id'], 'nick': c['nick'], 'mine': c['mid'] == me['id'], 'body': c['body'], 'at': c['at']} for c in COMM['comments'] if c.get('post') == p['id']]}
+    if a == 'board':
+        items = [dict(type='review', work=r['work'], tipo=r['tipo'], titolo=r['titolo'], autore=r['autore'], cover=r['cover'], stars=r['stars'], body=r['body'], nick=r['nick'], at=r['at']) for r in COMM['reviews'] if not r['hidden']]
+        items += [dict(type='post', id=p['id'], work=p['work'], tipo=p['tipo'], titolo=p['titolo'], autore=p['autore'], cover='', title=p['title'], body=p['body'], nick=p['nick'], at=p['at']) for p in COMM.get('posts', [])]
+        items += [dict(x, type='share') for x in allsh]
+        return 200, {'items': items}
     if a == 'recent': return 200, {'reviews': [{'work': r['work'], 'tipo': r['tipo'], 'titolo': r['titolo'], 'autore': r['autore'], 'cover': r['cover'], 'stars': r['stars'], 'body': r['body'], 'nick': r['nick'], 'at': r['at']} for r in COMM['reviews'] if not r['hidden']]}
     return 400, {'error': 'azione'}
 
@@ -311,6 +347,49 @@ async def t_community(b, base):
     check('impostazioni: invita un amico', await page.evaluate("!!document.querySelector('[data-a=commInvite]')"))
     check('nessun errore JavaScript', not (errs + errs2), errs + errs2)
 
+async def t_exchange(b, base):
+    print('\nScambi, messaggi e blog')
+    tok = lambda n: f"localStorage.setItem('gtoken', JSON.stringify({{t:'{n}', exp: Date.now()+3600e3}}));"
+    COMM['invites']['SCAMBI'] = 0
+    async def member(name, items):
+        page, errs = await new_page(b, base, init=tok(name.upper()))
+        await page.evaluate(SEED, items)
+        await page.evaluate("commJoinSheet()"); await page.fill('#commNick', name); await page.fill('#commCode', 'SCAMBI'); await page.check('#commOk')
+        await page.evaluate("commJoin()"); await page.wait_for_function("!!commMe()", timeout=5000)
+        return page, errs
+    # Carla cerca Nevermind e condivide la lista desideri
+    carla, e1 = await member('Carla', [dict(id='w1', tipo='cd', titolo='Nevermind', autore='Nirvana', desiderio=True)])
+    await carla.evaluate("localStorage.setItem('shareWish','1'); commSyncShares(true)"); await carla.wait_for_timeout(300)
+    # Dario ha Nevermind (non condiviso) e lo trova negli Scambi
+    dario, e2 = await member('Dario', [dict(id='d1', tipo='vinile', titolo='Nevermind', autore='Nirvana', anno='1991')])
+    await dario.evaluate("S.commSeg='scambi'; go('community', null, true)")
+    await dario.wait_for_selector('[data-a=offerSheet][data-mode=give]', timeout=8000)
+    check('Scambi: chi cerca cose che hai', 'Carla' in await dario.evaluate("document.querySelector('#commList').textContent"))
+    await dario.click('[data-a=offerSheet][data-mode=give]')
+    await dario.fill('#offerPrice', '25'); await dario.fill('#offerText', 'Ce l\'ho in ottimo stato')
+    await dario.evaluate("offerSend()"); await dario.wait_for_selector('#msgs .msg', timeout=5000)
+    check('proposta di vendita inviata', 'In vendita' in await dario.evaluate("document.querySelector('#msgs').textContent"))
+    # Carla vede il messaggio non letto e risponde
+    await carla.evaluate("S.commUnreadAt=0; commUnreadCheck()"); await carla.wait_for_timeout(400)
+    check('messaggio non letto segnalato', await carla.evaluate("S.commUnread") == 1)
+    await carla.evaluate("S.commSeg='messaggi'; go('community', null, true)"); await carla.wait_for_selector('[data-a=threadOpen]', timeout=5000)
+    await carla.click('[data-a=threadOpen]'); await carla.wait_for_selector('#msgForm', timeout=5000)
+    await carla.fill('#msgText', 'Affare fatto!'); await carla.evaluate("document.querySelector('#msgForm').requestSubmit()")
+    await carla.wait_for_function("document.querySelector('#msgs').textContent.includes('Affare fatto')", timeout=5000)
+    check('risposta nella conversazione', True)
+    # Dario mette in vendita un pezzo e scrive un articolo nel blog dell'opera
+    await dario.evaluate("closeSheet(); const it=byId('d1'); it.condiviso=true; it.offerta='vendo'; it.prezzoRichiesto='25'; saveItem(it)")
+    await dario.wait_for_timeout(3200)
+    await dario.evaluate("go('detail','d1')"); await dario.wait_for_selector('#commBody .cshare', timeout=5000)
+    check('scheda: condiviso e in vendita', 'In vendita' in await dario.evaluate("document.querySelector('.cshare').textContent"))
+    await dario.evaluate("postSheet()"); await dario.fill('#postTitle', 'La prima stampa'); await dario.fill('#postBody', 'Storia della copertina con il neonato.')
+    await dario.evaluate("postSend()"); await dario.wait_for_selector('article.post', timeout=5000)
+    check('articolo pubblicato nel blog', 'La prima stampa' in await dario.evaluate("document.querySelector('article.post').textContent"))
+    await carla.evaluate("closeSheet(); S.commSeg='bacheca'; go('community', null, true)"); await carla.wait_for_selector('#commList .crow', timeout=5000)
+    txt = await carla.evaluate("document.querySelector('#commList').textContent")
+    check('bacheca: articolo e pezzo in vendita', 'Blog' in txt and 'In vendita' in txt, txt[:200])
+    check('nessun errore JavaScript', not (e1 + e2), e1 + e2)
+
 async def t_batch_import(b, base):
     print('\nScansione a raffica e importazione')
     page, errs = await new_page(b, base)
@@ -411,7 +490,7 @@ async def main():
     base = serve()
     async with async_playwright() as pw:
         b = await pw.chromium.launch()
-        for t in (t_basics, t_check_and_value, t_auto_online, t_book_rating, t_community, t_batch_import, t_cover, t_sync, t_silent_login, t_home):
+        for t in (t_basics, t_check_and_value, t_auto_online, t_book_rating, t_community, t_exchange, t_batch_import, t_cover, t_sync, t_silent_login, t_home):
             try: await t(b, base)
             except Exception as e: check(t.__name__ + ' (eccezione)', False, repr(e)[:300])
         await b.close()
