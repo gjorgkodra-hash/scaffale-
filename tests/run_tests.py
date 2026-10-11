@@ -93,6 +93,10 @@ def comm_handle(tok, b):
         COMM['reviews'] = [r for r in COMM['reviews'] if not (r['work'] == b['work'] and r['mid'] == me['id'])]
         COMM['reviews'].insert(0, {'id': nid_(), 'work': b['work'], 'tipo': b['tipo'], 'titolo': b['titolo'], 'autore': b.get('autore', ''), 'cover': b.get('cover', ''), 'stars': b.get('stars'), 'body': b.get('body', ''), 'mid': me['id'], 'nick': me['nick'], 'at': '2026-10-11T10:00:00Z', 'hidden': False})
         return 200, {'ok': True}
+    if a == 'export': return 200, {'profile': {'nick': me['nick']}, 'reviews': [r for r in COMM['reviews'] if r['mid'] == me['id']]}
+    if a == 'deleteAccount':
+        if b.get('confirm') != me['nick']: return 400, {'error': 'conferma'}
+        COMM['members'].pop(gid, None); COMM['reviews'] = [r for r in COMM['reviews'] if r['mid'] != me['id']]; return 200, {'ok': True}
     if a == 'notifs':
         L = [n for n in COMM.get('notifs', []) if n['to'] == me['id']]
         out = [{'id': str(k), 'kind': n['kind'], 'data': n['data'], 'read': n['read'], 'at': '2026-10-11T21:00:00Z', 'nick': n['nick']} for k, n in enumerate(L)][::-1]
@@ -392,8 +396,18 @@ async def t_community(b, base):
     await page.evaluate("pushGo('review:' + COMM.x)".replace('COMM.x', "'" + [r for r in COMM['reviews']][0]['id'] + "'")); await page.wait_for_selector('#discList', timeout=5000)
     check('tocco su una notifica push apre la discussione', True)
     await page.evaluate("closeSheet()")
+    await page.evaluate("go('settings')"); await page.click('[data-a=legal][data-v=privacy]')
+    check('informativa privacy con contatto', 'gjorgkodra@gmail.com' in await page.evaluate("document.querySelector('.legal').textContent"))
+    await page.evaluate("closeSheet()")
+    async with page.expect_download() as dl:
+        await page.evaluate("navigator.canShare=null; commExport()")
+    check('scarica i miei dati', 'reviews' in open(await (await dl.value).path()).read())
     await page.evaluate("go('settings')")
     check('impostazioni: invita un amico', await page.evaluate("!!document.querySelector('[data-a=commInvite]')"))
+    await page2.evaluate("go('settings')"); await page2.click('[data-a=commDelete]'); await page2.fill('#delNick', 'Sbagliato'); await page2.click('[data-a=commDeleteGo]')
+    check('eliminazione chiede il nome giusto', await page2.evaluate("!!commMe()"))
+    await page2.fill('#delNick', 'Bruno'); await page2.click('[data-a=commDeleteGo]'); await page2.wait_for_function("!commMe()", timeout=5000)
+    check('account eliminato', not any(m['nick'] == 'Bruno' for m in COMM['members'].values()))
     check('nessun errore JavaScript', not (errs + errs2), errs + errs2)
 
 async def t_exchange(b, base):

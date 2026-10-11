@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.13.0';
+const VERSION = '2.14.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -702,6 +702,9 @@ function viewSettings() {
       </details>
     </div>
     ${commSettingsHTML()}
+    <div class="section"><h3>Privacy e termini</h3>
+      <p class="note">La tua collezione resta sul telefono e sul tuo Google Drive. Niente pubblicità, niente tracciamento.</p>
+      <div class="stack"><button class="btn block" data-a="legal" data-v="privacy">Informativa privacy</button><button class="btn block" data-a="legal" data-v="terms">Termini d'uso</button><button class="btn block" data-a="legal" data-v="rules">Regole della community</button></div></div>
     <div class="stack"><button class="btn block" data-a="forceUpdate">${ic('download', 18)}Cerca aggiornamenti</button></div>
     <p class="note" style="text-align:center">Spinyl ${VERSION} · ${live().length} pezzi</p>
   </div>`;
@@ -2329,6 +2332,9 @@ const NEWS = {
   '2.5': [
     ['Home Novità', 'La prima pagina mostra i nuovi album dei tuoi artisti, i nuovi libri dei tuoi autori, i film al cinema e cosa stai leggendo.'],
   ],
+  '2.14': [
+    ['Privacy e termini', "Nelle Impostazioni: informativa privacy, termini d'uso e regole della community. In Community puoi scaricare i tuoi dati o eliminare l'account."],
+  ],
   '2.13': [
     ['Notifiche sul telefono', "Attivale in Community: commenti, messaggi, inviti e offerte arrivano anche con l'app chiusa. Su iPhone serve aggiungere Spinyl alla schermata Home."],
   ],
@@ -2625,8 +2631,9 @@ function commJoinSheet() {
     <label class="field"><span>Codice invito</span><input id="commCode" maxlength="12" value="${esc(code)}" autocapitalize="characters" autocomplete="off"></label>
     <ul class="news crules"><li><span>Gli altri membri vedono il tuo nome, le tue recensioni e i tuoi commenti. La tua collezione resta privata.</span></li>
       <li><span>Sii gentile, niente insulti, spam o dati personali. I contenuti segnalati da 3 persone vengono nascosti.</span></li>
-      <li><span>Devi avere almeno 13 anni.</span></li></ul>
-    <label class="check"><input type="checkbox" id="commOk"> <span>Ho letto e accetto queste regole</span></label>
+      <li><span>Devi avere almeno 14 anni.</span></li></ul>
+    <p class="note legallinks"><button class="more" data-a="legal" data-v="rules">Regole della community</button> · <button class="more" data-a="legal" data-v="terms">Termini d'uso</button> · <button class="more" data-a="legal" data-v="privacy">Informativa privacy</button></p>
+    <label class="check"><input type="checkbox" id="commOk"> <span>Ho letto e accetto regole, termini e informativa privacy</span></label>
     <div class="stack"><button class="btn primary block" data-a="commJoinGo">Entra</button></div>`);
 }
 async function commJoin() {
@@ -2646,7 +2653,9 @@ function commSettingsHTML() {
     ${me ? `<p class="note">Sei dentro come <b translate="no">${esc(me.nick)}</b>${me.admin ? ' · amministratore' : ''}. Ogni invito vale per 5 amici.</p>
       ${pushSupported() ? `<label class="field inline"><span>Notifiche sul telefono (anche ad app chiusa)</span><input type="checkbox" id="pushT" ${pushOn() ? 'checked' : ''}></label>` : (isIOS() && !isStandalone() ? '<p class="note">Per le notifiche sul telefono aggiungi Spinyl alla schermata Home e aprila da lì.</p>' : '')}
       <label class="field inline"><span>Suono e vibrazione per le notifiche</span><input type="checkbox" id="commSoundT" ${soundOn() ? 'checked' : ''}></label>
-      <div class="stack"><button class="btn block" data-a="commInvite">${ic('share', 18)}Invita un amico</button></div>`
+      <div class="stack"><button class="btn block" data-a="commInvite">${ic('share', 18)}Invita un amico</button>
+        <button class="btn block" data-a="commExport">${ic('download', 18)}Scarica i miei dati</button>
+        <button class="btn danger block" data-a="commDelete">Elimina il mio account</button></div>`
     : `<p class="note">Recensioni e commenti tra amici. Si entra con un codice invito.</p><div class="stack"><button class="btn block" data-a="commJoin">Entra nella community</button></div>`}</div>`;
 }
 async function commInvite() {
@@ -3179,6 +3188,42 @@ async function pushGo(go) {
 const go_ = (v) => go(v, null, true);
 if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.type === 'push-go') pushGo(e.data.go); });
 
+// ── Privacy, termini, regole; i miei dati (scarica, elimina) ──
+function legalHTML(kind) {
+  const L = (window.SPINYL_LEGAL || {})[LNG()] || (window.SPINYL_LEGAL || {}).it; if (!L) return '';
+  return String(L[kind] || '').replace(/\{contatto\}/g, esc(BASE.PRIVACY_CONTACT || '')).replace(/\{gestore\}/g, esc(BASE.OPERATOR || 'Spinyl'));
+}
+function legalOpen(kind) {
+  const T = { privacy: 'Informativa privacy', terms: "Termini d'uso", rules: 'Regole della community' };
+  const L = (window.SPINYL_LEGAL || {})[LNG()] || {};
+  openSheet(`<h2>${T[kind]}</h2><div class="legal" translate="no">${legalHTML(kind)}<p class="note">${esc(L.updated || '')}</p></div>
+    <div class="stack"><button class="btn block" data-a="closeSheet">Chiudi</button></div>`);
+}
+async function commExport() {
+  try {
+    const d = await comm('export');
+    await saveFile(new File([JSON.stringify(d, null, 2)], `spinyl-community-${isoDay(Date.now())}.json`, { type: 'application/json' }), 'Spinyl');
+  } catch (e) { toast(commErrMsg(e)); }
+}
+function commDeleteSheet() {
+  const me = commMe(); if (!me) return;
+  openSheet(`<h2>Elimina il mio account</h2>
+    <p class="note">Verranno cancellati subito dalla community il tuo nome, le recensioni, i commenti, gli articoli, i pezzi condivisi, i messaggi, gli eventi e le notifiche. La tua collezione sul telefono e su Google Drive resta com'è.</p>
+    <label class="field"><span>Per confermare scrivi il tuo nome: <b translate="no">${esc(me.nick)}</b></span><input id="delNick" autocomplete="off" autocapitalize="off"></label>
+    <div class="stack"><button class="btn danger block" data-a="commDeleteGo">Elimina definitivamente</button><button class="btn block" data-a="closeSheet">Annulla</button></div>`);
+}
+async function commDeleteGo() {
+  const me = commMe(); const v = ($('#delNick') || {}).value || '';
+  if (!me || v.trim() !== me.nick) return toast('Il nome non corrisponde');
+  try {
+    await comm('deleteAccount', { confirm: v.trim() });
+    try { const reg = 'serviceWorker' in navigator && await navigator.serviceWorker.getRegistration(); const sub = reg && reg.pushManager && await reg.pushManager.getSubscription(); if (sub) await sub.unsubscribe(); } catch (e) {}
+    try { ['commMe', 'sharesHash', 'pushOn', 'pushAt', 'invito'].forEach(k => localStorage.removeItem(k)); } catch (e) {}
+    S.commUnread = S.commInvites = S.commNotifs = 0; S.commPrevTotal = null;
+    closeSheet(); toast('Account eliminato'); render();
+  } catch (e) { toast(e.message === 'conferma' ? 'Il nome non corrisponde' : commErrMsg(e)); }
+}
+
 // ── Blog dell'opera ──
 function postSheet() {
   const ctx = commCtx(); if (!ctx) return;
@@ -3669,6 +3714,10 @@ Object.assign(actions, {
   notifsOpen: () => notifsOpen(),
   pushEnable: () => pushEnable(),
   notifGo: el => notifGo(+el.dataset.i),
+  legal: el => legalOpen(el.dataset.v),
+  commExport: () => commExport(),
+  commDelete: () => commDeleteSheet(),
+  commDeleteGo: () => commDeleteGo(),
   commNew: () => commNew(),
   newChat: () => newChat(),
   newShare: () => newShare(),

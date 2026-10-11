@@ -616,3 +616,7 @@ label.check { display: flex; gap: 10px; align-items: center; margin: 6px 0 12px;
 .pushhint span { color: var(--muted); font-size: 13px; }
 .pushhint b span { color: var(--ink); font-size: 15px; }
 .pushhint .btn { align-self: flex-start; margin-top: 4px; }
+.legal h3 { font-size: 15px; margin: 18px 0 6px; }
+.legal p, .legal li { font-size: 14px; line-height: 1.55; }
+.legal ul { padding-left: 20px; }
+.legallinks { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }

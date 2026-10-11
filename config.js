@@ -28,6 +28,10 @@ window.SCAFFALE_CONFIG = {
   PUSH_URL: 'https://rixpxmjphydezosyhjzz.supabase.co/functions/v1/push',
   VAPID_PUBLIC: 'BIXQo58Vyrqy2dFBPiHC7Gcha8DApvlZBO0C6ytJYTfPk5LTV-J51yHmQpHintAbGJbG1Er0-VKwmBj8wbNFpE8',
 
+  // Chi gestisce Spinyl e a chi scrivere per la privacy (cambiare con l'indirizzo del dominio quando ci sarà)
+  OPERATOR: 'Gjorg',
+  PRIVACY_CONTACT: 'gjorgkodra@gmail.com',
+
   // NON inserire qui il token Discogs: questo file è pubblico e il token dà accesso all'account.
   // Ogni utente lo mette nelle Impostazioni dell'app.
   DISCOGS_TOKEN: ''

@@ -84,7 +84,7 @@ async function handle(body: any, who: { gid: string; email: string }) {
       if (!data || data.uses >= data.max_uses) throw new E(403, "invito");
       inv = data;
     }
-    const { data: m, error } = await db.from("members").insert({ google_id: who.gid, email: who.email, nick, role: admin ? "admin" : "member", invited_by: inv?.created_by ?? null }).select("id,nick,role").single();
+    const { data: m, error } = await db.from("members").insert({ google_id: who.gid, email: who.email, nick, role: admin ? "admin" : "member", invited_by: inv?.created_by ?? null, accepted_terms_at: new Date().toISOString() }).select("id,nick,role").single();
     if (error) throw new E(409, /nick/.test(error.message) ? "nick-preso" : "errore");
     if (inv) await db.from("invites").update({ uses: inv.uses + 1 }).eq("code", inv.code).eq("uses", inv.uses);
     return { member: { id: m.id, nick: m.nick, admin: m.role === "admin" } };
@@ -92,6 +92,23 @@ async function handle(body: any, who: { gid: string; email: string }) {
 
   if (!me || me.banned) throw new E(403, "membro");
   const admin = me.role === "admin";
+
+  // ── I miei dati: esportazione e cancellazione dell'account (GDPR) ──
+  if (a === "export") {
+    const q = (t: string, col = "member_id") => db.from(t).select("*").eq(col, me.id).limit(5000).then((r: any) => r.data || []);
+    const [profile, reviews, comments, posts, shares, messages, events, rsvps, blocks, invites] = await Promise.all([
+      db.from("members").select("nick,email,role,created_at,accepted_terms_at").eq("id", me.id).single().then((r: any) => r.data),
+      q("reviews"), q("comments"), q("posts"), q("shares"), q("messages"), q("events"), q("event_rsvps"), q("blocks"), q("invites", "created_by")]);
+    return { exportedAt: new Date().toISOString(), profile, reviews, comments, posts, shares, messages, events, rsvps, blocks, invites };
+  }
+  if (a === "deleteAccount") {
+    if (clean(body.confirm, 24) !== me.nick) throw new E(400, "conferma");
+    // i commenti sui miei pezzi condivisi non hanno un collegamento automatico: li tolgo a mano
+    await db.from("comments").delete().eq("share_member", me.id);
+    await db.from("push_subs").delete().eq("member_id", me.id);
+    await db.from("members").delete().eq("id", me.id); // tutto il resto si cancella a cascata
+    return { ok: true };
+  }
 
   if (a === "invite") {
     const { count } = await db.from("invites").select("code", { count: "exact", head: true }).eq("created_by", me.id);
