@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.3.0';
+const VERSION = '2.3.1';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -753,7 +753,11 @@ const cleanProductTitle = s => String(s || '')
 // Libri
 async function googleBooks(q) {
   const key = cfg('booksKey');
-  const d = await fj('https://www.googleapis.com/books/v1/volumes?maxResults=12&printType=books&q=' + encodeURIComponent(q) + (key ? '&key=' + encodeURIComponent(key) : ''));
+  const url = 'https://www.googleapis.com/books/v1/volumes?maxResults=12&printType=books&q=' + encodeURIComponent(q);
+  let d;
+  // se la chiave non è abilitata per Google Books, si riprova senza: la ricerca non si blocca
+  try { d = await fj(url + (key ? '&key=' + encodeURIComponent(key) : '')); }
+  catch (e) { if (!key || !/HTTP (400|403)/.test(e.message)) throw e; d = await fj(url); }
   return (d.items || []).map(it => {
     const v = it.volumeInfo || {}; const ids = v.industryIdentifiers || [];
     const isbn = ids.find(x => x.type === 'ISBN_13') || ids.find(x => x.type === 'ISBN_10');

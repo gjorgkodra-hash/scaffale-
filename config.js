@@ -9,12 +9,18 @@ window.SCAFFALE_CONFIG = {
   // Esempio: '1234567890-abcdefg.apps.googleusercontent.com'
   GOOGLE_CLIENT_ID: '348171565203-s58jqs70a73jb6fbqd4m1tn3fn0ndsmf.apps.googleusercontent.com',
 
-  // FACOLTATIVO — chiave gratuita Google Libri (limitata al sito dell'app, quindi può stare qui)
-  GOOGLE_BOOKS_KEY: '',
+  // Chiave Google (limitata al sito dell'app e alle API Books + Vision, quindi può stare qui)
+  GOOGLE_BOOKS_KEY: 'AIzaSyBdrTT9X0rbZL2Tq9qSgXKiqWkfey87bfI',
+
+  // Riconoscimento delle copertine con Google Cloud Vision (stessa chiave)
+  GOOGLE_VISION_KEY: 'AIzaSyBdrTT9X0rbZL2Tq9qSgXKiqWkfey87bfI',
+  // Foto al mese per telefono con Vision: 100 × fino a 10 utenti = 1000, la parte gratuita
+  VISION_MONTHLY_LIMIT: 100,
 
   // FACOLTATIVO — migliora molto la ricerca dei film (gratis su themoviedb.org)
   TMDB_API_KEY: '',
 
-  // FACOLTATIVO — aggiunge Discogs alla ricerca dei vinili/CD (gratis su discogs.com/settings/developers)
+  // NON inserire qui il token Discogs: questo file è pubblico e il token dà accesso all'account.
+  // Ogni utente lo mette nelle Impostazioni dell'app.
   DISCOGS_TOKEN: ''
 };
