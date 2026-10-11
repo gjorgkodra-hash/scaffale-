@@ -609,3 +609,6 @@ label.check { display: flex; gap: 10px; align-items: center; margin: 6px 0 12px;
 .nico { font-size: 20px; }
 .ntxt { font-size: 14px; line-height: 1.4; }
 .ntxt small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+/* I filtri della Collezione vanno a capo: si vedono tutti, senza scorrere di lato */
+.chips { flex-wrap: wrap; overflow: visible; row-gap: 8px; }
+.chips .chip { padding-top: 7px; padding-bottom: 7px; font-size: 14px; }

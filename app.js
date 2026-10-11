@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.12.0';
+const VERSION = '2.12.1';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -365,7 +365,7 @@ function filtered() {
 function renderGrid() {
   const g = $('#grid'); if (!g) return;
   const L = filtered();
-  $('#countLbl').textContent = `${L.length} ${L.length === 1 ? 'pezzo' : 'pezzi'}`;
+  $('#countLbl').textContent = `${L.length} ${tr(L.length === 1 ? 'pezzo' : 'pezzi')}`;
   const tools = $('#listTools');
   if (tools) {
     const tag = S.q.trim().startsWith('#') ? S.q.trim() : '';
