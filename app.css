@@ -500,3 +500,4 @@ details.adv summary { padding: 12px 0; color: var(--muted); font-size: 14px; cur
 
 .webrate { display: flex; align-items: baseline; gap: 6px; font-size: 14px; color: var(--muted); margin-top: 2px; }
 .webrate b { color: var(--ink); font-weight: 700; }
+.feederr { display: inline-block; margin-top: 6px; font-size: 11px; opacity: .7; word-break: break-word; }

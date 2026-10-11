@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.6.2';
+const VERSION = '2.6.4';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -181,7 +181,7 @@ const getMeta = k => DB.get('meta', k);
 const setMeta = (k, v) => DB.put('meta', v, k);
 
 /* ── Stato ─────────────────────────────────────────────────── */
-const S = {
+const S = { feedErr: {},
   items: [], view: 'list', id: null, draft: null, draftIsNew: false, newPhotos: [],
   filter: localStorage.getItem('filter') || 'tutti', sort: localStorage.getItem('sort') || 'recenti', q: '',
   addTipo: 'libro', syncState: 'off', syncError: '', lastSync: 0, dirty: false, expanded: false,
@@ -697,6 +697,7 @@ function viewSettings() {
         <div class="stack" style="padding-top:12px"><button class="btn block" data-a="saveCfg">Salva impostazioni</button></div>
       </details>
     </div>
+    <div class="stack"><button class="btn block" data-a="forceUpdate">${ic('download', 18)}Cerca aggiornamenti</button></div>
     <p class="note" style="text-align:center">Spinyl ${VERSION} · ${live().length} pezzi</p>
   </div>`;
 }
@@ -2304,6 +2305,14 @@ async function runCovers() {
 }
 
 /* ── Nuova versione disponibile e novità ───────────────────── */
+// Scarica subito l'ultima versione: svuota la cache dell'app e ricarica (i dati restano sul telefono)
+async function forceUpdate() {
+  if (!safeToLeave()) return toast('Attendi la fine del salvataggio e riprova');
+  toast('Scarico l\'ultima versione…', 4000);
+  try { const ks = await caches.keys(); await Promise.all(ks.filter(k => k.startsWith('scaffale-')).map(k => caches.delete(k))); } catch (e) {}
+  try { const rs = await navigator.serviceWorker.getRegistrations(); await Promise.all(rs.map(r => r.unregister())); } catch (e) {}
+  setTimeout(() => location.replace(location.pathname + '?v=' + Date.now()), 400);
+}
 function showUpdateBar() {
   if ($('#updateBar')) return;
   const b = document.createElement('div'); b.id = 'updateBar'; b.className = 'updatebar'; b.setAttribute('role', 'status');
@@ -2317,6 +2326,8 @@ const NEWS = {
   '2.6': [
     ['Nuovi album e nuovi libri', 'Nella Home anche le uscite della settimana, non solo quelle dei tuoi artisti e autori.'],
     ['Prezzo e voto in automatico', 'Quando apri un disco, Spinyl cerca da solo il prezzo su Discogs e il voto medio della community.'],
+    ['Locandine dei film', 'La foto della copertina di un film trova il titolo giusto anche con scritte stilizzate, attori e slogan.'],
+    ['Cerca aggiornamenti', 'Nelle Impostazioni, per scaricare subito l\'ultima versione.'],
     ['Voto online anche per libri e film', 'Sotto le tue stelle compare il voto medio dei lettori (Open Library o Google Libri) e degli spettatori (TMDB).'],
   ],
   '2.4': [
@@ -2363,7 +2374,7 @@ async function ocrImage(blob) {
   if (!(await loadFirst(TESS_URLS, () => window.Tesseract && window.Tesseract.createWorker))) throw new Error('ocr-load');
   if (!ocrWorkerP) {
     ocrStatus('Preparo il lettore di testo (solo la prima volta)…');
-    ocrWorkerP = Tesseract.createWorker('eng', 1, {
+    ocrWorkerP = Tesseract.createWorker({ it: 'eng+ita', es: 'eng+spa' }[LNG()] || 'eng', 1, {
       logger: m => { if (m && m.status === 'recognizing text') ocrStatus(`Leggo le scritte… ${Math.round((m.progress || 0) * 100)}%`); },
     }).catch(e => { ocrWorkerP = null; throw e; });
   }
@@ -2410,6 +2421,26 @@ function visionQuery(v) {
   const txt = String(v.text).split('\n').map(t => t.trim()).filter(t => /\p{L}{2,}/u.test(t)).slice(0, 3).join(' ');
   return [g, ent || txt].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().slice(0, 90);
 }
+const FILM_JUNK = /\b(film|movie|pel[ií]cula|poster|locandina|trailer|cast|official|ufficiale|dvd|blu-?ray|4k|uhd|steelbook|cover|copertina|(19|20)\d\d)\b/gi;
+const cleanFilm = s => String(s || '').replace(FILM_JUNK, ' ').replace(VISION_JUNK, ' ').replace(/\s+/g, ' ').trim();
+async function filmFromCover(cands, ctx) {
+  const seen = new Set(); const list = [];
+  for (const c of cands.map(cleanFilm)) { const k = norm(c); if (c.length >= 2 && k.length >= 2 && !seen.has(k)) { seen.add(k); list.push(c); } }
+  const C = norm(ctx); let best = null;
+  for (const c of list.slice(0, 6)) {
+    const res = await tmdb(c).catch(() => []);
+    res.slice(0, 6).forEach((r, i) => {
+      let sc = (6 - i) / 2;
+      for (const t of [r.titolo, r.sub].map(norm).filter(t => t.length >= 3)) {
+        if (t === norm(c)) sc += 20;
+        if (C.includes(t)) sc += 10 + Math.min(t.length, 20);
+      }
+      if (!best || sc > best.sc) best = { sc, t: r.titolo };
+    });
+    if (best && best.sc >= 35) break; // trovato con sicurezza
+  }
+  return best && best.sc >= 12 ? best.t : '';
+}
 // Limite mensile per telefono: con più amici sulla stessa chiave il totale resta nelle 1000 foto gratuite di Google
 const VISION_MONTHLY = +(BASE.VISION_MONTHLY_LIMIT || 100);
 const monthKey = () => new Date().toISOString().slice(0, 7);
@@ -2428,14 +2459,25 @@ async function recognizeCover(file) {
   const token = S.coverToken = uid();
   openSheet(`<h2>Leggo la copertina…</h2><div class="coverhead"><img src="${S.coverShotUrl}" alt=""></div>
     <div id="ocrStatus">${loadingHTML(useVision ? 'Riconosco la copertina…' : 'Leggo le scritte sulla copertina…')}</div>`);
-  let q = '', how = '';
+  let q = '', how = '', cands = [], ctx = '';
   if (useVision) {
-    try { const v = await visionAnnotate(blob); visionCount(); q = visionQuery(v); how = 'vision'; }
-    catch (e) { console.warn(e); toast('Google Vision non risponde: provo a leggere le scritte', 3000); }
+    try {
+      const v = await visionAnnotate(blob); visionCount(); q = visionQuery(v); how = 'vision';
+      cands = [cleanFilm(v.guess[0] || ''), ...v.entities, ...String(v.text).split('\n').slice(0, 6)];
+      ctx = [v.guess.join(' '), v.entities.join(' '), v.text].join(' ');
+    } catch (e) { console.warn(e); toast('Google Vision non risponde: provo a leggere le scritte', 3000); }
   }
   if (!q) {
-    try { q = ocrQuery(await ocrImage(blob)); how = 'ocr'; }
-    catch (e) { console.warn(e); }
+    try {
+      const lines = await ocrImage(blob); q = ocrQuery(lines); how = 'ocr';
+      cands = [q, ...lines.slice().sort((a, b) => b.h - a.h).slice(0, 5).map(l => ocrQuery([l]))];
+      ctx = lines.map(l => l.text).join(' ');
+    } catch (e) { console.warn(e); }
+  }
+  // Film: le locandine hanno scritte stilizzate, attori e slogan. Provo ogni pezzo letto su TMDB e tengo il titolo che torna
+  if (tipo === 'film' && cfg('tmdbKey') && cands.length && S.coverToken === token) {
+    ocrStatus('Cerco il film…');
+    try { const t = await filmFromCover(cands, ctx); if (t) q = t; } catch (e) { console.warn(e); }
   }
   if (S.coverToken !== token || $('#sheetWrap').classList.contains('hidden')) return; // annullato
   S.coverMode = mode;
@@ -2549,41 +2591,64 @@ async function feedOffers() {
   }
   return out.sort((a, b) => a.prezzo - b.prezzo);
 }
-// Nuovi album della settimana (Deezer, gratuito; risponde solo in modalità JSONP)
-async function feedAlbums() {
-  let d = null;
-  try { d = await jsonp('https://api.deezer.com/editorial/0/releases?limit=25&output=jsonp'); } catch (e) { console.warn('deezer', e); }
-  if (!d || !(d.data || []).length) {
-    // riserva: album più ascoltati su Apple Music nel paese della lingua scelta
-    const cc = { it: 'it', en: 'gb', es: 'es' }[LNG()] || 'it';
-    const r = await fj(`https://rss.marketingtools.apple.com/api/v2/${cc}/music/most-played/25/albums.json`);
-    return ((r.feed || {}).results || []).map(a => ({ tipo: 'vinile', titolo: a.name, autore: a.artistName || '', anno: year(a.releaseDate), uscita: a.releaseDate || '',
-      coverUrl: String(a.artworkUrl100 || '').replace(/\d+x\d+bb/, '600x600bb'), fonte: 'Apple Music' })).slice(0, 18);
+// Prova più fonti in fila: la prima che risponde con qualcosa vince. Gli errori restano in S.feedErr per la diagnosi
+async function firstOf(key, sources) {
+  const errs = [];
+  for (const [name, fn] of sources) {
+    try { const L = await fn(); if (L && L.length) { delete S.feedErr[key]; return L; } errs.push(name + ': vuoto'); }
+    catch (e) { errs.push(name + ': ' + String((e && e.message) || e).slice(0, 40)); }
   }
-  return (d.data || []).map(a => ({ tipo: 'vinile', titolo: a.title, autore: (a.artist || {}).name || '', anno: year(a.release_date), uscita: a.release_date || '',
-    coverUrl: a.cover_big || a.cover_medium || '', fonte: 'Deezer' })).sort((a, b) => String(b.uscita).localeCompare(String(a.uscita))).slice(0, 18);
+  S.feedErr[key] = errs.join(' · '); return [];
 }
-// Nuovi libri nella lingua dell'app, nei generi che leggi di più (o narrativa)
+const CC = () => ({ it: 'it', en: 'gb', es: 'es' }[LNG()] || 'it');
+// Nuovi album della settimana: Deezer (JSONP), poi classifica Apple Music, poi MusicBrainz
+async function feedAlbums() {
+  const dz = a => ({ tipo: 'vinile', titolo: a.title, autore: (a.artist || {}).name || '', anno: year(a.release_date), uscita: a.release_date || '', coverUrl: a.cover_big || a.cover_medium || '', fonte: 'Deezer' });
+  const apple = r => ((r.feed || {}).results || []).map(a => ({ tipo: 'vinile', titolo: a.name, autore: a.artistName || '', anno: year(a.releaseDate), uscita: a.releaseDate || '',
+    coverUrl: String(a.artworkUrl100 || '').replace(/\d+x\d+bb/, '600x600bb'), fonte: 'Apple Music' }));
+  const L = await firstOf('album', [
+    ['Deezer', async () => { const d = await jsonp('https://api.deezer.com/editorial/0/releases?limit=25&output=jsonp'); if (d.error) throw new Error(d.error.message || 'errore'); return (d.data || []).map(dz); }],
+    ['Deezer top', async () => { const d = await jsonp('https://api.deezer.com/chart/0/albums?limit=25&output=jsonp'); if (d.error) throw new Error(d.error.message || 'errore'); return (d.data || []).map(dz); }],
+    ['Apple', async () => apple(await fj(`https://rss.applemarketingtools.com/api/v2/${CC()}/music/most-played/25/albums.json`))],
+    ['MusicBrainz', async () => {
+      const since = isoDay(Date.now() - 14 * 864e5);
+      const d = await fj('https://musicbrainz.org/ws/2/release-group/?fmt=json&limit=50&query=' + encodeURIComponent(`primarytype:album AND status:official AND firstreleasedate:[${since} TO *] AND tag:(rock OR pop OR jazz OR "hip hop" OR electronic OR indie)`));
+      return (d['release-groups'] || []).filter(r => (r['first-release-date'] || '') <= isoDay(Date.now())).map(r => ({ tipo: 'vinile', titolo: r.title, autore: ((r['artist-credit'] || [])[0] || {}).name || '',
+        anno: year(r['first-release-date']), uscita: r['first-release-date'] || '', coverUrl: `https://coverartarchive.org/release-group/${r.id}/front-250`, fonte: 'MusicBrainz' }));
+    }],
+  ]);
+  return L.sort((a, b) => String(b.uscita).localeCompare(String(a.uscita))).slice(0, 18);
+}
+// Nuovi libri: Google Libri nella lingua dell'app e nei tuoi generi, poi Open Library
 async function feedBooks() {
-  const since = isoDay(Date.now() - 365 * 864e5); const key = cfg('booksKey');
+  const since = isoDay(Date.now() - 365 * 864e5); const key = cfg('booksKey'); const today = isoDay(Date.now() + 90 * 864e5);
   const g = new Map(); live().filter(i => i.tipo === 'libro' && i.genere).forEach(i => String(i.genere).split(/[,/]/).map(x => x.trim()).filter(x => /^[\p{L} ]{3,30}$/u.test(x)).forEach(x => g.set(x, (g.get(x) || 0) + 1)));
   const subjects = [...g.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map(e => e[0]);
-  if (!subjects.length) subjects.push('fiction', { it: 'narrativa', es: 'ficción', en: 'thriller' }[LNG()] || 'romance');
-  const out = [];
-  await Promise.all(subjects.map(async sub => {
-    const url = `https://www.googleapis.com/books/v1/volumes?maxResults=30&printType=books&orderBy=newest&langRestrict=${LNG()}&q=` + encodeURIComponent(`subject:${sub}`);
-    let d; try { d = await fj(url + (key ? '&key=' + encodeURIComponent(key) : '')); } catch (e) { try { d = await fj(url); } catch (e2) { return; } }
-    (d.items || []).forEach(it => {
+  if (!subjects.length) subjects.push('fiction');
+  const gb = async (q, lang) => {
+    const url = `https://www.googleapis.com/books/v1/volumes?maxResults=40&printType=books&orderBy=newest${lang ? '&langRestrict=' + LNG() : ''}&q=` + encodeURIComponent(q);
+    let d; try { d = await fj(url + (key ? '&key=' + encodeURIComponent(key) : '')); } catch (e) { d = await fj(url); }
+    return (d.items || []).map(it => {
       const v = it.volumeInfo || {}; const pub = String(v.publishedDate || '');
-      let img = v.imageLinks && (v.imageLinks.thumbnail || v.imageLinks.smallThumbnail);
-      if (!img || pub.length < 7 || pub < since.slice(0, pub.length) || pub > isoDay(Date.now() + 90 * 864e5)) return;
-      img = img.replace('http://', 'https://').replace('&edge=curl', '');
+      const img = v.imageLinks && (v.imageLinks.thumbnail || v.imageLinks.smallThumbnail);
+      if (!img || pub.length < 4 || pub < since.slice(0, pub.length) || pub > today) return null;
       const ids = v.industryIdentifiers || []; const isbn = ids.find(x => x.type === 'ISBN_13') || ids[0];
-      out.push({ tipo: 'libro', titolo: [v.title, v.subtitle].filter(Boolean).join(': '), autore: (v.authors || []).join(', '), anno: year(pub), uscita: pub,
-        editore: v.publisher || '', descrizione: stripHtml(v.description), coverUrl: img, codice: isbn ? isbn.identifier : '', pagine: v.pageCount || '', genere: sub === 'fiction' ? '' : sub, fonte: 'Google Libri' });
-    });
-  }));
-  return dedupeFeed(out).sort((a, b) => String(b.uscita).localeCompare(String(a.uscita))).slice(0, 18);
+      return { tipo: 'libro', titolo: [v.title, v.subtitle].filter(Boolean).join(': '), autore: (v.authors || []).join(', '), anno: year(pub), uscita: pub, editore: v.publisher || '',
+        descrizione: stripHtml(v.description), coverUrl: img.replace('http://', 'https://').replace('&edge=curl', ''), codice: isbn ? isbn.identifier : '', pagine: v.pageCount || '', fonte: 'Google Libri' };
+    }).filter(Boolean);
+  };
+  const ol = async () => {
+    const lang = { it: 'ita', en: 'eng', es: 'spa' }[LNG()] || 'ita'; const y = new Date().getFullYear();
+    const d = await fj(`https://openlibrary.org/search.json?limit=40&sort=new&fields=key,title,author_name,first_publish_year,cover_i,isbn&q=${encodeURIComponent(`first_publish_year:[${y - 1} TO ${y}] language:${lang}`)}`);
+    return (d.docs || []).filter(b => b.cover_i).map(b => ({ tipo: 'libro', titolo: b.title, autore: (b.author_name || []).join(', '), anno: String(b.first_publish_year || ''), uscita: String(b.first_publish_year || ''),
+      coverUrl: `https://covers.openlibrary.org/b/id/${b.cover_i}-L.jpg`, codice: (b.isbn || [])[0] || '', fonte: 'Open Library' }));
+  };
+  const L = await firstOf('libri', [
+    ['Google Libri', async () => (await Promise.all(subjects.map(sub => gb('subject:' + sub, true).catch(() => [])))).flat()],
+    ['Google Libri (tutte le lingue)', () => gb('subject:' + subjects[0], false)],
+    ['Open Library', ol],
+  ]);
+  return dedupeFeed(L).sort((a, b) => String(b.uscita).localeCompare(String(a.uscita))).slice(0, 18);
 }
 const dedupeFeed = L => { const seen = new Set(); return L.filter(c => { const k = c.tipo + '|' + norm(c.titolo) + '|' + norm(String(c.autore || '').split(',')[0]); if (seen.has(k)) return false; seen.add(k); return true; }); };
 const FEED_FETCH = { album: feedAlbums, libri: feedBooks, cinema: () => feedTmdb('now_playing'), arrivo: () => feedTmdb('upcoming'), artisti: feedArtists, autori: feedAuthors, registi: feedDirectors, offerte: feedOffers };
@@ -2594,12 +2659,12 @@ const feedSig = () => JSON.stringify([VERSION, topNames(i => isMusic(i.tipo)), t
 async function loadFeed(force) {
   if (feedLoading) { if (force || (S.feed && S.feed.sig !== feedSig())) feedAgain = true; return; }
   if (!S.feed) S.feed = (await getMeta('feed')) || null;
-  const fresh = S.feed && S.feed.lang === LNG() && S.feed.sig === feedSig() && Date.now() - S.feed.at < FEED_TTL;
+  const fresh = S.feed && S.feed.lang === LNG() && S.feed.sig === feedSig() && Date.now() - S.feed.at < FEED_TTL && !(S.feed.retryAt && Date.now() > S.feed.retryAt);
   if (fresh && !force) { renderFeed(); return; }
   if (!navigator.onLine) { renderFeed(); return; }
   feedLoading = true;
   const prev = (S.feed && S.feed.rows) || {};
-  S.feed = { at: Date.now(), lang: LNG(), sig: feedSig(), rows: { ...prev }, loading: {} };
+  S.feed = { at: Date.now(), lang: LNG(), sig: feedSig(), rows: { ...prev }, loading: {} }; S.feedErr = {};
   const rows = FEED_ROWS.filter(r => !r.local && r.need());
   rows.forEach(r => { S.feed.loading[r.key] = true; });
   renderFeed();
@@ -2610,7 +2675,8 @@ async function loadFeed(force) {
   }));
   feedLoading = false;
   // se una riga generale è rimasta vuota (rete o servizio giù), riprova tra mezz'ora invece che tra 12 ore
-  if (rows.some(r => !(S.feed.rows[r.key] || []).length && ['album', 'libri', 'cinema'].includes(r.key))) S.feed.at = Date.now() - FEED_TTL + 30 * 60e3;
+  S.feed.retryAt = rows.some(r => !(S.feed.rows[r.key] || []).length && ['album', 'libri', 'cinema'].includes(r.key)) ? Date.now() + 30 * 60e3 : 0;
+  S.feed.err = { ...S.feedErr };
   const { loading, ...save } = S.feed; await setMeta('feed', save).catch(() => {});
   renderFeed();
   if (feedAgain) { feedAgain = false; if (S.view === 'home') loadFeed(true); }
@@ -2652,7 +2718,7 @@ function renderFeed(onlyKey) {
   } else box.innerHTML = FEED_ROWS.map(rowHTML).join('');
   hydratePhotos(box);
   const foot = $('#feedFoot');
-  if (foot) foot.innerHTML = S.feed && S.feed.at && !feedLoading ? `<span>Aggiornato il ${esc(fmtDateTime(S.feed.at))}</span> · <button class="more" data-a="feedRefresh">Aggiorna</button>` : feedLoading ? '' : (!navigator.onLine ? '<span>Sei offline: le novità arrivano appena torna la connessione.</span>' : '');
+  if (foot) foot.innerHTML = S.feed && S.feed.at && !feedLoading ? `<span>Aggiornato il ${esc(fmtDateTime(S.feed.at))}</span> · <button class="more" data-a="feedRefresh">Aggiorna</button>${Object.keys(S.feed.err || {}).length ? `<br><small class="feederr" translate="no">${esc(Object.entries(S.feed.err).map(([k, v]) => k + ' → ' + v).join(' | '))}</small>` : ''}` : feedLoading ? '' : (!navigator.onLine ? '<span>Sei offline: le novità arrivano appena torna la connessione.</span>' : '');
   if (!box.innerHTML.trim() && !feedLoading) box.innerHTML = `<p class="note" style="padding:20px 4px">Ancora nessuna novità: aggiungi qualche pezzo alla collezione e torna qui.</p>`;
 }
 async function feedOpen(el) {
@@ -2816,6 +2882,7 @@ Object.assign(actions, {
   importDiscogs: () => importDiscogs(),
   importGo,
   reloadApp: () => location.reload(),
+  forceUpdate: () => forceUpdate(),
 });
 // "Aggiungi un'altra copia": procedi ignorando il duplicato
 actions.dupAnyway = () => { const p = S.pendingCode; closeSheet(); handleCode(p.code, p.tipo, 'force'); };
@@ -2903,11 +2970,15 @@ document.addEventListener('visibilitychange', () => {
   if ('serviceWorker' in navigator) {
     const hadController = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
-      S.swReg = reg;
+      S.swReg = reg; S.swChecked = Date.now();
       reg.addEventListener('updatefound', () => {
         const w = reg.installing; if (!w) return;
         w.addEventListener('statechange', () => { if (w.state === 'activated' && hadController) showUpdateBar(); });
       });
     }).catch(() => {});
+    // l'app installata resta aperta per giorni: controlla gli aggiornamenti quando torna in primo piano
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && S.swReg && Date.now() - (S.swChecked || 0) > 10 * 60e3) { S.swChecked = Date.now(); S.swReg.update().catch(() => {}); }
+    });
   }
 })();

@@ -113,6 +113,11 @@ def make_route(no_vision=False):
             film = lambda i, t, d: {'id': i, 'title': t, 'release_date': d, 'overview': 'Trama di ' + t, 'poster_path': '/p%d.png' % i, 'popularity': 100 - i}
             if p.path.endswith('/movie/now_playing'): return await J({'results': [film(1, 'Film in sala', '2026-10-01'), film(2, 'Altro film', '2026-09-25')]})
             if p.path.endswith('/movie/upcoming'): return await J({'results': [film(3, 'Film in arrivo', '2099-12-01'), film(4, 'Già uscito', '2020-01-01')]})
+            if p.path.endswith('/search/movie'):
+                qq = q.get('query', [''])[0].lower()
+                if 'street' in qq or 'fighter' in qq: return await J({'results': [film(11, 'Street Fighter', '2026-10-16'), film(12, 'Street Fighter II', '1994-01-01')]})
+                if 'van damme' in qq: return await J({'results': [film(13, 'Bloodsport', '1988-01-01')]})
+                return await J({'results': []})
             if p.path.endswith('/search/person'): return await J({'results': [{'id': 77, 'known_for_department': 'Directing'}]})
             if p.path.endswith('/movie_credits'): return await J({'crew': [dict(film(5, 'Nuovo film del regista', '2099-05-01'), job='Director'), dict(film(6, 'Vecchio', '1990-01-01'), job='Director')]})
             if re.search(r'/movie/\d+$', p.path): return await J({'credits': {'crew': [{'job': 'Director', 'name': 'Regista Prova'}], 'cast': []}, 'runtime': 120, 'genres': [{'name': 'Dramma'}]})
@@ -215,6 +220,10 @@ async def t_book_rating(b, base):
     await page.evaluate("go('detail','i2')")
     await page.wait_for_function("byId('i2').votoWeb && !S.autoBusy", timeout=8000); await page.wait_for_timeout(200)
     check('voto Open Library mostrato', '4,1' in await page.evaluate("(document.querySelector('.webrate')||{}).textContent||''"))
+    t1 = await page.evaluate("filmFromCover(['van damme', 'Jean-Claude Van Damme', 'IN SALA DAL 16 OTTOBRE', 'Street Fighter movie poster 2026'], 'street fighter movie poster Jean-Claude Van Damme STREET FIGHTER IN SALA')")
+    check('locandina: titolo del film scelto bene', t1 == 'Street Fighter', t1)
+    await page.evaluate("go('settings')")
+    check('pulsante Cerca aggiornamenti', await page.evaluate("!!document.querySelector('[data-a=forceUpdate]')"))
     sig = await page.evaluate("JSON.parse(feedSig())[0]")
     check('la cache della Home dipende dalla versione', sig == await page.evaluate("VERSION"))
     check('nessun errore JavaScript', not errs, errs)
