@@ -567,3 +567,37 @@ label.check { display: flex; gap: 10px; align-items: center; margin: 6px 0 12px;
 .msg .moffer { display: block; font-size: 13px; }
 .post h2 { margin: 6px 0; }
 .post .prose { margin: 12px 0; white-space: pre-wrap; line-height: 1.55; }
+.cseg.four { grid-template-columns: repeat(4, 1fr); }
+.cseg.four button { font-size: 13px; padding-left: 2px; padding-right: 2px; }
+.evcard { display: grid; grid-template-columns: 52px 1fr auto; gap: 12px; align-items: center; width: 100%; text-align: left; padding: 12px; margin-bottom: 10px; background: var(--card); border-radius: var(--r); color: inherit; }
+.evcard .cover { width: 52px; aspect-ratio: 1; border-radius: 8px; }
+.evdate { display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--bg); border-radius: 12px; height: 56px; }
+.evdate b { font-size: 22px; line-height: 1; }
+.evdate span { font-size: 11px; text-transform: uppercase; color: var(--muted); letter-spacing: .05em; }
+.evbody { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.evbody > b { font-size: 15px; line-height: 1.25; }
+.evbody > span { color: var(--muted); font-size: 12px; }
+.evchip { font-style: normal; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 8px; background: var(--bg); color: var(--ink); }
+.evchip.ok { background: #2f9e6a; color: #fff; }
+.evchip.inv { background: var(--cd); color: #1b1b1f; }
+.evchip.live { background: #e5484d; color: #fff; }
+.evhead { display: flex; gap: 14px; align-items: flex-start; }
+.evhead .cover { width: 72px; flex: none; aspect-ratio: 1; border-radius: 10px; }
+.evhead > div { display: flex; flex-direction: column; gap: 3px; }
+.evhead h2 { margin: 2px 0; }
+.evhead span { color: var(--muted); font-size: 13px; }
+.evrsvp { margin: 12px 0 6px; }
+.evacts { flex-wrap: wrap; margin: 6px 0 4px; }
+.emsgs { display: flex; flex-direction: column; gap: 6px; max-height: 40vh; overflow-y: auto; padding: 6px 0; }
+.emsg { font-size: 14px; line-height: 1.4; }
+.emsg small { color: var(--muted); font-size: 10px; margin-left: 6px; }
+.emsg.mine b { color: var(--cd); }
+.evtrack { width: 100%; margin: 6px 0; padding: 8px 10px; border-radius: 10px; background: var(--bg); color: var(--ink); border: 1px solid var(--line); font: inherit; }
+.newopts { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.newopts button { text-align: left; padding: 14px 16px; background: var(--bg); border-radius: var(--r); display: flex; flex-direction: column; gap: 4px; color: inherit; }
+.newopts b { font-size: 16px; }
+.newopts span span, .newopts > button > span { color: var(--muted); font-size: 13px; }
+.newopts b span { color: var(--ink); font-size: 16px; }
+.picklist { max-height: 60vh; overflow-y: auto; }
+.ccount { display: block; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.ccom small { color: var(--muted); font-size: 11px; }

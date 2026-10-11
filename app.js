@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.9.0';
+const VERSION = '2.11.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -53,7 +53,7 @@ const EMPTY = () => ({
   catalogo: '', paese: '', confezione: '', condCustodia: '', numDischi: '', spars: '', matrice: '', ifpi: '',
   tipoNastro: '', riduzione: '', origine: '', lunghezzaNastro: '', marcaNastro: '',
   note: '', commenti: [], foto: [], coverUrl: '', prestatoA: '', prestatoIl: '', desiderio: false,
-  stato: '', serie: '', volume: '', tags: [], valore: '', valoreDiscogs: null, discogsId: '', votoWeb: null, condiviso: null, offerta: '', prezzoRichiesto: '',
+  stato: '', serie: '', volume: '', tags: [], valore: '', valoreDiscogs: null, discogsId: '', votoWeb: null, condiviso: null, offerta: '', prezzoRichiesto: '', notaCommunity: '',
   createdAt: Date.now(), updatedAt: Date.now(),
 });
 // Stato di lettura / visione / ascolto
@@ -300,7 +300,7 @@ function mainHeader(active) {
   </header>
   <nav class="maintabs ${COMM_URL ? 'three' : ''}" role="tablist">
     <button role="tab" class="${active === 'home' ? 'on' : ''}" data-a="mainTab" data-v="home">Novità</button>
-    ${COMM_URL ? `<button role="tab" class="${active === 'community' ? 'on' : ''}" data-a="mainTab" data-v="community">Community${S.commUnread ? `<i class="badge">${S.commUnread}</i>` : ''}</button>` : ''}
+    ${COMM_URL ? `<button role="tab" class="${active === 'community' ? 'on' : ''}" data-a="mainTab" data-v="community">Community${(S.commUnread || 0) + (S.commInvites || 0) ? `<i class="badge">${(S.commUnread || 0) + (S.commInvites || 0)}</i>` : ''}</button>` : ''}
     <button role="tab" class="${active === 'list' ? 'on' : ''}" data-a="mainTab" data-v="list">Collezione<b>${live().filter(i => !i.desiderio).length}</b></button>
   </nav>`;
 }
@@ -2329,6 +2329,14 @@ const NEWS = {
   '2.5': [
     ['Home Novità', 'La prima pagina mostra i nuovi album dei tuoi artisti, i nuovi libri dei tuoi autori, i film al cinema e cosa stai leggendo.'],
   ],
+  '2.11': [
+    ['Commenti in bacheca', 'Tocca una recensione o un pezzo condiviso nella Bacheca per commentarlo con la community.'],
+  ],
+  '2.10': [
+    ['Eventi', 'Crea serate, club del libro, mercatini di scambio o ascolti online: invita chi vuoi, ognuno risponde Partecipo / Forse / Non vengo e può aggiungerlo al calendario.'],
+    ['Nuovo nella Community', 'Il pulsante Nuovo avvia una conversazione, condivide un pezzo con un commento, scrive un articolo o crea un evento. Aggiungi ora compare solo in Collezione.'],
+    ['Ascolti in diretta', "All'ora stabilita tutti mettono lo stesso disco e commentano traccia per traccia; dopo, i commenti restano da rileggere."],
+  ],
   '2.9': [
     ['Condividi e scambia', 'Condividi pezzi e lista desideri con la community: chi ha quello che cerchi può vendertelo, prestartelo o regalartelo, con messaggi privati.'],
     ['Blog di ogni opera', 'Scrivi articoli su un disco, un libro o un film e discutine con gli altri.'],
@@ -2653,7 +2661,7 @@ function shareFormHTML(d) {
 }
 const f2 = (name, label, d) => `<label class="field"><span>${label}</span><input data-f="${name}" value="${esc(d[name] || '')}" inputmode="decimal"></label>`;
 const shareRow = it => ({ work: workKey(it), kind: it.desiderio ? 'wish' : 'own', tipo: it.tipo, titolo: it.titolo, autore: it.autore || '', anno: String(it.anno || ''), formato: it.formato || '',
-  cover: /^https:/.test(it.coverUrl || '') ? it.coverUrl : '', offer: it.desiderio ? '' : (it.offerta || ''), price: it.offerta === 'vendo' && num(it.prezzoRichiesto) ? num(it.prezzoRichiesto) : null, note: '' });
+  cover: /^https:/.test(it.coverUrl || '') ? it.coverUrl : '', offer: it.desiderio ? '' : (it.offerta || ''), price: it.offerta === 'vendo' && num(it.prezzoRichiesto) ? num(it.prezzoRichiesto) : null, note: String(it.notaCommunity || '').slice(0, 300) });
 let commSharesT = null;
 function commSharesSoon(ms = 2500) { clearTimeout(commSharesT); commSharesT = setTimeout(() => commSyncShares().catch(() => {}), ms); }
 async function commSyncShares(force) {
@@ -2679,7 +2687,7 @@ function commPeopleHTML(d, ctx) {
 }
 function commPostsHTML(d) {
   return `<h4 class="csub">Blog</h4>${(d.posts || []).map(p => `<button class="postrow" data-a="postOpen" data-id="${esc(p.id)}"><b translate="no">${esc(p.title)}</b><span><span translate="no">${esc(p.nick)}</span> · ${esc(commAgo(p.at))}</span><p translate="no">${esc(p.excerpt)}${p.excerpt.length >= 160 ? '…' : ''}</p></button>`).join('') || '<p class="note pnote">Nessun articolo ancora.</p>'}
-    <button class="more" data-a="postSheet">+ Scrivi un articolo</button>`;
+    <button class="more" data-a="postSheet">+ Scrivi un articolo</button> <button class="more" data-a="eventFromWork">+ Crea un evento</button>`;
 }
 // l'opera su cui si sta lavorando (scheda aperta o foglio di un'opera che non hai)
 function commCtx() {
@@ -2695,9 +2703,9 @@ function viewCommunity() {
   if (!me) body = `<div class="hint chero"><b>La community di Spinyl</b><span>Recensioni, blog, scambi e prestiti tra amici su libri, dischi e film. Si entra con un codice invito; la tua collezione resta privata finché non decidi di condividere.</span>
       <button class="btn primary" data-a="commJoin">Entra nella community</button></div>`;
   else body = `<div class="cme"><div><span class="note">Sei dentro come</span><b translate="no">${esc(me.nick)}</b></div><button class="btn" data-a="commInvite">${ic('share', 18)}Invita</button></div>
-    <div class="seg cseg">${[['bacheca', 'Bacheca'], ['scambi', 'Scambi'], ['messaggi', 'Messaggi']].map(([k, l]) => `<button class="${seg === k ? 'on' : ''}" data-a="commSeg" data-v="${k}">${l}${k === 'messaggi' && S.commUnread ? `<i class="badge">${S.commUnread}</i>` : ''}</button>`).join('')}</div>
+    <div class="seg cseg four">${[['bacheca', 'Bacheca'], ['eventi', 'Eventi'], ['scambi', 'Scambi'], ['messaggi', 'Messaggi']].map(([k, l]) => `<button class="${seg === k ? 'on' : ''}" data-a="commSeg" data-v="${k}">${l}${k === 'messaggi' && S.commUnread ? `<i class="badge">${S.commUnread}</i>` : k === 'eventi' && S.commInvites ? `<i class="badge">${S.commInvites}</i>` : ''}</button>`).join('')}</div>
     <div id="commList">${loadingHTML('Carico…')}</div>`;
-  return `${mainHeader('community')}<div class="home commtab">${body}</div><button class="fab" data-a="add">${ic('plus')}Aggiungi</button>`;
+  return `${mainHeader('community')}<div class="home commtab">${body}</div>${me ? `<button class="fab" data-a="commNew">${ic('plus')}Nuovo</button>` : ''}`;
 }
 const coverMini = c => coverHTML({ tipo: c.tipo || 'libro', titolo: c.titolo, coverUrl: c.cover });
 async function loadCommunity() {
@@ -2706,15 +2714,19 @@ async function loadCommunity() {
   const fail = e => { const x = b(); if (x) x.innerHTML = e.code === 401 ? `<p class="note">${esc(commErrMsg(e))}</p><div class="stack"><button class="btn block" data-a="commLogin">Accedi con Google</button></div>` : `<p class="note">${esc(commErrMsg(e))}</p>`; };
   try {
     if (seg === 'bacheca') {
-      const d = await comm('board'); S.commBoard = d.items || [];
+      const [d, ev] = await Promise.all([comm('board'), comm('events').catch(() => ({ upcoming: [] }))]); S.commBoard = d.items || [];
       if (!b() || S.commSeg && S.commSeg !== 'bacheca') return;
-      b().innerHTML = S.commBoard.map((x, i) => {
+      const soon = (ev.upcoming || []).slice(0, 2);
+      b().innerHTML = (soon.length ? `<h3 class="chtitle">Prossimi eventi</h3>${soon.map(evCard).join('')}<button class="more" data-a="commSeg" data-v="eventi">Tutti gli eventi</button><h3 class="chtitle">Ultime novità</h3>` : '') + S.commBoard.map((x, i) => {
         const head = x.type === 'review' ? `<div class="chead"><b translate="no">${esc(x.nick)}</b>${x.stars ? `<span class="cstars">${'★'.repeat(x.stars)}<i>${'★'.repeat(5 - x.stars)}</i></span>` : ''}<small>${esc(commAgo(x.at))}</small></div>${x.body ? `<p translate="no">${esc(x.body)}</p>` : ''}`
           : x.type === 'post' ? `<div class="chead"><span class="ctag">📝 <span>Blog</span></span><b translate="no">${esc(x.nick)}</b><small>${esc(commAgo(x.at))}</small></div><p><b translate="no">${esc(x.title)}</b></p>`
-          : `<div class="chead"><span class="ctag">${x.kind === 'wish' ? '🔎 <span>Lo cerca</span>' : x.offer ? esc(offerTxt(x.offer, x.price)) : '📀 <span>Ce l\'ha</span>'}</span><b translate="no">${esc(x.nick)}</b><small>${esc(commAgo(x.at))}</small></div>`;
-        return `<button class="crow t-${esc(x.tipo)}" data-a="boardOpen" data-i="${i}">${coverMini(x)}<div><b translate="no">${esc(x.titolo)}</b><span translate="no">${esc(x.autore || '')}</span>${head}</div></button>`;
+          : `<div class="chead"><span class="ctag">${x.kind === 'wish' ? '🔎 <span>Lo cerca</span>' : x.offer ? esc(offerTxt(x.offer, x.price)) : '📀 <span>Ce l\'ha</span>'}</span><b translate="no">${esc(x.nick)}</b><small>${esc(commAgo(x.at))}</small></div>${x.note ? `<p translate="no">${esc(x.note)}</p>` : ''}`;
+        return `<button class="crow t-${esc(x.tipo)}" data-a="boardOpen" data-i="${i}">${coverMini(x)}<div><b translate="no">${esc(x.titolo)}</b><span translate="no">${esc(x.autore || '')}</span>${head}
+          <span class="ccount">💬 ${x.comments ? `<span translate="no">${x.comments}</span> · ` : ''}<span>${x.comments ? 'Commenta' : 'Commenta per primo'}</span></span></div></button>`;
       }).join('') || '<p class="note">Ancora niente qui: scrivi una recensione o condividi un pezzo.</p>';
       hydratePhotos(b());
+    } else if (seg === 'eventi') {
+      await loadEvents(b);
     } else if (seg === 'scambi') {
       const own = [...new Set(live().filter(i => !i.desiderio).map(workKey))], wish = [...new Set(live().filter(i => i.desiderio).map(workKey))];
       const d = await comm('match', { own, wish }); S.commMatch = d;
@@ -2733,11 +2745,11 @@ async function loadCommunity() {
       const d = await comm('threads'); S.commThreads = d.threads || [];
       S.commUnread = S.commThreads.filter(t => t.unread).length;
       if (!b() || S.commSeg !== 'messaggi') return;
-      b().innerHTML = S.commThreads.map(t => `<button class="crow thrd ${t.unread ? 'unread' : ''}" data-a="threadOpen" data-id="${esc(t.id)}">${coverMini({ tipo: 'vinile', titolo: t.titolo, cover: t.cover })}<div><b translate="no">${esc(t.nick)}</b><span translate="no">${esc(t.titolo)}</span>
+      b().innerHTML = S.commThreads.map(t => `<button class="crow thrd ${t.unread ? 'unread' : ''}" data-a="threadOpen" data-id="${esc(t.id)}">${coverMini({ tipo: 'vinile', titolo: t.titolo, cover: t.cover })}<div><b translate="no">${esc(t.nick)}</b>${t.titolo ? `<span translate="no">${esc(t.titolo)}</span>` : ''}
           <p>${t.last ? (t.last.mine ? '<span>Tu:</span> ' : '') + (t.last.offer ? esc(offerTxt(t.last.offer, t.last.price)) + (t.last.body ? ' · ' : '') : '') + `<span translate="no">${esc(t.last.body)}</span>` : ''}</p></div></button>`).join('')
         || '<p class="note">Nessun messaggio. Dalla sezione Scambi puoi contattare chi ha o cerca i tuoi pezzi.</p>';
       hydratePhotos(b());
-      const tab = $('.maintabs [data-v=community]'); if (tab) tab.innerHTML = 'Community' + (S.commUnread ? `<i class="badge">${S.commUnread}</i>` : '');
+      const tab = $('.maintabs [data-v=community]'); const n = (S.commUnread || 0) + (S.commInvites || 0); if (tab) tab.innerHTML = 'Community' + (n ? `<i class="badge">${n}</i>` : '');
     }
   } catch (e) { fail(e); }
 }
@@ -2745,7 +2757,29 @@ async function loadCommunity() {
 function boardOpen(i) {
   const x = (S.commBoard || [])[i]; if (!x) return;
   if (x.type === 'post') return postOpen(x.id);
-  workSheet(x);
+  discussionOpen(x.type === 'review' ? { type: 'review', id: x.id } : { type: 'share', member: x.member, work: x.work, kind: x.kind });
+}
+// Discussione su una recensione o su un pezzo condiviso: la community commenta quello che l'utente ha condiviso
+async function discussionOpen(q, keepScroll) {
+  let d; try { d = await comm('discussion', q); } catch (e) { return toast(commErrMsg(e)); }
+  const x = d.item; S.disc = { q, item: x }; const me = commMe() || {};
+  const what = x.type === 'review' ? (x.stars ? `<span class="cstars">${'★'.repeat(x.stars)}<i>${'★'.repeat(5 - x.stars)}</i></span>` : '')
+    : `<span class="ctag">${x.kind === 'wish' ? '🔎 <span>Lo cerca</span>' : x.offer ? esc(offerTxt(x.offer, x.price)) : '📀 <span>Ce l\'ha</span>'}</span>`;
+  const own = live().find(i => workKey(i) === x.work && !i.desiderio);
+  openSheet(`<div class="pickcard">${coverMini(x)}<div><b translate="no">${esc(x.titolo)}</b><span translate="no">${esc(x.autore || '')}</span><button class="more" data-a="discWork">Apri l'opera ›</button></div></div>
+    <div class="crev"><div class="chead"><b translate="no">${esc(x.nick)}</b>${what}<small>${esc(commAgo(x.at))}</small></div>${(x.type === 'review' ? x.body : x.note) ? `<p translate="no">${esc(x.type === 'review' ? x.body : x.note)}</p>` : ''}</div>
+    ${!x.mine && x.type === 'share' ? `<div class="stack"><button class="btn block" data-a="discOffer">${x.kind === 'wish' ? (own ? 'Offri il tuo' : 'Scrivi') : 'Chiedi'}</button></div>` : ''}
+    <h4 class="csub">Commenti</h4>
+    <div id="discList">${d.comments.map(c => `<div class="ccom"><b translate="no">${esc(c.nick)}</b> <span translate="no">${esc(c.body)}</span><small> · ${esc(commAgo(c.at))}</small>
+      <span class="cacts">${c.mine || me.admin ? `<button data-a="discDel" data-id="${esc(c.id)}">Elimina</button>` : `<button data-a="commReport" data-kind="comment" data-id="${esc(c.id)}">Segnala</button>`}</span></div>`).join('') || '<p class="note">Ancora nessun commento: scrivi il primo!</p>'}</div>
+    <form class="composer" id="discForm"><textarea rows="1" maxlength="1000" placeholder="Commenta…"></textarea><button type="submit">Invia</button></form>`);
+  hydratePhotos($('#sheet'));
+  $('#discForm').addEventListener('submit', async e => {
+    e.preventDefault(); const ta = e.target.querySelector('textarea'); const body = ta.value.trim(); if (!body) return;
+    const payload = q.type === 'review' ? { review: q.id, body } : { share: { member: q.member, work: q.work, kind: q.kind }, body };
+    try { await comm('comment', payload); discussionOpen(q, true); if (S.view === 'community') loadCommunity(); } catch (er) { toast(commErrMsg(er)); }
+  });
+  if (keepScroll) { const l = $('#discList'); if (l) l.lastElementChild && l.lastElementChild.scrollIntoView({ block: 'nearest' }); }
 }
 function workSheet(x) {
   const it = live().find(i => workKey(i) === x.work);
@@ -2797,7 +2831,7 @@ async function threadOpen(id, quiet) {
   let d; try { d = await comm('thread', { id }); } catch (e) { if (!quiet) toast(commErrMsg(e)); return; }
   S.thread = d.thread;
   const msgs = d.messages.map(m => `<div class="msg ${m.mine ? 'mine' : ''}">${m.offer ? `<b class="moffer">${esc(offerTxt(m.offer, m.price))}</b>` : ''}${m.body ? `<p translate="no">${esc(m.body)}</p>` : ''}<small>${esc(fmtDateTime(Date.parse(m.at)))}</small></div>`).join('');
-  const html = `<div class="thead2"><div><h2 translate="no">${esc(d.thread.nick)}</h2><span translate="no">${esc(d.thread.titolo)}</span></div>
+  const html = `<div class="thead2"><div><h2 translate="no">${esc(d.thread.nick)}</h2>${d.thread.titolo ? `<span translate="no">${esc(d.thread.titolo)}</span>` : ''}</div>
       <button class="more" data-a="threadBlock">${d.thread.blocked ? 'Sblocca' : 'Blocca'}</button></div>
     <div class="msgs" id="msgs">${msgs}</div>
     ${d.thread.blocked ? '<p class="note">Hai bloccato questa persona: non può scriverti.</p>' : `<form class="composer" id="msgForm"><textarea id="msgText" rows="1" maxlength="2000" placeholder="Scrivi…"></textarea><button type="submit">Invia</button></form>`}
@@ -2824,7 +2858,204 @@ async function threadBlock() {
 async function commUnreadCheck() {
   if (!commMe() || !Drive.token() || Date.now() - (S.commUnreadAt || 0) < 120e3) return;
   S.commUnreadAt = Date.now();
-  try { const n = (await comm('unread')).unread || 0; if (n !== S.commUnread) { S.commUnread = n; const tab = $('.maintabs [data-v=community]'); if (tab) tab.innerHTML = 'Community' + (n ? `<i class="badge">${n}</i>` : ''); } } catch (e) {}
+  try { const r = await comm('unread'); S.commUnread = r.unread || 0; S.commInvites = r.invites || 0; const n = S.commUnread + S.commInvites;
+    const tab = $('.maintabs [data-v=community]'); if (tab) tab.innerHTML = 'Community' + (n ? `<i class="badge">${n}</i>` : ''); } catch (e) {}
+}
+
+// ── Eventi: dal vivo, online o ascolto in diretta, con inviti e risposte ──
+const EV_KIND = { vivo: ['📍', 'Dal vivo'], online: ['💻', 'Online'], ascolto: ['🎧', 'Ascolto in diretta'] };
+const evDate = iso => new Date(iso);
+const evWhen = iso => evDate(iso).toLocaleString(LOC(), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const evLive = e => { const t = +evDate(e.starts); return Date.now() > t - 15 * 60e3 && Date.now() < t + 3 * 3600e3; };
+const RSVP = [['si', 'Partecipo'], ['forse', 'Forse'], ['no', 'Non vengo']];
+function evCard(e) {
+  const d = evDate(e.starts); const [ico, kl] = EV_KIND[e.kind] || EV_KIND.vivo;
+  const chip = e.my === 'si' ? '<i class="evchip ok">✓ <span>Partecipi</span></i>' : e.my === 'forse' ? '<i class="evchip">Forse</i>' : e.invited && !e.my ? '<i class="evchip inv">Sei invitato</i>' : '';
+  return `<button class="evcard" data-a="eventOpen" data-id="${esc(e.id)}"><div class="evdate"><b>${d.getDate()}</b><span>${esc(d.toLocaleDateString(LOC(), { month: 'short' }))}</span></div>
+    <div class="evbody"><b translate="no">${esc(e.title)}</b><span>${ico} <span>${kl}</span> · ${esc(d.toLocaleTimeString(LOC(), { hour: '2-digit', minute: '2-digit' }))}${e.place ? ` · <span translate="no">${esc(e.place)}</span>` : ''}</span>
+    <span>${evLive(e) ? '<i class="evchip live">● <span>In corso</span></i> ' : ''}${chip} <span>${e.going === 1 ? '1 partecipa' : e.going + ' partecipano'}</span></span></div>
+    ${e.cover ? coverMini(e) : ''}</button>`;
+}
+async function loadEvents(box) {
+  const d = await comm('events'); S.commEvents = d;
+  if (!box() || S.commSeg !== 'eventi') return;
+  box().innerHTML = `<div class="stack"><button class="btn primary block" data-a="eventNew">${ic('plus', 18)}Crea un evento</button></div>
+    ${d.upcoming.map(evCard).join('') || '<p class="note">Nessun evento in programma. Crea il primo: un ascolto, un club del libro, un mercatino di scambio…</p>'}
+    ${d.past.length ? `<h3 class="chtitle">Passati</h3>${d.past.map(evCard).join('')}` : ''}`;
+  hydratePhotos(box());
+}
+function eventNew(prefill) {
+  const ctx = prefill || null;
+  const t = new Date(Date.now() + 7 * 864e5); t.setHours(21, 0, 0, 0);
+  const local = new Date(t - t.getTimezoneOffset() * 60e3).toISOString().slice(0, 16);
+  S.evDraft = { kind: ctx && isMusic(ctx.tipo) ? 'ascolto' : 'vivo', visibility: 'all', ctx, invite: new Set() };
+  const mine = live().slice().sort((a, b) => String(a.titolo).localeCompare(String(b.titolo)));
+  openSheet(`<h2>Nuovo evento</h2>
+    <label class="field"><span>Titolo</span><input id="evTitle" maxlength="120" value="${ctx ? esc((isMusic(ctx.tipo) ? tr('Ascoltiamo') : ctx.tipo === 'film' ? tr('Guardiamo') : tr('Club del libro:')) + ' ' + ctx.titolo) : ''}" placeholder="es. Serata vinili anni '70"></label>
+    <div class="seg" id="evKind">${Object.entries(EV_KIND).map(([k, [i, l]]) => `<button type="button" class="${S.evDraft.kind === k ? 'on' : ''}" data-a="evKind" data-v="${k}">${i} ${l}</button>`).join('')}</div>
+    <label class="field"><span>Quando</span><input id="evWhen" type="datetime-local" value="${local}"></label>
+    <label class="field ${S.evDraft.kind === 'vivo' ? '' : 'hidden'}" id="evPlaceF"><span>Dove</span><input id="evPlace" maxlength="200" placeholder="es. Bar Roma, Alessandria"></label>
+    <label class="field ${S.evDraft.kind === 'vivo' ? 'hidden' : ''}" id="evLinkF"><span>Link della videochiamata (facoltativo)</span><input id="evLink" maxlength="500" inputmode="url" placeholder="https://meet.google.com/…"></label>
+    <label class="field"><span>Opera collegata (facoltativo)</span><input id="evWork" list="evWorks" value="${ctx ? esc(ctx.titolo) : ''}" autocomplete="off"></label>
+    <datalist id="evWorks" translate="no">${mine.map(i => `<option value="${esc(i.titolo)}">`).join('')}</datalist>
+    <label class="field"><span>Descrizione</span><textarea id="evBody" rows="4" maxlength="4000" placeholder="Cosa faremo, cosa portare…"></textarea></label>
+    <div class="seg" id="evVis"><button type="button" class="on" data-a="evVis" data-v="all">Tutta la community</button><button type="button" data-a="evVis" data-v="invite">Solo invitati</button></div>
+    <h4 class="csub">Invita</h4><div id="evMembers">${loadingHTML('Carico i membri…')}</div>
+    <div class="stack"><button class="btn primary block" data-a="eventCreate">Crea evento</button></div>`);
+  comm('members').then(d => {
+    const b = $('#evMembers'); if (!b) return;
+    b.innerHTML = (d.members || []).map(m => `<label class="check"><input type="checkbox" data-mem="${esc(m.id)}"> <span translate="no">${esc(m.nick)}</span></label>`).join('') || '<p class="note">Nessun altro membro, per ora: invita i tuoi amici nella community.</p>';
+    b.querySelectorAll('[data-mem]').forEach(c => c.addEventListener('change', () => c.checked ? S.evDraft.invite.add(c.dataset.mem) : S.evDraft.invite.delete(c.dataset.mem)));
+  }).catch(() => { const b = $('#evMembers'); if (b) b.innerHTML = ''; });
+}
+function evPick(group, el) { el.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === el)); S.evDraft[group] = el.dataset.v;
+  if (group === 'kind') { $('#evPlaceF').classList.toggle('hidden', el.dataset.v !== 'vivo'); $('#evLinkF').classList.toggle('hidden', el.dataset.v === 'vivo'); } }
+async function eventCreate() {
+  const d = S.evDraft; if (!d) return;
+  const title = $('#evTitle').value.trim(); const when = $('#evWhen').value;
+  if (title.length < 2) return toast('Scrivi un titolo');
+  if (!when || isNaN(+new Date(when))) return toast('Scegli data e ora');
+  if (d.visibility === 'invite' && !d.invite.size) return toast('Scegli chi invitare');
+  const wt = $('#evWork').value.trim();
+  const it = wt && (d.ctx && d.ctx.titolo === wt ? (d.ctx.it || d.ctx) : live().find(i => i.titolo === wt));
+  const w = it ? { work: it.work || workKey(it), tipo: it.tipo, titolo: it.titolo, autore: it.autore || '', cover: it.cover || (/^https:/.test(it.coverUrl || '') ? it.coverUrl : '') } : {};
+  const link = ($('#evLink').value || '').trim();
+  if (link && !/^https:\/\//.test(link)) return toast('Il link deve iniziare con https://');
+  try {
+    const r = await comm('eventCreate', { title, kind: d.kind, starts: new Date(when).toISOString(), place: d.kind === 'vivo' ? $('#evPlace').value : '', link: d.kind === 'vivo' ? '' : link,
+      body: $('#evBody').value, visibility: d.visibility, invite: [...d.invite], ...w });
+    toast('Evento creato'); S.commSeg = 'eventi'; eventOpen(r.id); if (S.view === 'community') loadCommunity();
+  } catch (e) { toast(e.message === 'data' ? 'Data non valida' : commErrMsg(e)); }
+}
+let evPoll = null;
+async function eventOpen(id, quiet) {
+  let d; try { d = await comm('eventGet', { id }); } catch (e) { if (!quiet) toast(commErrMsg(e)); return; }
+  const e = d.event; S.event = d; const live = evLive(e); const [ico, kl] = EV_KIND[e.kind] || EV_KIND.vivo;
+  const my = (d.rsvps.find(r => r.mine) || {}).status || '';
+  const going = d.rsvps.filter(r => r.status === 'si'), maybe = d.rsvps.filter(r => r.status === 'forse');
+  const mineItem = e.work && live && liveItemsByWork(e.work);
+  const tracks = mineItem && mineItem.tracklist ? String(mineItem.tracklist).split('\n').map(t => t.trim()).filter(Boolean).slice(0, 60) : [];
+  const msgs = d.messages.map(m => `<div class="emsg ${m.mine ? 'mine' : ''}"><b translate="no">${esc(m.nick)}</b> <span translate="no">${esc(m.body)}</span><small>${esc(new Date(m.at).toLocaleTimeString(LOC(), { hour: '2-digit', minute: '2-digit' }))}</small></div>`).join('');
+  if (quiet && $('#emsgs') && S.eventOpenId === id) { const m = $('#emsgs'); const end = m.scrollTop + m.clientHeight >= m.scrollHeight - 30; m.innerHTML = msgs || ''; if (end) m.scrollTop = m.scrollHeight; return; }
+  S.eventOpenId = id;
+  openSheet(`<div class="evhead">${e.cover ? coverMini(e) : ''}<div><span class="ctag">${ico} <span>${kl}</span>${live ? ' · <i class="evchip live">● <span>In corso</span></i>' : ''}</span><h2 translate="no">${esc(e.title)}</h2>
+      <span>${esc(evWhen(e.starts))}</span>${e.place ? `<span translate="no">📍 ${esc(e.place)}</span>` : ''}${e.titolo ? `<span translate="no">${esc([e.titolo, e.autore].filter(Boolean).join(' · '))}</span>` : ''}
+      <span><span>Organizza</span> <b translate="no">${esc(e.nick)}</b>${e.visibility === 'invite' ? ' · <span>solo invitati</span>' : ''}</span></div></div>
+    ${e.body ? `<p class="prose" translate="no">${esc(e.body)}</p>` : ''}
+    ${e.link ? `<a class="btn block" href="${esc(e.link)}" target="_blank" rel="noopener">${ic('play', 18)}Entra nella videochiamata</a>` : ''}
+    <div class="seg evrsvp">${RSVP.map(([k, l]) => `<button class="${my === k ? 'on' : ''}" data-a="rsvp" data-v="${k}">${l}</button>`).join('')}</div>
+    <p class="note">${going.length ? `<span>Partecipano:</span> <span translate="no">${going.map(r => esc(r.nick)).join(', ')}</span>` : '<span>Ancora nessuno ha confermato.</span>'}${maybe.length ? `<br><span>Forse:</span> <span translate="no">${maybe.map(r => esc(r.nick)).join(', ')}</span>` : ''}</p>
+    <div class="cacts evacts"><button data-a="eventIcs">📅 <span>Aggiungi al calendario</span></button>${e.mine ? '<button data-a="eventInvite">➕ <span>Invita</span></button>' : ''}<button data-a="eventShare">↗ <span>Condividi</span></button>
+      ${e.mine || (commMe() || {}).admin ? '<button data-a="eventDel">Elimina</button>' : '<button data-a="commReport" data-kind="event" data-id="' + esc(e.id) + '">Segnala</button>'}</div>
+    <h4 class="csub">${live && e.kind === 'ascolto' ? '🎧 <span>Commenti in diretta</span>' : 'Chat dell\'evento'}</h4>
+    <div class="emsgs" id="emsgs">${msgs || ''}</div>
+    ${tracks.length ? `<select id="evTrack" class="evtrack"><option value="">Traccia…</option>${tracks.map(t => `<option translate="no">${esc(t.replace(/\s*\(\d+:\d+\)$/, ''))}</option>`).join('')}</select>` : ''}
+    <form class="composer" id="evForm"><textarea id="evText" rows="1" maxlength="1000" placeholder="${live && e.kind === 'ascolto' ? tr('Cosa ti dice questo pezzo?') : tr('Scrivi…')}"></textarea><button type="submit">Invia</button></form>`);
+  const m = $('#emsgs'); if (m) m.scrollTop = m.scrollHeight;
+  $('#evForm').addEventListener('submit', async ev => {
+    ev.preventDefault(); const ta = $('#evText'); let body = ta.value.trim(); if (!body) return;
+    const tr_ = $('#evTrack'); if (tr_ && tr_.value) body = '[' + tr_.value + '] ' + body;
+    ta.value = ''; try { await comm('eventMsg', { id, body }); eventOpen(id, true); } catch (er) { ta.value = body; toast(commErrMsg(er)); }
+  });
+  clearInterval(evPoll);
+  evPoll = setInterval(() => { if ($('#sheetWrap').classList.contains('hidden') || S.eventOpenId !== id || !$('#emsgs')) { clearInterval(evPoll); S.eventOpenId = null; return; } eventOpen(id, true); }, live ? 5000 : 20000);
+}
+const liveItemsByWork = w => live().find(i => workKey(i) === w && !i.desiderio);
+async function rsvp(v) {
+  const d = S.event; if (!d) return;
+  try { await comm('rsvp', { id: d.event.id, status: v }); toast(v === 'si' ? 'Ci sarai!' : v === 'forse' ? 'Segnato come forse' : 'Segnato: non vieni'); S.eventOpenId = null; eventOpen(d.event.id); S.commUnreadAt = 0; commUnreadCheck(); if (S.view === 'community') loadCommunity(); }
+  catch (e) { toast(commErrMsg(e)); }
+}
+function eventIcs() {
+  const e = S.event && S.event.event; if (!e) return;
+  const f = t => new Date(t).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const x = s => String(s || '').replace(/[\;,]/g, m => '\\' + m).replace(/\n/g, '\\n');
+  const start = Date.parse(e.starts);
+  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Spinyl//IT', 'BEGIN:VEVENT', `UID:${e.id}@spinyl`, `DTSTAMP:${f(Date.now())}`, `DTSTART:${f(start)}`, `DTEND:${f(start + 2 * 3600e3)}`,
+    `SUMMARY:${x(e.title)}`, `DESCRIPTION:${x([e.body, e.titolo && (e.titolo + (e.autore ? ' — ' + e.autore : '')), 'Spinyl'].filter(Boolean).join('\n\n'))}`,
+    e.place ? `LOCATION:${x(e.place)}` : '', e.link ? `URL:${e.link}` : '', 'BEGIN:VALARM', 'TRIGGER:-P1D', 'ACTION:DISPLAY', `DESCRIPTION:${x(e.title)}`, 'END:VALARM',
+    'BEGIN:VALARM', 'TRIGGER:-PT1H', 'ACTION:DISPLAY', `DESCRIPTION:${x(e.title)}`, 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].filter(Boolean).join('\r\n');
+  if (/iPhone|iPad|iPod/.test(navigator.userAgent)) { location.href = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(ics); return; }
+  saveFile(new File([ics], 'spinyl-evento.ics', { type: 'text/calendar' }), e.title);
+}
+async function eventInvite() {
+  const d = S.event; if (!d) return;
+  const already = new Set(d.invited.map(i => i.id));
+  let mem; try { mem = (await comm('members')).members || []; } catch (e) { return toast(commErrMsg(e)); }
+  const sel = new Set();
+  openSheet(`<h2>Invita</h2>${mem.filter(m => !already.has(m.id)).map(m => `<label class="check"><input type="checkbox" data-mem="${esc(m.id)}"> <span translate="no">${esc(m.nick)}</span></label>`).join('') || '<p class="note">Hai già invitato tutti.</p>'}
+    <div class="stack"><button class="btn primary block" id="invGo">Invita</button></div>`);
+  document.querySelectorAll('[data-mem]').forEach(c => c.addEventListener('change', () => c.checked ? sel.add(c.dataset.mem) : sel.delete(c.dataset.mem)));
+  $('#invGo').addEventListener('click', async () => {
+    const e = d.event;
+    try { await comm('eventEdit', { id: e.id, title: e.title, body: e.body, kind: e.kind, starts: e.starts, place: e.place, link: e.link, work: e.work, tipo: e.tipo, titolo: e.titolo, autore: e.autore, cover: e.cover, visibility: e.visibility, invite: [...sel] });
+      toast('Invitati'); S.eventOpenId = null; eventOpen(e.id); } catch (er) { toast(commErrMsg(er)); }
+  });
+}
+async function eventDel() {
+  const d = S.event; if (!d || !confirm(tr('Eliminare l\'evento?'))) return;
+  try { await comm('eventDelete', { id: d.event.id }); closeSheet(); toast('Eliminato'); if (S.view === 'community') loadCommunity(); } catch (e) { toast(commErrMsg(e)); }
+}
+function eventShare() {
+  const e = S.event && S.event.event; if (!e) return;
+  shareText(`${e.title} — ${evWhen(e.starts)}${e.place ? ' · ' + e.place : ''}\n${tr('Rispondi su Spinyl, nella Community › Eventi')}: ${location.origin + location.pathname.replace(/index\.html$/, '')}`, e.title);
+}
+
+// ── "Nuovo" nella Community: conversazione, condividi un pezzo, articolo, evento ──
+function commNew() {
+  openSheet(`<h2>Nuovo</h2><div class="newopts">
+    <button data-a="newChat"><b>💬 <span>Nuova conversazione</span></b><span>Scrivi a un membro della community</span></button>
+    <button data-a="newShare"><b>📀 <span>Condividi un pezzo</span></b><span>Mostra un pezzo della tua collezione con un commento, o mettilo in vendita, in prestito, in regalo</span></button>
+    <button data-a="newPost"><b>📝 <span>Scrivi un articolo</span></b><span>Nel blog di un disco, libro o film</span></button>
+    <button data-a="eventNew"><b>📅 <span>Crea un evento</span></b><span>Serata, club del libro, mercatino o ascolto in diretta</span></button></div>`);
+}
+async function newChat() {
+  let mem; try { mem = (await comm('members')).members || []; } catch (e) { return toast(commErrMsg(e)); }
+  openSheet(`<h2>Nuova conversazione</h2>
+    <label class="field"><span>A chi</span><select id="chatTo"><option value=""></option>${mem.map(m => `<option value="${esc(m.id)}" translate="no">${esc(m.nick)}</option>`).join('')}</select></label>
+    ${mem.length ? '' : '<p class="note">Nessun altro membro, per ora: invita i tuoi amici nella community.</p>'}
+    <label class="field"><span>Messaggio</span><textarea id="chatText" rows="4" maxlength="2000"></textarea></label>
+    <div class="stack"><button class="btn primary block" id="chatGo">Invia</button></div>`);
+  $('#chatGo').addEventListener('click', async () => {
+    const to = $('#chatTo').value, body = $('#chatText').value.trim();
+    if (!to) return toast('Scegli a chi scrivere'); if (!body) return toast('Scrivi un messaggio');
+    try { const r = await comm('offer', { to, work: '', titolo: '', body }); toast('Inviato'); S.commSeg = 'messaggi'; threadOpen(r.thread); if (S.view === 'community') loadCommunity(); }
+    catch (e) { toast(e.message === 'bloccato' ? 'Non puoi scrivere a questa persona' : commErrMsg(e)); }
+  });
+}
+// scegli un pezzo della collezione (con ricerca)
+function pickItem(title, onPick) {
+  const L = live().slice().sort((a, b) => String(a.titolo).localeCompare(String(b.titolo)));
+  if (!L.length) return toast('La collezione è vuota: aggiungi prima qualche pezzo');
+  S.pickCb = onPick;
+  openSheet(`<h2>${title}</h2><label class="field"><input id="pickQ" placeholder="Cerca nella collezione…" autocomplete="off"></label><div id="pickList" class="picklist"></div>`);
+  const draw = () => {
+    const q = norm($('#pickQ').value);
+    $('#pickList').innerHTML = L.filter(i => !q || norm(i.titolo + ' ' + (i.autore || '')).includes(q)).slice(0, 60).map(i => `<button class="crow t-${esc(i.tipo)}" data-a="pickDo" data-id="${esc(i.id)}">${coverHTML(i)}<div><b translate="no">${esc(i.titolo)}</b><span translate="no">${esc([i.autore, i.anno].filter(Boolean).join(' · '))}</span>${i.desiderio ? '<span>Desiderio</span>' : ''}</div></button>`).join('');
+    hydratePhotos($('#pickList'));
+  };
+  $('#pickQ').addEventListener('input', draw); draw();
+}
+function newShare() {
+  pickItem(tr('Quale pezzo vuoi condividere?'), it => {
+    S.shareId = it.id;
+    openSheet(`<h2>Condividi</h2><div class="pickcard">${coverHTML(it)}<div><b translate="no">${esc(it.titolo)}</b><span translate="no">${esc(it.autore || '')}</span></div></div>
+      <label class="field"><span>Il tuo commento</span><textarea id="shNote" rows="3" maxlength="300" placeholder="Perché lo ami, com'è la stampa, un ricordo…">${esc(it.notaCommunity || '')}</textarea></label>
+      ${it.desiderio ? '' : `<label class="field"><span>Disponibile per</span><select id="shOffer">${OFFERTE.map(([k, l]) => `<option value="${k}" ${it.offerta === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label class="field"><span>Prezzo richiesto (€)</span><input id="shPrice" inputmode="decimal" value="${esc(it.prezzoRichiesto || '')}"></label>`}
+      <div class="stack"><button class="btn primary block" id="shGo">Condividi</button></div>`);
+    hydratePhotos($('#sheet'));
+    $('#shGo').addEventListener('click', async () => {
+      const x = byId(S.shareId); if (!x) return;
+      x.condiviso = true; x.notaCommunity = $('#shNote').value.trim();
+      if (!x.desiderio) { x.offerta = $('#shOffer').value; x.prezzoRichiesto = $('#shPrice').value; }
+      await saveItem(x); clearTimeout(commSharesT);
+      try { await commSyncShares(true); toast('Condiviso con la community'); closeSheet(); S.commSeg = 'bacheca'; if (S.view === 'community') loadCommunity(); } catch (e) { toast(commErrMsg(e)); }
+    });
+  });
+}
+function newPost() {
+  pickItem(tr('Su quale opera vuoi scrivere?'), it => { S.commWork = { work: workKey(it), tipo: it.tipo, titolo: it.titolo, autore: it.autore || '', cover: /^https:/.test(it.coverUrl || '') ? it.coverUrl : '', own: !it.desiderio, it }; postSheet(); });
 }
 
 // ── Blog dell'opera ──
@@ -3103,8 +3334,7 @@ function viewHome() {
     ${empty ? `<div class="hint"><b>Benvenuto in Spinyl!</b><span>Aggiungi i tuoi primi libri, dischi e film: qui compariranno le novità dei tuoi autori, artisti e registi.</span><button class="btn primary" data-a="add">${ic('plus', 18)}Aggiungi</button></div>` : ''}
     <div id="feedRows"></div>
     <p class="note home-foot" id="feedFoot"></p>
-  </div>
-  <button class="fab" data-a="add">${ic('plus')}Aggiungi</button>`;
+  </div>`;
 }
 function feedCard(c, rowKey, i) {
   if (c.link) {
@@ -3312,6 +3542,25 @@ Object.assign(actions, {
   commDel: el => commDel(el.dataset.kind, el.dataset.id),
   commReport: el => commReport(el.dataset.kind, el.dataset.id),
   commInvite: () => commInvite(),
+  discWork: () => { const x = S.disc && S.disc.item; if (x) workSheet(x); },
+  discOffer: () => { const x = S.disc && S.disc.item; if (!x) return; S.commMatch = { tmp: [x] }; offerSheet({ dataset: { m: 'tmp', i: '0', to: x.member, nick: x.nick, mode: x.kind === 'wish' ? 'give' : 'ask' } }); },
+  discDel: async el => { if (!confirm(tr('Eliminare il commento?'))) return; try { await comm('delete', { kind: 'comment', id: el.dataset.id }); discussionOpen(S.disc.q); } catch (e) { toast(commErrMsg(e)); } },
+  commNew: () => commNew(),
+  newChat: () => newChat(),
+  newShare: () => newShare(),
+  newPost: () => newPost(),
+  pickDo: el => { const it = byId(el.dataset.id); const cb = S.pickCb; if (it && cb) cb(it); },
+  eventNew: () => eventNew(),
+  eventFromWork: () => { const c = commCtx(); if (c) eventNew(c); },
+  evKind: el => evPick('kind', el),
+  evVis: el => evPick('visibility', el),
+  eventCreate: () => eventCreate(),
+  eventOpen: el => eventOpen(el.dataset.id),
+  rsvp: el => rsvp(el.dataset.v),
+  eventIcs: () => eventIcs(),
+  eventInvite: () => eventInvite(),
+  eventDel: () => eventDel(),
+  eventShare: () => eventShare(),
   commSeg: el => { S.commSeg = el.dataset.v; render(); },
   boardOpen: el => boardOpen(+el.dataset.i),
   offerSheet: el => offerSheet(el),

@@ -93,7 +93,7 @@ def comm_handle(tok, b):
         COMM['reviews'] = [r for r in COMM['reviews'] if not (r['work'] == b['work'] and r['mid'] == me['id'])]
         COMM['reviews'].insert(0, {'id': nid_(), 'work': b['work'], 'tipo': b['tipo'], 'titolo': b['titolo'], 'autore': b.get('autore', ''), 'cover': b.get('cover', ''), 'stars': b.get('stars'), 'body': b.get('body', ''), 'mid': me['id'], 'nick': me['nick'], 'at': '2026-10-11T10:00:00Z', 'hidden': False})
         return 200, {'ok': True}
-    if a == 'comment': COMM['comments'].append({'id': nid_(), 'review': b.get('review'), 'post': b.get('post'), 'body': b['body'], 'mid': me['id'], 'nick': me['nick'], 'at': '2026-10-11T11:00:00Z'}); return 200, {'ok': True}
+    if a == 'comment': COMM['comments'].append({'id': nid_(), 'review': b.get('review'), 'post': b.get('post'), 'share': (b['share']['member'], b['share']['work'], b['share']['kind']) if b.get('share') else None, 'body': b['body'], 'mid': me['id'], 'nick': me['nick'], 'at': '2026-10-11T11:00:00Z'}); return 200, {'ok': True}
     if a == 'report':
         for r in COMM['reviews']:
             if r['id'] == b['id']: r['hidden'] = True
@@ -124,7 +124,8 @@ def comm_handle(tok, b):
         mine = [x for x in ths if me['id'] in x['members']]
         out = [{'id': x['id'], 'other': [m for m in x['members'] if m != me['id']][0], 'nick': nick([m for m in x['members'] if m != me['id']][0]), 'titolo': x['titolo'], 'cover': x['cover'], 'at': x['msgs'][-1]['at'],
                 'unread': x['msgs'][-1]['from'] != me['id'], 'last': {'body': x['msgs'][-1]['body'], 'offer': x['msgs'][-1]['offer'], 'price': x['msgs'][-1]['price'], 'mine': x['msgs'][-1]['from'] == me['id']}} for x in mine]
-        return 200, ({'threads': out} if a == 'threads' else {'unread': sum(1 for o in out if o['unread'])})
+        inv = sum(1 for e in COMM.get('events', {}).values() if me['id'] in e['invited'] and me['id'] not in e['rsvps'])
+        return 200, ({'threads': out} if a == 'threads' else {'unread': sum(1 for o in out if o['unread']), 'invites': inv})
     if a == 'thread':
         th = next(x for x in ths if x['id'] == b['id']); other = [m for m in th['members'] if m != me['id']][0]
         return 200, {'thread': {'id': th['id'], 'other': other, 'nick': nick(other), 'titolo': th['titolo'], 'cover': th['cover'], 'blocked': False}, 'messages': [{'id': m['id'], 'mine': m['from'] == me['id'], 'body': m['body'], 'offer': m['offer'], 'price': m['price'], 'at': m['at']} for m in th['msgs']]}
@@ -135,10 +136,36 @@ def comm_handle(tok, b):
         return 200, {'post': {'id': p['id'], 'work': p['work'], 'tipo': p['tipo'], 'titolo': p['titolo'], 'autore': p['autore'], 'cover': p.get('cover', ''), 'title': p['title'], 'body': p['body'], 'nick': p['nick'], 'mine': p['mid'] == me['id'], 'at': p['at']},
             'comments': [{'id': c['id'], 'nick': c['nick'], 'mine': c['mid'] == me['id'], 'body': c['body'], 'at': c['at']} for c in COMM['comments'] if c.get('post') == p['id']]}
     if a == 'board':
-        items = [dict(type='review', work=r['work'], tipo=r['tipo'], titolo=r['titolo'], autore=r['autore'], cover=r['cover'], stars=r['stars'], body=r['body'], nick=r['nick'], at=r['at']) for r in COMM['reviews'] if not r['hidden']]
+        items = [dict(type='review', id=r['id'], work=r['work'], tipo=r['tipo'], titolo=r['titolo'], autore=r['autore'], cover=r['cover'], stars=r['stars'], body=r['body'], nick=r['nick'], at=r['at']) for r in COMM['reviews'] if not r['hidden']]
         items += [dict(type='post', id=p['id'], work=p['work'], tipo=p['tipo'], titolo=p['titolo'], autore=p['autore'], cover='', title=p['title'], body=p['body'], nick=p['nick'], at=p['at']) for p in COMM.get('posts', [])]
         items += [dict(x, type='share') for x in allsh]
         return 200, {'items': items}
+    if a == 'discussion':
+        cmt = lambda f: [{'id': c['id'], 'nick': c['nick'], 'mine': c['mid'] == me['id'], 'body': c['body'], 'at': c['at']} for c in COMM['comments'] if f(c)]
+        if b['type'] == 'review':
+            r = next(x for x in COMM['reviews'] if x['id'] == b['id'])
+            return 200, {'item': dict(type='review', id=r['id'], work=r['work'], tipo=r['tipo'], titolo=r['titolo'], autore=r['autore'], cover=r['cover'], stars=r['stars'], body=r['body'], nick=r['nick'], member=r['mid'], mine=r['mid'] == me['id'], at=r['at']), 'comments': cmt(lambda c: c.get('review') == r['id'])}
+        x = next(x for x in allsh if x['member'] == b['member'] and x['work'] == b['work'] and x['kind'] == b['kind'])
+        return 200, {'item': dict(x, type='share', mine=x['member'] == me['id']), 'comments': cmt(lambda c: c.get('share') == (b['member'], b['work'], b['kind']))}
+    EV = COMM.setdefault('events', {})
+    if a == 'members': return 200, {'members': [{'id': m['id'], 'nick': m['nick']} for m in COMM['members'].values() if m['id'] != me['id']]}
+    if a in ('eventCreate', 'eventEdit'):
+        if a == 'eventEdit': e = EV[b['id']]; e.update({k: v for k, v in b.items() if k not in ('action', 'invite', 'id')})
+        else: e = EV.setdefault('e%d' % (len(EV) + 1), dict(b, id='e%d' % (len(EV) + 1), creator=me['id'], nick=me['nick'], invited=[], rsvps={me['id']: 'si'}, msgs=[]))
+        e['invited'] += [x for x in b.get('invite', []) if x not in e['invited']]
+        return 200, {'id': e['id']}
+    def evout(e):
+        return {'id': e['id'], 'title': e['title'], 'kind': e['kind'], 'starts': e['starts'], 'place': e.get('place', ''), 'link': e.get('link', ''), 'work': e.get('work', ''), 'tipo': e.get('tipo', ''), 'titolo': e.get('titolo', ''), 'autore': e.get('autore', ''), 'cover': e.get('cover', ''),
+                'visibility': e['visibility'], 'nick': e['nick'], 'mine': e['creator'] == me['id'], 'invited': me['id'] in e['invited'], 'my': e['rsvps'].get(me['id'], ''), 'going': sum(1 for v in e['rsvps'].values() if v == 'si')}
+    vis = lambda e: e['visibility'] == 'all' or e['creator'] == me['id'] or me['id'] in e['invited']
+    if a == 'events': return 200, {'upcoming': [evout(e) for e in EV.values() if vis(e)], 'past': []}
+    if a == 'eventGet':
+        e = EV[b['id']]; o = evout(e); o['body'] = e.get('body', ''); o['member'] = e['creator']
+        return 200, {'event': o, 'rsvps': [{'nick': nick(k), 'status': v, 'mine': k == me['id']} for k, v in e['rsvps'].items()], 'invited': [{'id': x, 'nick': nick(x)} for x in e['invited']],
+                     'messages': [{'id': str(i), 'nick': m['nick'], 'mine': m['mid'] == me['id'], 'body': m['body'], 'at': '2026-10-11T20:00:00Z'} for i, m in enumerate(e['msgs'])]}
+    if a == 'rsvp': EV[b['id']]['rsvps'][me['id']] = b['status']; return 200, {'ok': True}
+    if a == 'eventMsg': EV[b['id']]['msgs'].append({'mid': me['id'], 'nick': me['nick'], 'body': b['body']}); return 200, {'ok': True}
+    if a == 'eventDelete': EV.pop(b['id'], None); return 200, {'ok': True}
     if a == 'recent': return 200, {'reviews': [{'work': r['work'], 'tipo': r['tipo'], 'titolo': r['titolo'], 'autore': r['autore'], 'cover': r['cover'], 'stars': r['stars'], 'body': r['body'], 'nick': r['nick'], 'at': r['at']} for r in COMM['reviews'] if not r['hidden']]}
     return 400, {'error': 'azione'}
 
@@ -390,6 +417,64 @@ async def t_exchange(b, base):
     check('bacheca: articolo e pezzo in vendita', 'Blog' in txt and 'In vendita' in txt, txt[:200])
     check('nessun errore JavaScript', not (e1 + e2), e1 + e2)
 
+async def t_events(b, base):
+    print('\nEventi')
+    tok = lambda n: f"localStorage.setItem('gtoken', JSON.stringify({{t:'{n}', exp: Date.now()+3600e3}}));"
+    COMM['invites']['EVENTI'] = 0
+    async def member(name, items):
+        page, errs = await new_page(b, base, init=tok(name.upper()))
+        await page.evaluate(SEED, items)
+        await page.evaluate("commJoinSheet()"); await page.fill('#commNick', name); await page.fill('#commCode', 'EVENTI'); await page.check('#commOk')
+        await page.evaluate("commJoin()"); await page.wait_for_function("!!commMe()", timeout=5000)
+        return page, errs
+    elena, e1 = await member('Elena', [])
+    fabio, e2 = await member('Fabio', [dict(id='v1', tipo='vinile', titolo='Kind of Blue', autore='Miles Davis', tracklist='A1. So What (9:22)\nA2. Freddie Freeloader (9:46)')])
+    # Fabio crea un ascolto dalla scheda del disco e invita Elena
+    await fabio.evaluate("go('detail','v1')"); await fabio.wait_for_selector('[data-a=eventFromWork]', timeout=5000)
+    await fabio.click('[data-a=eventFromWork]'); await fabio.wait_for_selector('#evMembers [data-mem]', timeout=5000)
+    check('evento precompilato dal disco', 'Kind of Blue' in await fabio.evaluate("document.querySelector('#evTitle').value") and await fabio.evaluate("S.evDraft.kind") == 'ascolto')
+    await fabio.evaluate("const d=new Date(Date.now()+5*60e3); document.querySelector('#evWhen').value=new Date(d-d.getTimezoneOffset()*60e3).toISOString().slice(0,16)")
+    await fabio.click('#evMembers label:has-text("Elena") input')
+    await fabio.click('[data-a=evVis][data-v=invite]')
+    await fabio.evaluate("eventCreate()"); await fabio.wait_for_selector('.evhead', timeout=5000)
+    check('ascolto in corso con le tracce del disco', await fabio.evaluate("!!document.querySelector('.evchip.live') && document.querySelectorAll('#evTrack option').length === 3"))
+    await fabio.select_option('#evTrack', index=1); await fabio.fill('#evText', 'Che attacco!')
+    await fabio.evaluate("document.querySelector('#evForm').requestSubmit()")
+    await fabio.wait_for_function("document.querySelector('#emsgs').textContent.includes('[A1. So What] Che attacco!')", timeout=5000)
+    check('commento in diretta legato alla traccia', True)
+    # Elena vede l'invito, risponde Partecipo e scarica il calendario
+    await elena.evaluate("S.commUnreadAt=0; commUnreadCheck()"); await elena.wait_for_timeout(400)
+    check('invito segnalato nella linguetta', await elena.evaluate("S.commInvites") == 1)
+    await elena.evaluate("S.commSeg='eventi'; go('community', null, true)"); await elena.wait_for_selector('.evcard', timeout=5000)
+    check('evento solo-invitati visibile all\'invitata', 'Sei invitato' in await elena.evaluate("document.querySelector('.evcard').textContent"))
+    await elena.click('.evcard'); await elena.wait_for_selector('.evrsvp', timeout=5000)
+    await elena.click('[data-a=rsvp][data-v=si]'); await elena.wait_for_function("document.querySelector('.evrsvp .on') && document.querySelector('.evrsvp .on').dataset.v==='si'", timeout=5000)
+    check('risposta Partecipo', 'Elena' in await elena.evaluate("document.querySelector('.evrsvp').nextElementSibling.textContent"))
+    async with elena.expect_download() as dl:
+        await elena.evaluate("navigator.canShare=null; eventIcs()")
+    ics = open(await (await dl.value).path()).read()
+    check('file calendario con promemoria', 'BEGIN:VEVENT' in ics and 'TRIGGER:-P1D' in ics and 'Kind of Blue' in ics)
+    # Nuovo: condividi un pezzo con un commento e nuova conversazione
+    await fabio.evaluate("closeSheet(); S.commSeg='bacheca'; go('community', null, true)"); await fabio.wait_for_selector('[data-a=commNew]', timeout=5000)
+    await fabio.click('[data-a=commNew]'); await fabio.click('[data-a=newShare]'); await fabio.click('[data-a=pickDo]')
+    await fabio.fill('#shNote', 'Stampa italiana del 1959, suona benissimo'); await fabio.click('#shGo')
+    await fabio.wait_for_function("document.querySelector('#commList') && document.querySelector('#commList').textContent.includes('suona benissimo')", timeout=8000)
+    check('pezzo condiviso con commento in bacheca', True)
+    # Elena commenta il pezzo condiviso da Fabio dalla bacheca
+    await elena.evaluate("closeSheet(); S.commSeg='bacheca'; go('community', null, true)")
+    await elena.wait_for_function("document.querySelector('#commList') && document.querySelector('#commList').textContent.includes('suona benissimo')", timeout=8000)
+    await elena.evaluate("const i=S.commBoard.findIndex(x=>x.type==='share'&&x.note); boardOpen(i)"); await elena.wait_for_selector('#discForm', timeout=5000)
+    await elena.fill('#discForm textarea', 'Che bella stampa!'); await elena.evaluate("document.querySelector('#discForm').requestSubmit()")
+    await elena.wait_for_function("document.querySelector('#discList') && document.querySelector('#discList').textContent.includes('Che bella stampa')", timeout=5000)
+    check('commento su un pezzo condiviso', True)
+    await fabio.click('[data-a=commNew]'); await fabio.click('[data-a=newChat]'); await fabio.wait_for_selector('#chatTo', timeout=5000)
+    await fabio.select_option('#chatTo', label='Elena'); await fabio.fill('#chatText', 'Ciao Elena!'); await fabio.click('#chatGo')
+    await fabio.wait_for_selector('#msgs .msg', timeout=5000)
+    check('nuova conversazione', 'Ciao Elena' in await fabio.evaluate("document.querySelector('#msgs').textContent"))
+    await fabio.evaluate("closeSheet(); go('home', null, true)")
+    check('Aggiungi solo in Collezione', await fabio.evaluate("!document.querySelector('.fab')"))
+    check('nessun errore JavaScript', not (e1 + e2), e1 + e2)
+
 async def t_batch_import(b, base):
     print('\nScansione a raffica e importazione')
     page, errs = await new_page(b, base)
@@ -490,7 +575,7 @@ async def main():
     base = serve()
     async with async_playwright() as pw:
         b = await pw.chromium.launch()
-        for t in (t_basics, t_check_and_value, t_auto_online, t_book_rating, t_community, t_exchange, t_batch_import, t_cover, t_sync, t_silent_login, t_home):
+        for t in (t_basics, t_check_and_value, t_auto_online, t_book_rating, t_community, t_exchange, t_events, t_batch_import, t_cover, t_sync, t_silent_login, t_home):
             try: await t(b, base)
             except Exception as e: check(t.__name__ + ' (eccezione)', False, repr(e)[:300])
         await b.close()
