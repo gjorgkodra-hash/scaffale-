@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.5.0';
+const VERSION = '2.6.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -2228,6 +2228,9 @@ const NEWS = {
   '2.5': [
     ['Home Novità', 'La prima pagina mostra i nuovi album dei tuoi artisti, i nuovi libri dei tuoi autori, i film al cinema e cosa stai leggendo.'],
   ],
+  '2.6': [
+    ['Nuovi album e nuovi libri', 'Nella Home anche le uscite della settimana, non solo quelle dei tuoi artisti e autori.'],
+  ],
   '2.4': [
     ['Copie automatiche', 'Ogni giorno Spinyl tiene una copia della collezione su Drive (le ultime 10): da Impostazioni puoi tornare indietro.'],
     ['Accesso a Google più comodo', 'Quando l’accesso scade, Spinyl lo rinnova da solo se sei ancora collegato a Google. E le modifiche fatte su due telefoni non si sovrascrivono più.'],
@@ -2362,10 +2365,12 @@ const FEED_ROWS = [
   { key: 'artisti', title: 'Dai tuoi artisti', icon: '💿', need: () => topNames(i => isMusic(i.tipo)).length },
   { key: 'autori', title: 'Dai tuoi autori', icon: '📚', need: () => topNames(i => i.tipo === 'libro').length },
   { key: 'registi', title: 'Dai tuoi registi', icon: '🎞️', need: () => cfg('tmdbKey') && topNames(i => i.tipo === 'film').length },
+  { key: 'album', title: 'Nuovi album', icon: '🎧', need: () => true },
+  { key: 'libri', title: 'Nuovi libri', icon: '📖', need: () => true },
   { key: 'cinema', title: 'Al cinema', icon: '🎬', need: () => cfg('tmdbKey') },
   { key: 'arrivo', title: 'In arrivo al cinema', icon: '🍿', need: () => cfg('tmdbKey') },
   { key: 'offerte', title: 'Desideri in vendita', icon: '⭐', need: () => cfg('discogsToken') && live().some(i => i.desiderio && isMusic(i.tipo)) },
-  { key: 'continua', title: 'Continua', icon: '📖', local: true },
+  { key: 'continua', title: 'Continua', icon: '🔖', local: true },
   { key: 'ricorda', title: 'Da ricordare', icon: '⏰', local: true },
   { key: 'annofa', title: 'Un anno fa', icon: '🕰️', local: true },
 ];
@@ -2456,8 +2461,36 @@ async function feedOffers() {
   }
   return out.sort((a, b) => a.prezzo - b.prezzo);
 }
+// Nuovi album della settimana (Deezer, gratuito; risponde solo in modalità JSONP)
+async function feedAlbums() {
+  const d = await jsonp('https://api.deezer.com/editorial/0/releases?limit=25&output=jsonp');
+  return (d.data || []).map(a => ({ tipo: 'vinile', titolo: a.title, autore: (a.artist || {}).name || '', anno: year(a.release_date), uscita: a.release_date || '',
+    coverUrl: a.cover_big || a.cover_medium || '', fonte: 'Deezer' })).sort((a, b) => String(b.uscita).localeCompare(String(a.uscita))).slice(0, 18);
+}
+// Nuovi libri nella lingua dell'app, nei generi che leggi di più (o narrativa)
+async function feedBooks() {
+  const since = isoDay(Date.now() - 120 * 864e5); const key = cfg('booksKey');
+  const g = new Map(); live().filter(i => i.tipo === 'libro' && i.genere).forEach(i => String(i.genere).split(/[,/]/).map(x => x.trim()).filter(x => /^[\p{L} ]{3,30}$/u.test(x)).forEach(x => g.set(x, (g.get(x) || 0) + 1)));
+  const subjects = [...g.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map(e => e[0]);
+  if (!subjects.length) subjects.push('fiction');
+  const out = [];
+  await Promise.all(subjects.map(async sub => {
+    const url = `https://www.googleapis.com/books/v1/volumes?maxResults=30&printType=books&orderBy=newest&langRestrict=${LNG()}&q=` + encodeURIComponent(`subject:${sub}`);
+    let d; try { d = await fj(url + (key ? '&key=' + encodeURIComponent(key) : '')); } catch (e) { try { d = await fj(url); } catch (e2) { return; } }
+    (d.items || []).forEach(it => {
+      const v = it.volumeInfo || {}; const pub = String(v.publishedDate || '');
+      let img = v.imageLinks && (v.imageLinks.thumbnail || v.imageLinks.smallThumbnail);
+      if (!img || pub.length < 7 || pub < since.slice(0, pub.length) || pub > isoDay(Date.now() + 90 * 864e5)) return;
+      img = img.replace('http://', 'https://').replace('&edge=curl', '');
+      const ids = v.industryIdentifiers || []; const isbn = ids.find(x => x.type === 'ISBN_13') || ids[0];
+      out.push({ tipo: 'libro', titolo: [v.title, v.subtitle].filter(Boolean).join(': '), autore: (v.authors || []).join(', '), anno: year(pub), uscita: pub,
+        editore: v.publisher || '', descrizione: stripHtml(v.description), coverUrl: img, codice: isbn ? isbn.identifier : '', pagine: v.pageCount || '', genere: sub === 'fiction' ? '' : sub, fonte: 'Google Libri' });
+    });
+  }));
+  return dedupeFeed(out).sort((a, b) => String(b.uscita).localeCompare(String(a.uscita))).slice(0, 18);
+}
 const dedupeFeed = L => { const seen = new Set(); return L.filter(c => { const k = c.tipo + '|' + norm(c.titolo) + '|' + norm(String(c.autore || '').split(',')[0]); if (seen.has(k)) return false; seen.add(k); return true; }); };
-const FEED_FETCH = { cinema: () => feedTmdb('now_playing'), arrivo: () => feedTmdb('upcoming'), artisti: feedArtists, autori: feedAuthors, registi: feedDirectors, offerte: feedOffers };
+const FEED_FETCH = { album: feedAlbums, libri: feedBooks, cinema: () => feedTmdb('now_playing'), arrivo: () => feedTmdb('upcoming'), artisti: feedArtists, autori: feedAuthors, registi: feedDirectors, offerte: feedOffers };
 
 let feedLoading = false, feedAgain = false;
 // "Firma" della collezione: se cambiano artisti, autori, registi o desideri, le novità si ricalcolano

@@ -119,6 +119,8 @@ def make_route(no_vision=False):
         if h == 'coverartarchive.org': return await r.fulfill(status=404, body='')
         if h == 'www.googleapis.com' and '/books/' in p.path:
             qq = q.get('q', [''])[0]
+            if 'subject:' in qq and 'newest' in u:
+                return await J({'items': [{'volumeInfo': {'title': 'Romanzo appena uscito', 'authors': ['Autrice Nuova'], 'publishedDate': '2026-09-15', 'imageLinks': {'thumbnail': 'https://img.test/a.png'}}}]})
             if 'inauthor' in qq and 'Rowling' in qq:
                 return await J({'items': [{'volumeInfo': {'title': 'Il nuovo libro', 'authors': ['J.K. Rowling'], 'publishedDate': '2026-09-01'}}, {'volumeInfo': {'title': 'Vecchio libro', 'authors': ['J.K. Rowling'], 'publishedDate': '2001-01-01'}}]})
             if '9788806219352' in qq: return await J({'items': [{'volumeInfo': {'title': 'Il nome della rosa', 'authors': ['Umberto Eco'], 'publishedDate': '1980', 'industryIdentifiers': [{'type': 'ISBN_13', 'identifier': '9788806219352'}]}}]})
@@ -126,6 +128,10 @@ def make_route(no_vision=False):
         if h == 'openlibrary.org': return await J({'docs': []} if p.path == '/search.json' else {})
         if h == 'itunes.apple.com':
             cb = q.get('callback', [''])[0]; return await r.fulfill(status=200, content_type='text/javascript', body=f'{cb}({{"results":[]}});')
+        if h == 'api.deezer.com':
+            cb = q.get('callback', [''])[0]
+            data = {'data': [{'title': 'Album della settimana', 'release_date': '2026-10-09', 'cover_big': 'https://img.test/b.png', 'artist': {'name': 'Artista Nuovo'}}]}
+            return await r.fulfill(status=200, content_type='text/javascript', body=f'{cb}({json.dumps(data)});')
         if h == 'api.upcitemdb.com': return await J({'items': []})
         if h == 'www.wikidata.org': return await J({'search': [], 'entities': {}})
         return await r.abort()
@@ -262,9 +268,11 @@ async def t_home(b, base):
     await page.evaluate("S.main='home'; go('home', null, true)")
     await page.wait_for_function("!feedLoading && S.feed && S.feed.rows && S.feed.rows.artisti", timeout=30000); await page.wait_for_timeout(300)
     rows = await page.evaluate("[...document.querySelectorAll('.feedrow')].map(r=>r.dataset.row)")
-    for k in ['continua', 'ricorda', 'cinema', 'arrivo', 'artisti', 'autori', 'registi']:
+    for k in ['continua', 'ricorda', 'cinema', 'arrivo', 'artisti', 'autori', 'registi', 'album', 'libri']:
         check(f'riga {k}', k in rows, rows)
     check('in arrivo: solo film futuri', await page.evaluate("S.feed.rows.arrivo.map(f=>f.titolo).join()") == 'Film in arrivo')
+    check('nuovi album da Deezer', await page.evaluate("S.feed.rows.album.map(f=>f.titolo).join()") == 'Album della settimana')
+    check('nuovi libri', await page.evaluate("S.feed.rows.libri.map(f=>f.titolo).join()") == 'Romanzo appena uscito')
     check('autori: solo libri recenti', await page.evaluate("S.feed.rows.autori.map(f=>f.titolo).join()") == 'Il nuovo libro')
     await page.screenshot(path=os.path.join(os.path.dirname(__file__), 'home.png'), full_page=True)
     n0 = await page.evaluate("live().filter(i=>i.desiderio).length")

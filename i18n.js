@@ -242,6 +242,8 @@
     ['Da Goodreads, Letterboxd e Discogs; tabella CSV per Excel.', 'From Goodreads, Letterboxd and Discogs; CSV table for Excel.', 'Desde Goodreads, Letterboxd y Discogs; tabla CSV para Excel.'],
 
     // Versione 2.5 — Home "Novità"
+    ['Nuovi album', 'New albums', 'Nuevos álbumes'], ['Nuovi libri', 'New books', 'Nuevos libros'], ['Nuovi album e nuovi libri', 'New albums and new books', 'Nuevos álbumes y libros'],
+    ['Nella Home anche le uscite della settimana, non solo quelle dei tuoi artisti e autori.', 'The home page now also shows this week’s releases, not just those from your artists and authors.', 'El inicio muestra también los lanzamientos de la semana, no solo los de tus artistas y autores.'],
     ['Novità', 'What’s new', 'Novedades'], ['Collezione', 'Collection', 'Colección'], ['Continua', 'Continue', 'Continuar'],
     ['Da ricordare', 'To remember', 'Para recordar'], ['Al cinema', 'In cinemas', 'En cines'], ['In arrivo al cinema', 'Coming to cinemas', 'Próximamente en cines'],
     ['Dai tuoi artisti', 'From your artists', 'De tus artistas'], ['Dai tuoi autori', 'From your authors', 'De tus autores'], ['Dai tuoi registi', 'From your directors', 'De tus directores'],
