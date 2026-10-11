@@ -1,5 +1,5 @@
 // Scaffale — service worker: l'app funziona anche offline
-const VERSION = 'scaffale-v2.12.1';
+const VERSION = 'scaffale-v2.13.0';
 const SHELL = ['./', './index.html', './app.css', './app.js', './i18n.js', './config.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 const LIBS = /(unpkg\.com|cdn\.jsdelivr\.net|fastly\.jsdelivr\.net)\/(npm\/)?(@zxing|barcode-detector|zxing-wasm|tesseract)|tessdata\.projectnaptha\.com|fonts\.(googleapis|gstatic)\.com/;
@@ -29,4 +29,21 @@ self.addEventListener('fetch', e => {
     if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); }
     return res;
   }).catch(() => caches.match(req, { ignoreSearch: true }).then(hit => hit || caches.match('./index.html'))));
+});
+
+// Notifiche push della Community (arrivano anche con l'app chiusa)
+self.addEventListener('push', e => {
+  let d = {}; try { d = e.data ? e.data.json() : {}; } catch (er) { d = { title: 'Spinyl', body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(d.title || 'Spinyl', {
+    body: d.body || '', icon: 'icon-192.png', badge: 'icon-192.png', tag: d.tag || undefined, renotify: !!d.tag, data: { go: d.go || 'notifs' },
+  }));
+});
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const go = (e.notification.data && e.notification.data.go) || 'notifs';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    const c = list.find(w => w.url.startsWith(self.registration.scope));
+    if (c) { c.postMessage({ type: 'push-go', go }); return c.focus(); }
+    return self.clients.openWindow('./?go=' + encodeURIComponent(go));
+  }));
 });

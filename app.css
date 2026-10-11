@@ -612,3 +612,7 @@ label.check { display: flex; gap: 10px; align-items: center; margin: 6px 0 12px;
 /* I filtri della Collezione vanno a capo: si vedono tutti, senza scorrere di lato */
 .chips { flex-wrap: wrap; overflow: visible; row-gap: 8px; }
 .chips .chip { padding-top: 7px; padding-bottom: 7px; font-size: 14px; }
+.pushhint { display: flex; flex-direction: column; gap: 6px; background: var(--card); border: 2px solid var(--cd); border-radius: var(--r); padding: 14px 16px; margin: 0 0 14px; }
+.pushhint span { color: var(--muted); font-size: 13px; }
+.pushhint b span { color: var(--ink); font-size: 15px; }
+.pushhint .btn { align-self: flex-start; margin-top: 4px; }

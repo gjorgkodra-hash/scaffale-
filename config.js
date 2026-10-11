@@ -24,6 +24,10 @@ window.SCAFFALE_CONFIG = {
   COMMUNITY_URL: 'https://rixpxmjphydezosyhjzz.supabase.co/functions/v1/community',
   COMMUNITY_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpeHB4bWpwaHlkZXpvc3loanp6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE3MzkyNjksImV4cCI6MjEwNzMxNTI2OX0.o9W_h4lbs3aPz7qeC09UbbhqTUa11OU6KehENucmQEo',
 
+  // Notifiche push: funzione Supabase che registra il telefono + chiave pubblica VAPID (pubblica per natura)
+  PUSH_URL: 'https://rixpxmjphydezosyhjzz.supabase.co/functions/v1/push',
+  VAPID_PUBLIC: 'BIXQo58Vyrqy2dFBPiHC7Gcha8DApvlZBO0C6ytJYTfPk5LTV-J51yHmQpHintAbGJbG1Er0-VKwmBj8wbNFpE8',
+
   // NON inserire qui il token Discogs: questo file è pubblico e il token dà accesso all'account.
   // Ogni utente lo mette nelle Impostazioni dell'app.
   DISCOGS_TOKEN: ''

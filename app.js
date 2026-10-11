@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.12.1';
+const VERSION = '2.13.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -2329,6 +2329,9 @@ const NEWS = {
   '2.5': [
     ['Home Novità', 'La prima pagina mostra i nuovi album dei tuoi artisti, i nuovi libri dei tuoi autori, i film al cinema e cosa stai leggendo.'],
   ],
+  '2.13': [
+    ['Notifiche sul telefono', "Attivale in Community: commenti, messaggi, inviti e offerte arrivano anche con l'app chiusa. Su iPhone serve aggiungere Spinyl alla schermata Home."],
+  ],
   '2.12': [
     ['Notifiche', 'La campanella in Community ti avvisa di commenti ai tuoi post, risposte, inviti, chi partecipa ai tuoi eventi e pezzi che cerchi messi in vendita, in prestito o in regalo. Con suono e vibrazione (si possono spegnere nelle Impostazioni).'],
   ],
@@ -2641,6 +2644,7 @@ function commSettingsHTML() {
   const me = commMe();
   return `<div class="section"><h3>Community</h3>
     ${me ? `<p class="note">Sei dentro come <b translate="no">${esc(me.nick)}</b>${me.admin ? ' · amministratore' : ''}. Ogni invito vale per 5 amici.</p>
+      ${pushSupported() ? `<label class="field inline"><span>Notifiche sul telefono (anche ad app chiusa)</span><input type="checkbox" id="pushT" ${pushOn() ? 'checked' : ''}></label>` : (isIOS() && !isStandalone() ? '<p class="note">Per le notifiche sul telefono aggiungi Spinyl alla schermata Home e aprila da lì.</p>' : '')}
       <label class="field inline"><span>Suono e vibrazione per le notifiche</span><input type="checkbox" id="commSoundT" ${soundOn() ? 'checked' : ''}></label>
       <div class="stack"><button class="btn block" data-a="commInvite">${ic('share', 18)}Invita un amico</button></div>`
     : `<p class="note">Recensioni e commenti tra amici. Si entra con un codice invito.</p><div class="stack"><button class="btn block" data-a="commJoin">Entra nella community</button></div>`}</div>`;
@@ -2708,6 +2712,7 @@ function viewCommunity() {
       <button class="btn primary" data-a="commJoin">Entra nella community</button></div>`;
   else body = `<div class="cme"><div><span class="note">Sei dentro come</span><b translate="no">${esc(me.nick)}</b></div>
       <div class="cmebtns"><button class="iconbtn bell" data-a="notifsOpen" aria-label="Notifiche">🔔${S.commNotifs ? `<i class="badge">${S.commNotifs}</i>` : ''}</button><button class="btn" data-a="commInvite">${ic('share', 18)}Invita</button></div></div>
+    ${pushHintHTML()}
     <div class="seg cseg four">${[['bacheca', 'Bacheca'], ['eventi', 'Eventi'], ['scambi', 'Scambi'], ['messaggi', 'Messaggi']].map(([k, l]) => `<button class="${seg === k ? 'on' : ''}" data-a="commSeg" data-v="${k}">${l}${k === 'messaggi' && S.commUnread ? `<i class="badge">${S.commUnread}</i>` : k === 'eventi' && S.commInvites ? `<i class="badge">${S.commInvites}</i>` : ''}</button>`).join('')}</div>
     <div id="commList">${loadingHTML('Carico…')}</div>`;
   return `${mainHeader('community')}<div class="home commtab">${body}</div>${me ? `<button class="fab" data-a="commNew">${ic('plus')}Nuovo</button>` : ''}`;
@@ -3118,6 +3123,61 @@ function notifGo(i) {
   if (d.type === 'review') return discussionOpen({ type: 'review', id: d.id });
   if (d.type === 'share' || x.kind === 'offer') return discussionOpen({ type: 'share', member: d.member, work: d.work, kind: d.kind || 'own' });
 }
+
+// ── Notifiche push (anche ad app chiusa) ──
+const PUSH_URL = BASE.PUSH_URL || '', VAPID = BASE.VAPID_PUBLIC || '';
+const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent);
+const isStandalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+const pushSupported = () => !!(PUSH_URL && VAPID && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window);
+const pushOn = () => { try { return localStorage.getItem('pushOn') === '1' && Notification.permission === 'granted'; } catch (e) { return false; } };
+const u8 = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
+async function pushCall(body) {
+  const tok = Drive.token(); if (!tok) throw new CommErr(401, 'login');
+  const r = await fetch(PUSH_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + COMM_KEY, apikey: COMM_KEY, 'x-google-token': tok }, body: JSON.stringify(body) });
+  if (!r.ok) throw new CommErr(r.status, (await r.json().catch(() => ({}))).error || 'errore');
+  return r.json();
+}
+function pushHintHTML() {
+  if (!commMe() || pushOn()) return '';
+  if (isIOS() && !isStandalone()) return `<div class="pushhint"><b>🔔 <span>Notifiche sul telefono</span></b><span>Su iPhone: tocca Condividi › Aggiungi alla schermata Home, poi apri Spinyl da lì e attiva le notifiche.</span></div>`;
+  if (!pushSupported()) return '';
+  if (Notification.permission === 'denied') return `<div class="pushhint"><b>🔔 <span>Notifiche bloccate</span></b><span>Le hai bloccate: riattivale dalle impostazioni del telefono per questo sito.</span></div>`;
+  return `<div class="pushhint"><b>🔔 <span>Notifiche sul telefono</span></b><span>Ricevi commenti, messaggi, inviti e offerte anche con l'app chiusa.</span><button class="btn primary" data-a="pushEnable">Attiva le notifiche</button></div>`;
+}
+async function pushEnable(quiet) {
+  if (!pushSupported()) { if (!quiet) toast(isIOS() && !isStandalone() ? 'Prima aggiungi Spinyl alla schermata Home' : 'Questo telefono non supporta le notifiche'); return; }
+  try {
+    const perm = quiet ? Notification.permission : await Notification.requestPermission();
+    if (perm !== 'granted') { if (!quiet) toast('Notifiche non permesse'); return; }
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: u8(VAPID) });
+    await pushCall({ sub: sub.toJSON(), lang: LNG(), test: !quiet });
+    try { localStorage.setItem('pushOn', '1'); localStorage.setItem('pushAt', String(Date.now())); } catch (e) {}
+    if (!quiet) { toast('Notifiche attive'); if (S.view === 'community' || S.view === 'settings') render(); }
+  } catch (e) { console.warn('push', e); if (!quiet) toast(e.code === 401 ? COMM_ERR.login : 'Non riesco ad attivare le notifiche'); }
+}
+async function pushDisable() {
+  try {
+    const reg = await navigator.serviceWorker.ready; const sub = await reg.pushManager.getSubscription();
+    if (sub) { await pushCall({ action: 'unsub', sub: sub.toJSON() }).catch(() => {}); await sub.unsubscribe(); }
+  } catch (e) {}
+  try { localStorage.setItem('pushOn', '0'); } catch (e) {}
+  toast('Notifiche disattivate'); render();
+}
+// Apre il punto giusto quando si tocca una notifica
+async function pushGo(go) {
+  if (!go || !commMe()) return;
+  const [k, id] = String(go).split(':');
+  if (S.view !== 'community') { S.main = 'community'; try { localStorage.setItem('mainTab', 'community'); } catch (e) {} go_('community'); }
+  if (k === 'event') return eventOpen(id);
+  if (k === 'thread') { S.commSeg = 'messaggi'; render(); return threadOpen(id); }
+  if (k === 'post') return postOpen(id);
+  if (k === 'review') return discussionOpen({ type: 'review', id });
+  return notifsOpen();
+}
+const go_ = (v) => go(v, null, true);
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.type === 'push-go') pushGo(e.data.go); });
 
 // ── Blog dell'opera ──
 function postSheet() {
@@ -3607,6 +3667,7 @@ Object.assign(actions, {
   discOffer: () => { const x = S.disc && S.disc.item; if (!x) return; S.commMatch = { tmp: [x] }; offerSheet({ dataset: { m: 'tmp', i: '0', to: x.member, nick: x.nick, mode: x.kind === 'wish' ? 'give' : 'ask' } }); },
   discDel: async el => { if (!confirm(tr('Eliminare il commento?'))) return; try { await comm('delete', { kind: 'comment', id: el.dataset.id }); discussionOpen(S.disc.q); } catch (e) { toast(commErrMsg(e)); } },
   notifsOpen: () => notifsOpen(),
+  pushEnable: () => pushEnable(),
   notifGo: el => notifGo(+el.dataset.i),
   commNew: () => commNew(),
   newChat: () => newChat(),
@@ -3657,6 +3718,7 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.id === 'langSel' && window.I18N) { I18N.set(t.value); location.reload(); return; }
+  if (t.id === 'pushT') { t.checked ? pushEnable() : pushDisable(); return; }
   if (t.id === 'commSoundT') { try { localStorage.setItem('commSound', t.checked ? '1' : '0'); } catch (er) {} if (t.checked) commDing(); }
   if (t.id === 'sort') { S.sort = t.value; localStorage.setItem('sort', S.sort); renderGrid(); }
   if (t.dataset.f && S.draft) S.draft[t.dataset.f] = t.type === 'checkbox' ? t.checked : t.value;
@@ -3708,6 +3770,7 @@ document.addEventListener('visibilitychange', () => {
 (async function init() {
   await DB.open();
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  try { const g = new URLSearchParams(location.search).get('go'); if (g) { S.pushGo = g; history.replaceState(null, '', location.pathname + location.hash); } } catch (e) {}
   try { const inv = new URLSearchParams(location.search).get('invito'); if (inv) { localStorage.setItem('invito', inv.toUpperCase().slice(0, 12)); history.replaceState(null, '', location.pathname + location.hash); S.openJoin = true; } } catch (e) {}
   const justLogged = Drive.handleRedirect();
   await loadItems();
@@ -3718,7 +3781,12 @@ document.addEventListener('visibilitychange', () => {
   history.replaceState({ view: S.main }, '');
   if (window.I18N) I18N.start();
   render();
-  if (commMe()) setTimeout(() => { commUnreadCheck(); commSharesSoon(100); }, 3000);
+  if (commMe()) setTimeout(() => {
+    commUnreadCheck(); commSharesSoon(100);
+    if (S.pushGo) { const g = S.pushGo; S.pushGo = null; pushGo(g); }
+    let at = 0; try { at = +localStorage.getItem('pushAt') || 0; } catch (e) {}
+    if (pushOn() && Date.now() - at > 864e5) pushEnable(true); // tiene aggiornata l'iscrizione
+  }, 1500);
   if (S.openJoin && !commMe() && COMM_URL) setTimeout(() => Drive.token() ? commJoinSheet() : toast('Collega Google Drive (icona nuvola), poi entra nella community dalle Impostazioni', 6000), 900);
   if (localStorage.getItem('gtoken')) localStorage.setItem('gEverLogged', '1'); // chi ha già fatto l'accesso in passato
   if (cfg('clientId')) {

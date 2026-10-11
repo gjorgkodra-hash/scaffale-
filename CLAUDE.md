@@ -18,3 +18,6 @@ dati in IndexedDB sul telefono, copia su Google Drive dell'utente, pubblicata co
   Dopo modifiche alla funzione: ridistribuirla su Supabase. La chiave `COMMUNITY_KEY` in config.js è la anon key (pubblica).
 - Attenzione negli script Python: `open(f,'w').write(open(f).read()...)` svuota il file prima di leggerlo (è successo due volte a `sw.js`).
   Leggere prima in una variabile, poi scrivere. Il test "sw.js non vuoto" lo segnala: non fare push con test falliti.
+- Notifiche push: funzione Supabase `push` (verify_jwt false). Il database (trigger → `notify()`/`push_send()` con pg_net)
+  la chiama con il segreto `push_secret` del Vault; la chiave VAPID privata è nel Vault (`vapid_jwk`), MAI nel repository.
+  La chiave pubblica VAPID è in config.js e in `supabase/functions/push/index.ts`. Il telefono si iscrive chiamando `push` con il token Google.
