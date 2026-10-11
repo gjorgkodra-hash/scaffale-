@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.6.0';
+const VERSION = '2.6.1';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -53,7 +53,7 @@ const EMPTY = () => ({
   catalogo: '', paese: '', confezione: '', condCustodia: '', numDischi: '', spars: '', matrice: '', ifpi: '',
   tipoNastro: '', riduzione: '', origine: '', lunghezzaNastro: '', marcaNastro: '',
   note: '', commenti: [], foto: [], coverUrl: '', prestatoA: '', prestatoIl: '', desiderio: false,
-  stato: '', serie: '', volume: '', tags: [], valore: '', valoreDiscogs: null, discogsId: '',
+  stato: '', serie: '', volume: '', tags: [], valore: '', valoreDiscogs: null, discogsId: '', votoWeb: null,
   createdAt: Date.now(), updatedAt: Date.now(),
 });
 // Stato di lettura / visione / ascolto
@@ -265,7 +265,7 @@ function coverHTML(it, cls = '') {
 /* ── Render ────────────────────────────────────────────────── */
 function render() {
   const app = $('#app');
-  if (S.view === 'detail' && byId(S.id) && !byId(S.id).deleted) app.innerHTML = viewDetail(byId(S.id));
+  if (S.view === 'detail' && byId(S.id) && !byId(S.id).deleted) { app.innerHTML = viewDetail(byId(S.id)); autoOnline(byId(S.id)); }
   else if (S.view === 'edit' && S.draft) app.innerHTML = viewEdit();
   else if (S.view === 'settings') app.innerHTML = viewSettings();
   else if (S.view === 'stats') app.innerHTML = viewStats();
@@ -458,7 +458,7 @@ function viewDetail(it) {
       <span class="pill t-${it.tipo}">${esc(it.formato || T.label)}</span>${it.desiderio ? '<span class="pill wish">Desiderio</span>' : ''}
       <h2 translate="no">${esc(it.titolo || tr('Senza titolo'))}</h2>
       <div class="who" translate="no">${esc([it.autore, it.anno].filter(Boolean).join(' · '))}</div>
-      ${starsHTML(it.valutazione || 0, 'rateDetail')}
+      ${starsHTML(it.valutazione || 0, 'rateDetail')}${webRateHTML(it)}
     </div>
   </div>
   <div class="detail">
@@ -505,7 +505,8 @@ function valueHTML(it) {
     body += priceTableHTML(v, it.condizione);
     body += `<p class="note value-note"><span>Aggiornato il ${esc(fmtDate(v.at))}</span>${v.match === 'titolo' ? '<br><span>Edizione trovata per titolo: controlla che sia la tua.</span>' : ''}</p>`;
   } else if (tok) body += `<p class="note pnote">Scopri quanto vale questa edizione: Discogs suggerisce un prezzo per ogni condizione, in base alle vendite.</p>`;
-  else body += `<p class="note pnote">Per i prezzi dei dischi inserisci il token Discogs nelle Impostazioni.</p>`;
+  else if (S.autoBusy === it.id) body += `<p class="note pnote">Cerco il prezzo su Discogs…</p>`;
+  else body += `<p class="note pnote">Prezzo non trovato in automatico. Con il token Discogs (Impostazioni) la ricerca è più precisa.</p>`;
   return `<div class="section"><h3>Valore di mercato</h3>${body}${soldLinks(it)}
     ${tok ? `<div class="stack" style="padding-top:2px"><button class="btn block" data-a="valueNow" ${busy ? 'disabled' : ''}>${busy ? 'Controllo su Discogs…' : v ? 'Aggiorna da Discogs' : 'Controlla il valore su Discogs'}</button></div>` : ''}</div>`;
 }
@@ -617,7 +618,7 @@ function viewEdit() {
       ${statiFor(d.tipo).length ? `<div class="field"><span>${d.tipo === 'libro' ? 'Lettura' : d.tipo === 'film' ? 'Visione' : 'Ascolto'}</span><div class="seg" style="grid-template-columns:repeat(${statiFor(d.tipo).length},1fr);margin-top:6px">${statiFor(d.tipo).map(([k, l]) => `<button type="button" class="${d.stato === k ? 'on' : ''}" data-a="draftStato" data-v="${k}">${l}</button>`).join('')}</div></div>` : ''}
       ${M ? `<div class="two">${sel('condizione', 'Condizione ' + T.supporto.toLowerCase(), CONDIZIONI)}${sel('condCustodia', 'Condizione ' + T.custodia.toLowerCase(), CONDIZIONI)}</div>`
         : sel('condizione', 'Condizione', CONDIZIONI)}
-      <div class="two">${f('prezzo', 'Prezzo pagato', 'inputmode="decimal"')}${f('valore', 'Valore stimato', 'inputmode="decimal"')}</div>
+      <div class="two">${f('prezzo', 'Prezzo pagato', 'inputmode="decimal"')}${f('valore', 'Valore stimato', `inputmode="decimal" placeholder="${(() => { const m = marketValue({ ...d, valore: '' }); return m.v ? esc(money(m.v, m.cur)) + ' (Discogs)' : ''; })()}"`)}</div>
       <label class="field"><span>Posizione (es. Salotto, scaffale 2)</span><input data-f="posizione" list="dl-pos" value="${esc(d.posizione)}"></label>
       <label class="field"><span>Etichette (separate da virgola, es. Prima stampa, Autografato)</span><input data-f="tagsTxt" value="${esc(d.tagsTxt != null ? d.tagsTxt : (d.tags || []).join(', '))}" autocomplete="off" translate="no"></label>
       ${allTags.filter(t => !parseTags(d.tagsTxt != null ? d.tagsTxt : (d.tags || []).join(',')).includes(t)).length ? `<div class="tagrow suggest">${allTags.filter(t => !parseTags(d.tagsTxt != null ? d.tagsTxt : (d.tags || []).join(',')).includes(t)).slice(0, 12).map(t => `<button type="button" class="tagchip" data-a="addTag" data-v="${esc(t)}" translate="no">+ ${esc(t)}</button>`).join('')}</div>` : ''}
@@ -1076,6 +1077,7 @@ async function enrich(c) {
       const r = await fj(`https://api.discogs.com/releases/${c._discogsId}?token=${encodeURIComponent(cfg('discogsToken'))}`);
       c.tracklist = (r.tracklist || []).filter(t => t.type_ !== 'heading').map(t => `${t.position ? t.position + '. ' : ''}${t.title}${t.duration ? ' (' + t.duration + ')' : ''}`).join('\n');
       if (r.notes) c.descrizione = stripHtml(r.notes).slice(0, 2000);
+      c.votoWeb = discogsRating(r);
       if (r.images && r.images[0]) c.coverUrl = r.images[0].uri || c.coverUrl;
       const ids = r.identifiers || [];
       const pick = rx => ids.filter(x => rx.test(x.type || '')).map(x => (x.description ? x.description + ': ' : '') + x.value);
@@ -1097,6 +1099,7 @@ async function enrich(c) {
       const m = await fj(`https://api.themoviedb.org/3/movie/${c._tmdbId}?language=${LOC()}&append_to_response=credits&api_key=${k}`);
       c.autore = ((m.credits?.crew || []).filter(x => x.job === 'Director').map(x => x.name)).join(', ');
       c.durata = m.runtime ? m.runtime + ' min' : '';
+      if (m.vote_count >= 5) c.votoWeb = { v: Math.round(m.vote_average * 5) / 10, n: m.vote_count, src: 'TMDB', at: Date.now() };
       c.genere = (m.genres || []).map(g => g.name).join(', ');
       if (!c.descrizione) c.descrizione = m.overview || '';
       const cast = (m.credits?.cast || []).slice(0, 5).map(x => x.name).join(', ');
@@ -1866,6 +1869,8 @@ function priceTableHTML(p, cond) {
   if (p.sugg) {
     h += `<div class="ptable">${GRADE_ORDER.filter(g => p.sugg[g] != null).map(g => `<div class="prow ${g === mine ? 'mine' : ''}"><span class="pg" translate="no">${esc(gradeShort(g))}</span><span class="pl">${esc(GRADE_LABEL[g])}</span>${g === mine ? '<span class="pm">la tua copia</span>' : ''}<b>${esc(money(p.sugg[g], p.scur))}</b></div>`).join('')}</div>
       <p class="note pnote">Prezzi suggeriti da Discogs in base alle vendite, secondo la condizione del disco.</p>`;
+  } else if (p.noTok) {
+    h += `<p class="note pnote">Con il token Discogs (Impostazioni) vedi anche il prezzo per ogni condizione.</p>`;
   } else if (p.suggErr) {
     h += `<p class="note pnote">Mancano i prezzi per condizione: su Discogs apri Settings › Seller Settings, scegli valuta e paese e salva (basta una volta).</p>`;
   }
@@ -1887,10 +1892,58 @@ function soldLinks(it) {
   if (isMusic(it.tipo) && it.discogsId) out.push(['Discogs', `https://www.discogs.com/sell/release/${enc(it.discogsId)}`]);
   return `<div class="links">${out.map(([n, u]) => `<a class="linkbtn" href="${esc(u)}" target="_blank" rel="noopener"><span>${esc(n)}</span><span aria-hidden="true">↗</span></a>`).join('')}</div>`;
 }
+// Voto medio della community Discogs (0–5)
+function discogsRating(r) {
+  const x = r && r.community && r.community.rating;
+  return x && x.count ? { v: Math.round(+x.average * 10) / 10, n: x.count, src: 'Discogs', at: Date.now() } : null;
+}
+function webRateHTML(it) {
+  const w = it.votoWeb; if (!w || !w.v) return '';
+  return `<div class="webrate"><b>★ ${esc(String(w.v).replace('.', LNG() === 'en' ? '.' : ','))}</b><span class="wsrc">${esc(w.src)}</span><span class="wn" translate="no">(${esc(w.n)})</span></div>`;
+}
+// Senza token: trova l'edizione Discogs tramite MusicBrainz (codice a barre)
+async function mbDiscogsId(it) {
+  const code = String(it.codice || '').replace(/\D/g, ''); if (code.length < 8) return null;
+  const d = await fj('https://musicbrainz.org/ws/2/release/?fmt=json&limit=3&query=' + encodeURIComponent('barcode:' + code));
+  for (const rel of (d.releases || []).slice(0, 2)) {
+    await sleep(1100);
+    const r = await fj(`https://musicbrainz.org/ws/2/release/${rel.id}?inc=url-rels&fmt=json`);
+    const u = (r.relations || []).map(x => (x.url || {}).resource || '').find(x => /discogs\.com\/release\/\d+/.test(x));
+    if (u) return { id: u.match(/release\/(\d+)/)[1], match: 'barcode' };
+  }
+  return null;
+}
+// Prezzo e voto online in automatico quando apri un disco (al massimo una volta ogni 2 settimane)
+const AUTO_TRIED = new Set();
+async function autoOnline(it) {
+  if (!it || !isMusic(it.tipo) || S.autoBusy || S.valuing || AUTO_TRIED.has(it.id) || !navigator.onLine) return;
+  const old = x => !x || !x.at || Date.now() - x.at > 14 * 864e5;
+  if (!old(it.valoreDiscogs) && it.votoWeb) return;
+  AUTO_TRIED.add(it.id); S.autoBusy = it.id;
+  const tok = cfg('discogsToken'); const T = tok ? `?token=${encodeURIComponent(tok)}` : '';
+  try {
+    const m = it.discogsId ? { id: String(it.discogsId), match: 'id' } : tok ? await discogsLookupId(it) : await mbDiscogsId(it);
+    if (!m) return;
+    const cur = byId(it.id) || it;
+    const [rel, pr] = await Promise.allSettled([
+      fj(`https://api.discogs.com/releases/${encodeURIComponent(m.id)}${T}`),
+      old(cur.valoreDiscogs) ? (tok ? discogsPrices(m.id) : fj(`https://api.discogs.com/marketplace/stats/${encodeURIComponent(m.id)}?curr_abbr=EUR`).then(s => ({
+        min: s.lowest_price && s.lowest_price.value != null ? +s.lowest_price.value : null, cur: (s.lowest_price && s.lowest_price.currency) || 'EUR', n: s.num_for_sale || 0,
+        sugg: null, scur: 'EUR', noTok: true, at: Date.now() }))) : Promise.resolve(null),
+    ]);
+    const now = byId(it.id); if (!now || now.deleted) return;
+    let ch = false;
+    if (rel.status === 'fulfilled') { const w = discogsRating(rel.value); if (w) { now.votoWeb = w; ch = true; } }
+    if (pr.status === 'fulfilled' && pr.value) { const prev = now.valoreDiscogs && now.valoreDiscogs.match; now.valoreDiscogs = { ...pr.value, match: m.match === 'id' ? (prev || 'id') : m.match }; ch = true; }
+    if (ch || !now.discogsId) { now.discogsId = m.id; await saveItem(now); }
+  } catch (e) { console.warn('autoOnline', e); }
+  finally { S.autoBusy = null; if (S.view === 'detail' && S.id === it.id && $('#sheetWrap').classList.contains('hidden')) render(); }
+}
 async function valueNow() {
   const it = byId(S.id); if (!it || S.valuing) return;
   S.valuing = { id: it.id }; render();
-  try { toast(await discogsValue(it) ? 'Valore aggiornato' : 'Edizione non trovata su Discogs'); }
+  try { const ok = await discogsValue(it); toast(ok ? 'Valore aggiornato' : 'Edizione non trovata su Discogs');
+    if (ok) { try { const w = discogsRating(await fj(`https://api.discogs.com/releases/${encodeURIComponent(it.discogsId)}?token=${encodeURIComponent(cfg('discogsToken'))}`)); if (w) { it.votoWeb = w; await saveItem(it); } } catch (e) {} } }
   catch (e) { toast('Discogs non risponde: riprova tra poco'); }
   S.valuing = null; if (S.view === 'detail') render();
 }
@@ -2230,6 +2283,7 @@ const NEWS = {
   ],
   '2.6': [
     ['Nuovi album e nuovi libri', 'Nella Home anche le uscite della settimana, non solo quelle dei tuoi artisti e autori.'],
+    ['Prezzo e voto in automatico', 'Quando apri un disco, Spinyl cerca da solo il prezzo su Discogs e il voto medio della community.'],
   ],
   '2.4': [
     ['Copie automatiche', 'Ogni giorno Spinyl tiene una copia della collezione su Drive (le ultime 10): da Impostazioni puoi tornare indietro.'],

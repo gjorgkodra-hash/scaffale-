@@ -497,3 +497,6 @@ details.adv summary { padding: 12px 0; color: var(--muted); font-size: 14px; cur
 .spinner.sm { width: 14px; height: 14px; border-width: 2px; display: inline-block; }
 .home-foot { text-align: center; margin: 18px 16px 0; }
 .home-foot .more { padding: 0; font-size: 13px; }
+
+.webrate { display: flex; align-items: baseline; gap: 6px; font-size: 14px; color: var(--muted); margin-top: 2px; }
+.webrate b { color: var(--ink); font-weight: 700; }

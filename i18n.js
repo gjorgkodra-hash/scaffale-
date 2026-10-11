@@ -242,7 +242,12 @@
     ['Da Goodreads, Letterboxd e Discogs; tabella CSV per Excel.', 'From Goodreads, Letterboxd and Discogs; CSV table for Excel.', 'Desde Goodreads, Letterboxd y Discogs; tabla CSV para Excel.'],
 
     // Versione 2.5 — Home "Novità"
-    ['Nuovi album', 'New albums', 'Nuevos álbumes'], ['Nuovi libri', 'New books', 'Nuevos libros'], ['Nuovi album e nuovi libri', 'New albums and new books', 'Nuevos álbumes y libros'],
+    ['Nuovi album', 'New albums', 'Nuevos álbumes'],
+    ['Prezzo e voto in automatico', 'Automatic price and rating', 'Precio y valoración automáticos'],
+    ['Quando apri un disco, Spinyl cerca da solo il prezzo su Discogs e il voto medio della community.', 'When you open a record, Spinyl looks up its Discogs price and community rating by itself.', 'Al abrir un disco, Spinyl busca solo su precio en Discogs y la valoración media de la comunidad.'],
+    ['Cerco il prezzo su Discogs…', 'Looking up the price on Discogs…', 'Buscando el precio en Discogs…'],
+    ['Prezzo non trovato in automatico. Con il token Discogs (Impostazioni) la ricerca è più precisa.', 'Price not found automatically. With a Discogs token (Settings) the search is more accurate.', 'Precio no encontrado automáticamente. Con el token de Discogs (Ajustes) la búsqueda es más precisa.'],
+    ['Con il token Discogs (Impostazioni) vedi anche il prezzo per ogni condizione.', 'With a Discogs token (Settings) you also see the price for each condition.', 'Con el token de Discogs (Ajustes) ves también el precio para cada estado.'], ['Nuovi libri', 'New books', 'Nuevos libros'], ['Nuovi album e nuovi libri', 'New albums and new books', 'Nuevos álbumes y libros'],
     ['Nella Home anche le uscite della settimana, non solo quelle dei tuoi artisti e autori.', 'The home page now also shows this week’s releases, not just those from your artists and authors.', 'El inicio muestra también los lanzamientos de la semana, no solo los de tus artistas y autores.'],
     ['Novità', 'What’s new', 'Novedades'], ['Collezione', 'Collection', 'Colección'], ['Continua', 'Continue', 'Continuar'],
     ['Da ricordare', 'To remember', 'Para recordar'], ['Al cinema', 'In cinemas', 'En cines'], ['In arrivo al cinema', 'Coming to cinemas', 'Próximamente en cines'],

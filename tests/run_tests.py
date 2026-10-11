@@ -97,7 +97,7 @@ def make_route(no_vision=False):
             if p.path.startswith('/marketplace/price_suggestions/'):
                 return await J({g: {'currency': 'EUR', 'value': round(30 * f, 2)} for g, f in zip(GRADES, [1, .8, .6, .42, .3, .22, .14, .08])})
             if p.path.startswith('/marketplace/stats/'): return await J({'lowest_price': {'value': 18.5, 'currency': 'EUR'}, 'num_for_sale': 23})
-            if p.path.startswith('/releases/'): return await J({'tracklist': [{'position': 'A1', 'title': 'Speak to Me', 'type_': 'track'}], 'images': [{'uri': 'https://img.test/f.png'}], 'identifiers': [], 'labels': []})
+            if p.path.startswith('/releases/'): return await J({'tracklist': [{'position': 'A1', 'title': 'Speak to Me', 'type_': 'track'}], 'images': [{'uri': 'https://img.test/f.png'}], 'identifiers': [], 'labels': [], 'community': {'rating': {'average': 4.56, 'count': 321}}})
             if p.path == '/database/search':
                 bc = q.get('barcode', [''])[0]; qq = q.get('q', [''])[0].lower()
                 if bc.startswith('0000'): return await J({'results': []})
@@ -106,6 +106,8 @@ def make_route(no_vision=False):
         if h == 'musicbrainz.org':
             if '/release-group/' in p.path:
                 return await J({'release-groups': [{'id': 'rg1', 'title': 'Nuovo album', 'score': 100, 'first-release-date': '2026-09-20', 'primary-type': 'Album', 'artist-credit': [{'name': 'Pink Floyd'}]}]})
+            if q.get('query', [''])[0] == 'barcode:5099902987613': return await J({'releases': [{'id': 'mb1'}]})
+            if p.path.endswith('/mb1'): return await J({'relations': [{'url': {'resource': 'https://www.discogs.com/release/1873013'}}]})
             return await J({'releases': []})
         if h == 'api.themoviedb.org':
             film = lambda i, t, d: {'id': i, 'title': t, 'release_date': d, 'overview': 'Trama di ' + t, 'poster_path': '/p%d.png' % i, 'popularity': 100 - i}
@@ -190,6 +192,19 @@ async def t_check_and_value(b, base):
     await page.evaluate("closeSheet(); S.filter='valore'; go('list')"); await page.wait_for_timeout(300)
     check('tab Valore: totale per categoria', await page.evaluate("document.querySelectorAll('.vgroup').length") >= 3)
     check('nessun errore JavaScript', not errs, errs)
+
+async def t_auto_online(b, base):
+    print('\nPrezzo e voto online in automatico')
+    for tok in ['TEST', '']:
+        page, errs = await new_page(b, base, init=f"localStorage.setItem('cfg_discogsToken','{tok}');")
+        await page.evaluate(SEED, ITEMS)
+        await page.evaluate("go('detail','i1')")
+        await page.wait_for_function("byId('i1').valoreDiscogs && byId('i1').votoWeb && !S.autoBusy", timeout=8000)
+        await page.wait_for_timeout(200)
+        lab = 'con token' if tok else 'senza token (via MusicBrainz)'
+        check(f'prezzo automatico {lab}', await page.evaluate("valueOf(byId('i1'))") > 0)
+        check(f'voto Discogs mostrato {lab}', '4,6' in await page.evaluate("(document.querySelector('.webrate')||{}).textContent||''"))
+        check(f'nessun errore JavaScript {lab}', not errs, errs)
 
 async def t_batch_import(b, base):
     print('\nScansione a raffica e importazione')
@@ -288,7 +303,7 @@ async def main():
     base = serve()
     async with async_playwright() as pw:
         b = await pw.chromium.launch()
-        for t in (t_basics, t_check_and_value, t_batch_import, t_cover, t_sync, t_silent_login, t_home):
+        for t in (t_basics, t_check_and_value, t_auto_online, t_batch_import, t_cover, t_sync, t_silent_login, t_home):
             try: await t(b, base)
             except Exception as e: check(t.__name__ + ' (eccezione)', False, repr(e)[:300])
         await b.close()
