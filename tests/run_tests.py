@@ -127,6 +127,8 @@ def make_route(no_vision=False):
                 return await J({'items': [{'volumeInfo': {'title': 'Il nuovo libro', 'authors': ['J.K. Rowling'], 'publishedDate': '2026-09-01'}}, {'volumeInfo': {'title': 'Vecchio libro', 'authors': ['J.K. Rowling'], 'publishedDate': '2001-01-01'}}]})
             if '9788806219352' in qq: return await J({'items': [{'volumeInfo': {'title': 'Il nome della rosa', 'authors': ['Umberto Eco'], 'publishedDate': '1980', 'industryIdentifiers': [{'type': 'ISBN_13', 'identifier': '9788806219352'}]}}]})
             return await J({'items': []})
+        if h == 'openlibrary.org' and 'ratings_average' in u:
+            return await J({'docs': [{'key': '/works/1', 'ratings_average': 4.123, 'ratings_count': 57}]})
         if h == 'openlibrary.org': return await J({'docs': []} if p.path == '/search.json' else {})
         if h == 'itunes.apple.com':
             cb = q.get('callback', [''])[0]; return await r.fulfill(status=200, content_type='text/javascript', body=f'{cb}({{"results":[]}});')
@@ -205,6 +207,17 @@ async def t_auto_online(b, base):
         check(f'prezzo automatico {lab}', await page.evaluate("valueOf(byId('i1'))") > 0)
         check(f'voto Discogs mostrato {lab}', '4,6' in await page.evaluate("(document.querySelector('.webrate')||{}).textContent||''"))
         check(f'nessun errore JavaScript {lab}', not errs, errs)
+
+async def t_book_rating(b, base):
+    print('\nVoto online dei libri')
+    page, errs = await new_page(b, base)
+    await page.evaluate(SEED, ITEMS)
+    await page.evaluate("go('detail','i2')")
+    await page.wait_for_function("byId('i2').votoWeb && !S.autoBusy", timeout=8000); await page.wait_for_timeout(200)
+    check('voto Open Library mostrato', '4,1' in await page.evaluate("(document.querySelector('.webrate')||{}).textContent||''"))
+    sig = await page.evaluate("JSON.parse(feedSig())[0]")
+    check('la cache della Home dipende dalla versione', sig == await page.evaluate("VERSION"))
+    check('nessun errore JavaScript', not errs, errs)
 
 async def t_batch_import(b, base):
     print('\nScansione a raffica e importazione')
@@ -303,7 +316,7 @@ async def main():
     base = serve()
     async with async_playwright() as pw:
         b = await pw.chromium.launch()
-        for t in (t_basics, t_check_and_value, t_auto_online, t_batch_import, t_cover, t_sync, t_silent_login, t_home):
+        for t in (t_basics, t_check_and_value, t_auto_online, t_book_rating, t_batch_import, t_cover, t_sync, t_silent_login, t_home):
             try: await t(b, base)
             except Exception as e: check(t.__name__ + ' (eccezione)', False, repr(e)[:300])
         await b.close()

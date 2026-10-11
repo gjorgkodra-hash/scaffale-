@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.6.1';
+const VERSION = '2.6.2';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -1913,10 +1913,43 @@ async function mbDiscogsId(it) {
   }
   return null;
 }
+// Voto medio online per libri (Open Library, poi Google Libri) e film (TMDB)
+async function bookRating(it) {
+  const isbn = String(it.codice || '').replace(/[^\dX]/gi, '');
+  const q = isbn.length >= 10 ? 'isbn=' + isbn : 'title=' + encodeURIComponent(it.titolo || '') + (it.autore ? '&author=' + encodeURIComponent(it.autore.split(',')[0]) : '');
+  try {
+    const d = await fj(`https://openlibrary.org/search.json?limit=1&fields=key,ratings_average,ratings_count&${q}`);
+    const b = (d.docs || [])[0];
+    if (b && b.ratings_count >= 3) return { v: Math.round(b.ratings_average * 10) / 10, n: b.ratings_count, src: 'Open Library', at: Date.now() };
+  } catch (e) {}
+  const key = cfg('booksKey');
+  const gq = isbn.length >= 10 ? 'isbn:' + isbn : `intitle:${it.titolo || ''}${it.autore ? ' inauthor:' + it.autore.split(',')[0] : ''}`;
+  const url = 'https://www.googleapis.com/books/v1/volumes?maxResults=3&q=' + encodeURIComponent(gq);
+  let d; try { d = await fj(url + (key ? '&key=' + encodeURIComponent(key) : '')); } catch (e) { d = await fj(url); }
+  const v = ((d.items || []).map(x => x.volumeInfo || {}).find(x => x.ratingsCount));
+  return v ? { v: Math.round(v.averageRating * 10) / 10, n: v.ratingsCount, src: 'Google Libri', at: Date.now() } : null;
+}
+async function filmRating(it) {
+  const k = cfg('tmdbKey'); if (!k || !it.titolo) return null;
+  const d = await fj(`https://api.themoviedb.org/3/search/movie?api_key=${encodeURIComponent(k)}&language=${LOC()}&query=${encodeURIComponent(it.titolo)}${it.anno ? '&year=' + encodeURIComponent(it.anno) : ''}`);
+  const m = (d.results || []).find(x => x.vote_count >= 5);
+  return m ? { v: Math.round(m.vote_average * 5) / 10, n: m.vote_count, src: 'TMDB', at: Date.now() } : null;
+}
+async function autoRating(it) {
+  if (it.votoWeb && Date.now() - (it.votoWeb.at || 0) < 30 * 864e5) return;
+  AUTO_TRIED.add(it.id); S.autoBusy = it.id;
+  try {
+    const w = it.tipo === 'libro' ? await bookRating(it) : await filmRating(it);
+    const now = byId(it.id);
+    if (w && now && !now.deleted) { now.votoWeb = w; await saveItem(now); }
+  } catch (e) { console.warn('autoRating', e); }
+  finally { S.autoBusy = null; if (S.view === 'detail' && S.id === it.id && $('#sheetWrap').classList.contains('hidden')) render(); }
+}
 // Prezzo e voto online in automatico quando apri un disco (al massimo una volta ogni 2 settimane)
 const AUTO_TRIED = new Set();
 async function autoOnline(it) {
-  if (!it || !isMusic(it.tipo) || S.autoBusy || S.valuing || AUTO_TRIED.has(it.id) || !navigator.onLine) return;
+  if (!it || S.autoBusy || S.valuing || AUTO_TRIED.has(it.id) || !navigator.onLine) return;
+  if (!isMusic(it.tipo)) return (it.tipo === 'libro' || it.tipo === 'film') ? autoRating(it) : undefined;
   const old = x => !x || !x.at || Date.now() - x.at > 14 * 864e5;
   if (!old(it.valoreDiscogs) && it.votoWeb) return;
   AUTO_TRIED.add(it.id); S.autoBusy = it.id;
@@ -2284,6 +2317,7 @@ const NEWS = {
   '2.6': [
     ['Nuovi album e nuovi libri', 'Nella Home anche le uscite della settimana, non solo quelle dei tuoi artisti e autori.'],
     ['Prezzo e voto in automatico', 'Quando apri un disco, Spinyl cerca da solo il prezzo su Discogs e il voto medio della community.'],
+    ['Voto online anche per libri e film', 'Sotto le tue stelle compare il voto medio dei lettori (Open Library o Google Libri) e degli spettatori (TMDB).'],
   ],
   '2.4': [
     ['Copie automatiche', 'Ogni giorno Spinyl tiene una copia della collezione su Drive (le ultime 10): da Impostazioni puoi tornare indietro.'],
@@ -2517,16 +2551,24 @@ async function feedOffers() {
 }
 // Nuovi album della settimana (Deezer, gratuito; risponde solo in modalità JSONP)
 async function feedAlbums() {
-  const d = await jsonp('https://api.deezer.com/editorial/0/releases?limit=25&output=jsonp');
+  let d = null;
+  try { d = await jsonp('https://api.deezer.com/editorial/0/releases?limit=25&output=jsonp'); } catch (e) { console.warn('deezer', e); }
+  if (!d || !(d.data || []).length) {
+    // riserva: album più ascoltati su Apple Music nel paese della lingua scelta
+    const cc = { it: 'it', en: 'gb', es: 'es' }[LNG()] || 'it';
+    const r = await fj(`https://rss.marketingtools.apple.com/api/v2/${cc}/music/most-played/25/albums.json`);
+    return ((r.feed || {}).results || []).map(a => ({ tipo: 'vinile', titolo: a.name, autore: a.artistName || '', anno: year(a.releaseDate), uscita: a.releaseDate || '',
+      coverUrl: String(a.artworkUrl100 || '').replace(/\d+x\d+bb/, '600x600bb'), fonte: 'Apple Music' })).slice(0, 18);
+  }
   return (d.data || []).map(a => ({ tipo: 'vinile', titolo: a.title, autore: (a.artist || {}).name || '', anno: year(a.release_date), uscita: a.release_date || '',
     coverUrl: a.cover_big || a.cover_medium || '', fonte: 'Deezer' })).sort((a, b) => String(b.uscita).localeCompare(String(a.uscita))).slice(0, 18);
 }
 // Nuovi libri nella lingua dell'app, nei generi che leggi di più (o narrativa)
 async function feedBooks() {
-  const since = isoDay(Date.now() - 120 * 864e5); const key = cfg('booksKey');
+  const since = isoDay(Date.now() - 365 * 864e5); const key = cfg('booksKey');
   const g = new Map(); live().filter(i => i.tipo === 'libro' && i.genere).forEach(i => String(i.genere).split(/[,/]/).map(x => x.trim()).filter(x => /^[\p{L} ]{3,30}$/u.test(x)).forEach(x => g.set(x, (g.get(x) || 0) + 1)));
   const subjects = [...g.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map(e => e[0]);
-  if (!subjects.length) subjects.push('fiction');
+  if (!subjects.length) subjects.push('fiction', { it: 'narrativa', es: 'ficción', en: 'thriller' }[LNG()] || 'romance');
   const out = [];
   await Promise.all(subjects.map(async sub => {
     const url = `https://www.googleapis.com/books/v1/volumes?maxResults=30&printType=books&orderBy=newest&langRestrict=${LNG()}&q=` + encodeURIComponent(`subject:${sub}`);
@@ -2548,7 +2590,7 @@ const FEED_FETCH = { album: feedAlbums, libri: feedBooks, cinema: () => feedTmdb
 
 let feedLoading = false, feedAgain = false;
 // "Firma" della collezione: se cambiano artisti, autori, registi o desideri, le novità si ricalcolano
-const feedSig = () => JSON.stringify([topNames(i => isMusic(i.tipo)), topNames(i => i.tipo === 'libro'), topNames(i => i.tipo === 'film', 6), live().filter(i => i.desiderio && isMusic(i.tipo)).length, !!cfg('tmdbKey'), !!cfg('discogsToken')]);
+const feedSig = () => JSON.stringify([VERSION, topNames(i => isMusic(i.tipo)), topNames(i => i.tipo === 'libro'), topNames(i => i.tipo === 'film', 6), live().filter(i => i.desiderio && isMusic(i.tipo)).length, !!cfg('tmdbKey'), !!cfg('discogsToken')]);
 async function loadFeed(force) {
   if (feedLoading) { if (force || (S.feed && S.feed.sig !== feedSig())) feedAgain = true; return; }
   if (!S.feed) S.feed = (await getMeta('feed')) || null;
@@ -2567,6 +2609,8 @@ async function loadFeed(force) {
     delete S.feed.loading[r.key]; renderFeed(r.key);
   }));
   feedLoading = false;
+  // se una riga generale è rimasta vuota (rete o servizio giù), riprova tra mezz'ora invece che tra 12 ore
+  if (rows.some(r => !(S.feed.rows[r.key] || []).length && ['album', 'libri', 'cinema'].includes(r.key))) S.feed.at = Date.now() - FEED_TTL + 30 * 60e3;
   const { loading, ...save } = S.feed; await setMeta('feed', save).catch(() => {});
   renderFeed();
   if (feedAgain) { feedAgain = false; if (S.view === 'home') loadFeed(true); }

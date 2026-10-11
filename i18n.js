@@ -244,6 +244,8 @@
     // Versione 2.5 — Home "Novità"
     ['Nuovi album', 'New albums', 'Nuevos álbumes'],
     ['Prezzo e voto in automatico', 'Automatic price and rating', 'Precio y valoración automáticos'],
+    ['Voto online anche per libri e film', 'Online rating for books and films too', 'Valoración online también para libros y películas'],
+    ['Sotto le tue stelle compare il voto medio dei lettori (Open Library o Google Libri) e degli spettatori (TMDB).', 'Under your stars you now see the average rating from readers (Open Library or Google Books) and viewers (TMDB).', 'Bajo tus estrellas aparece la valoración media de los lectores (Open Library o Google Libros) y de los espectadores (TMDB).'],
     ['Quando apri un disco, Spinyl cerca da solo il prezzo su Discogs e il voto medio della community.', 'When you open a record, Spinyl looks up its Discogs price and community rating by itself.', 'Al abrir un disco, Spinyl busca solo su precio en Discogs y la valoración media de la comunidad.'],
     ['Cerco il prezzo su Discogs…', 'Looking up the price on Discogs…', 'Buscando el precio en Discogs…'],
     ['Prezzo non trovato in automatico. Con il token Discogs (Impostazioni) la ricerca è più precisa.', 'Price not found automatically. With a Discogs token (Settings) the search is more accurate.', 'Precio no encontrado automáticamente. Con el token de Discogs (Ajustes) la búsqueda es más precisa.'],
