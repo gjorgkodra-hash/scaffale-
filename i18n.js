@@ -244,6 +244,7 @@
     // Versione 2.2 — foto della copertina
     ['Foto della copertina', 'Cover photo', 'Foto de la portada'], ['🖼️ Foto della copertina', '🖼️ Cover photo', '🖼️ Foto de la portada'],
     ['Riconosce titolo e autore dalla copertina', 'Recognises title and author from the cover', 'Reconoce título y autor por la portada'],
+    ['Limite mensile di Google Vision raggiunto: leggo le scritte sul telefono', 'Monthly Google Vision limit reached: reading the text on the phone instead', 'Límite mensual de Google Vision alcanzado: leo el texto en el teléfono'],
     ['Dalla copertina', 'From the cover', 'Desde la portada'], ['Altro codice', 'Another code', 'Otro código'], ['Copertina', 'Cover', 'Portada'],
     ['Ho riconosciuto la copertina: correggi il testo se serve.', 'Cover recognised: fix the text if needed.', 'He reconocido la portada: corrige el texto si hace falta.'],
     ['Ho letto le scritte della copertina: correggi il testo se serve.', 'I read the text on the cover: fix it if needed.', 'He leído el texto de la portada: corrígelo si hace falta.'],
@@ -329,6 +330,7 @@
     [/^(\d+) dai desideri alla collezione$/, (m, l) => l === 'en' ? `${m[1]} moved from wishlist to collection` : `${m[1]} pasan de deseos a la colección`],
     [/^Importa (\d+) pezzi$/, (m, l) => l === 'en' ? `Import ${m[1]} items` : `Importar ${m[1]} artículos`],
     [/^Novità di Spinyl (.+)$/, (m, l) => (l === 'en' ? 'What’s new in Spinyl ' : 'Novedades de Spinyl ') + m[1]],
+    [/^Google Vision questo mese: (\d+) di (\d+) foto su questo telefono$/, (m, l) => l === 'en' ? `Google Vision this month: ${m[1]} of ${m[2]} photos on this phone` : `Google Vision este mes: ${m[1]} de ${m[2]} fotos en este teléfono`],
     [/^Leggo le scritte… (\d+)%$/, (m, l) => (l === 'en' ? 'Reading the text… ' : 'Leyendo el texto… ') + m[1] + '%'],
 
     [/^\((\d+) copie\)$/, (m, l) => l === 'en' ? `(${m[1]} copies)` : `(${m[1]} copias)`],

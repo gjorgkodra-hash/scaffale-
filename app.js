@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.2.0';
+const VERSION = '2.3.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -680,6 +680,7 @@ function viewSettings() {
         <label class="field"><span>Chiave API TMDB (film, consigliata)</span><input id="cfg-tmdbKey" value="${esc(cfg('tmdbKey'))}" autocomplete="off"></label>
         <label class="field"><span>Token Discogs (vinili, CD, cassette)</span><input id="cfg-discogsToken" value="${esc(cfg('discogsToken'))}" autocomplete="off"></label>
         <label class="field"><span>Chiave Google Cloud Vision (riconosce anche le copertine senza scritte, facoltativa)</span><input id="cfg-visionKey" value="${esc(cfg('visionKey'))}" autocomplete="off"></label>
+        ${cfg('visionKey') ? `<p class="note" style="margin:6px 0 10px">Google Vision questo mese: ${visionUsed()} di ${VISION_MONTHLY} foto su questo telefono</p>` : ''}
         <label class="field"><span>Client ID Google</span><input id="cfg-clientId" value="${esc(cfg('clientId'))}" autocomplete="off"></label>
         <div class="stack" style="padding-top:12px"><button class="btn block" data-a="saveCfg">Salva impostazioni</button></div>
       </details>
@@ -2181,6 +2182,11 @@ function visionQuery(v) {
   const txt = String(v.text).split('\n').map(t => t.trim()).filter(t => /\p{L}{2,}/u.test(t)).slice(0, 3).join(' ');
   return [g, ent || txt].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().slice(0, 90);
 }
+// Limite mensile per telefono: con più amici sulla stessa chiave il totale resta nelle 1000 foto gratuite di Google
+const VISION_MONTHLY = +(BASE.VISION_MONTHLY_LIMIT || 100);
+const monthKey = () => new Date().toISOString().slice(0, 7);
+function visionUsed() { try { const u = JSON.parse(localStorage.getItem('visionUse') || '{}'); return u.m === monthKey() ? (u.n || 0) : 0; } catch (e) { return 0; } }
+function visionCount() { try { localStorage.setItem('visionUse', JSON.stringify({ m: monthKey(), n: visionUsed() + 1 })); } catch (e) {} }
 async function recognizeCover(file) {
   const mode = S.coverMode || 'add';
   const tipo = S.coverTipo || S.addTipo || 'libro';
@@ -2188,13 +2194,15 @@ async function recognizeCover(file) {
   try { blob = await compressImage(file, 1600, 0.9); } catch (e) { return toast('Formato foto non supportato'); }
   if (S.coverShotUrl) URL.revokeObjectURL(S.coverShotUrl);
   S.coverShot = blob; S.coverShotUrl = URL.createObjectURL(blob); S.coverMode = mode;
-  const useVision = !!cfg('visionKey');
+  const overLimit = !!cfg('visionKey') && visionUsed() >= VISION_MONTHLY;
+  const useVision = !!cfg('visionKey') && !overLimit;
+  if (overLimit) toast('Limite mensile di Google Vision raggiunto: leggo le scritte sul telefono', 3500);
   const token = S.coverToken = uid();
   openSheet(`<h2>Leggo la copertina…</h2><div class="coverhead"><img src="${S.coverShotUrl}" alt=""></div>
     <div id="ocrStatus">${loadingHTML(useVision ? 'Riconosco la copertina…' : 'Leggo le scritte sulla copertina…')}</div>`);
   let q = '', how = '';
   if (useVision) {
-    try { q = visionQuery(await visionAnnotate(blob)); how = 'vision'; }
+    try { const v = await visionAnnotate(blob); visionCount(); q = visionQuery(v); how = 'vision'; }
     catch (e) { console.warn(e); toast('Google Vision non risponde: provo a leggere le scritte', 3000); }
   }
   if (!q) {
