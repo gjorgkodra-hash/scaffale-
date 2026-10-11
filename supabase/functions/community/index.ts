@@ -357,7 +357,7 @@ async function handle(body: any, who: { gid: string; email: string }) {
     const blocked = await blockedSet(me.id);
     const { data: inv } = await db.from("event_invites").select("event_id").eq("member_id", me.id);
     const invited = new Set((inv || []).map((x: any) => x.event_id));
-    const sel = "id,member_id,title,kind,starts_at,place,link,work_key,tipo,titolo,autore,cover_url,visibility,members!inner(nick,banned)";
+    const sel = "id,member_id,title,kind,starts_at,place,link,work_key,tipo,titolo,autore,cover_url,visibility,members!events_member_id_fkey!inner(nick,banned)";
     const [{ data: up }, { data: past }] = await Promise.all([
       db.from("events").select(sel).eq("hidden", false).gte("starts_at", since).order("starts_at").limit(100),
       db.from("events").select(sel).eq("hidden", false).lt("starts_at", since).order("starts_at", { ascending: false }).limit(15),
@@ -375,7 +375,7 @@ async function handle(body: any, who: { gid: string; email: string }) {
     return { upcoming: (up || []).filter(vis).map(out), past: (past || []).filter(vis).map(out) };
   }
   if (a === "eventGet") {
-    const { data: e } = await db.from("events").select("*,members!inner(nick,banned)").eq("id", clean(body.id, 40)).maybeSingle();
+    const { data: e } = await db.from("events").select("*,members!events_member_id_fkey!inner(nick,banned)").eq("id", clean(body.id, 40)).maybeSingle();
     if (!(await canSee(e)) || e.members.banned) throw new E(404, "evento");
     const blocked = await blockedSet(me.id);
     const [{ data: rs }, { data: ms }, { data: iv }] = await Promise.all([
