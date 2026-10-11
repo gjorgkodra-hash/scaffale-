@@ -601,3 +601,11 @@ label.check { display: flex; gap: 10px; align-items: center; margin: 6px 0 12px;
 .picklist { max-height: 60vh; overflow-y: auto; }
 .ccount { display: block; margin-top: 6px; font-size: 12px; color: var(--muted); }
 .ccom small { color: var(--muted); font-size: 11px; }
+.cmebtns { display: flex; gap: 8px; align-items: center; }
+.bell { position: relative; font-size: 20px; }
+.bell .badge { position: absolute; top: -2px; right: -4px; margin: 0; }
+.notif { display: grid; grid-template-columns: 32px 1fr; gap: 10px; width: 100%; text-align: left; padding: 12px 4px; border-bottom: 1px solid var(--line); color: inherit; }
+.notif.new { background: color-mix(in srgb, var(--cd) 12%, transparent); border-radius: 12px; }
+.nico { font-size: 20px; }
+.ntxt { font-size: 14px; line-height: 1.4; }
+.ntxt small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }

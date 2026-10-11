@@ -276,8 +276,19 @@ async function handle(body: any, who: { gid: string; email: string }) {
     const evIds = (iv || []).map((x: any) => x.event_id);
     const { data: rs } = evIds.length ? await db.from("event_rsvps").select("event_id").eq("member_id", me.id).in("event_id", evIds) : { data: [] };
     const answered = new Set((rs || []).map((x: any) => x.event_id));
-    return { unread: n, invites: evIds.filter((x: string) => !answered.has(x)).length };
+    const { count: nn } = await db.from("notifications").select("id", { count: "exact", head: true }).eq("member_id", me.id).eq("read", false);
+    return { unread: n, invites: evIds.filter((x: string) => !answered.has(x)).length, notifs: nn || 0 };
   }
+  // ── Notifiche (create dal database: commenti, risposte, inviti, partecipanti, offerte, articoli) ──
+  if (a === "notifs") {
+    const { data } = await db.from("notifications").select("id,kind,data,read,created_at,actor_id").eq("member_id", me.id).order("created_at", { ascending: false }).limit(60);
+    const ids = [...new Set((data || []).map((x: any) => x.actor_id).filter(Boolean))];
+    const { data: ms } = ids.length ? await db.from("members").select("id,nick").in("id", ids) : { data: [] };
+    const nick = new Map((ms || []).map((m: any) => [m.id, m.nick]));
+    if (body.markRead) await db.from("notifications").update({ read: true }).eq("member_id", me.id).eq("read", false);
+    return { items: (data || []).map((x: any) => ({ id: x.id, kind: x.kind, data: x.data, read: x.read, at: x.created_at, nick: nick.get(x.actor_id) || "" })) };
+  }
+
   if (a === "block") {
     const who2 = clean(body.member, 40); if (!who2 || who2 === me.id) throw new E(400, "membro");
     if (body.off) await db.from("blocks").delete().eq("member_id", me.id).eq("blocked_id", who2);

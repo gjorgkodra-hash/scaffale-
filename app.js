@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.11.0';
+const VERSION = '2.12.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -271,7 +271,7 @@ function render() {
   else if (S.view === 'stats') app.innerHTML = viewStats();
   else if (S.view === 'batch') app.innerHTML = viewBatch();
   else if (S.view === 'home') { app.innerHTML = viewHome(); renderFeed(); loadFeed(); }
-  else if (S.view === 'community' && COMM_URL) { app.innerHTML = viewCommunity(); loadCommunity(); }
+  else if (S.view === 'community' && COMM_URL) { app.innerHTML = viewCommunity(); loadCommunity(); S.commUnreadAt = 0; commUnreadCheck(); }
   else { S.view = 'list'; app.innerHTML = viewList(); renderGrid(); centerChip(false); }
   hydratePhotos(app);
 }
@@ -300,7 +300,7 @@ function mainHeader(active) {
   </header>
   <nav class="maintabs ${COMM_URL ? 'three' : ''}" role="tablist">
     <button role="tab" class="${active === 'home' ? 'on' : ''}" data-a="mainTab" data-v="home">Novità</button>
-    ${COMM_URL ? `<button role="tab" class="${active === 'community' ? 'on' : ''}" data-a="mainTab" data-v="community">Community${(S.commUnread || 0) + (S.commInvites || 0) ? `<i class="badge">${(S.commUnread || 0) + (S.commInvites || 0)}</i>` : ''}</button>` : ''}
+    ${COMM_URL ? `<button role="tab" class="${active === 'community' ? 'on' : ''}" data-a="mainTab" data-v="community">Community${commTotal() ? `<i class="badge">${commTotal()}</i>` : ''}</button>` : ''}
     <button role="tab" class="${active === 'list' ? 'on' : ''}" data-a="mainTab" data-v="list">Collezione<b>${live().filter(i => !i.desiderio).length}</b></button>
   </nav>`;
 }
@@ -2329,6 +2329,9 @@ const NEWS = {
   '2.5': [
     ['Home Novità', 'La prima pagina mostra i nuovi album dei tuoi artisti, i nuovi libri dei tuoi autori, i film al cinema e cosa stai leggendo.'],
   ],
+  '2.12': [
+    ['Notifiche', 'La campanella in Community ti avvisa di commenti ai tuoi post, risposte, inviti, chi partecipa ai tuoi eventi e pezzi che cerchi messi in vendita, in prestito o in regalo. Con suono e vibrazione (si possono spegnere nelle Impostazioni).'],
+  ],
   '2.11': [
     ['Commenti in bacheca', 'Tocca una recensione o un pezzo condiviso nella Bacheca per commentarlo con la community.'],
   ],
@@ -2638,6 +2641,7 @@ function commSettingsHTML() {
   const me = commMe();
   return `<div class="section"><h3>Community</h3>
     ${me ? `<p class="note">Sei dentro come <b translate="no">${esc(me.nick)}</b>${me.admin ? ' · amministratore' : ''}. Ogni invito vale per 5 amici.</p>
+      <label class="field inline"><span>Suono e vibrazione per le notifiche</span><input type="checkbox" id="commSoundT" ${soundOn() ? 'checked' : ''}></label>
       <div class="stack"><button class="btn block" data-a="commInvite">${ic('share', 18)}Invita un amico</button></div>`
     : `<p class="note">Recensioni e commenti tra amici. Si entra con un codice invito.</p><div class="stack"><button class="btn block" data-a="commJoin">Entra nella community</button></div>`}</div>`;
 }
@@ -2702,7 +2706,8 @@ function viewCommunity() {
   let body;
   if (!me) body = `<div class="hint chero"><b>La community di Spinyl</b><span>Recensioni, blog, scambi e prestiti tra amici su libri, dischi e film. Si entra con un codice invito; la tua collezione resta privata finché non decidi di condividere.</span>
       <button class="btn primary" data-a="commJoin">Entra nella community</button></div>`;
-  else body = `<div class="cme"><div><span class="note">Sei dentro come</span><b translate="no">${esc(me.nick)}</b></div><button class="btn" data-a="commInvite">${ic('share', 18)}Invita</button></div>
+  else body = `<div class="cme"><div><span class="note">Sei dentro come</span><b translate="no">${esc(me.nick)}</b></div>
+      <div class="cmebtns"><button class="iconbtn bell" data-a="notifsOpen" aria-label="Notifiche">🔔${S.commNotifs ? `<i class="badge">${S.commNotifs}</i>` : ''}</button><button class="btn" data-a="commInvite">${ic('share', 18)}Invita</button></div></div>
     <div class="seg cseg four">${[['bacheca', 'Bacheca'], ['eventi', 'Eventi'], ['scambi', 'Scambi'], ['messaggi', 'Messaggi']].map(([k, l]) => `<button class="${seg === k ? 'on' : ''}" data-a="commSeg" data-v="${k}">${l}${k === 'messaggi' && S.commUnread ? `<i class="badge">${S.commUnread}</i>` : k === 'eventi' && S.commInvites ? `<i class="badge">${S.commInvites}</i>` : ''}</button>`).join('')}</div>
     <div id="commList">${loadingHTML('Carico…')}</div>`;
   return `${mainHeader('community')}<div class="home commtab">${body}</div>${me ? `<button class="fab" data-a="commNew">${ic('plus')}Nuovo</button>` : ''}`;
@@ -2749,7 +2754,7 @@ async function loadCommunity() {
           <p>${t.last ? (t.last.mine ? '<span>Tu:</span> ' : '') + (t.last.offer ? esc(offerTxt(t.last.offer, t.last.price)) + (t.last.body ? ' · ' : '') : '') + `<span translate="no">${esc(t.last.body)}</span>` : ''}</p></div></button>`).join('')
         || '<p class="note">Nessun messaggio. Dalla sezione Scambi puoi contattare chi ha o cerca i tuoi pezzi.</p>';
       hydratePhotos(b());
-      const tab = $('.maintabs [data-v=community]'); const n = (S.commUnread || 0) + (S.commInvites || 0); if (tab) tab.innerHTML = 'Community' + (n ? `<i class="badge">${n}</i>` : '');
+      commBadges();
     }
   } catch (e) { fail(e); }
 }
@@ -2856,10 +2861,9 @@ async function threadBlock() {
   try { await comm('block', { member: t.other, off: t.blocked }); toast(t.blocked ? 'Sbloccato' : 'Bloccato'); S.threadOpenId = null; closeSheet(); if (S.view === 'community') loadCommunity(); } catch (e) { toast(commErrMsg(e)); }
 }
 async function commUnreadCheck() {
-  if (!commMe() || !Drive.token() || Date.now() - (S.commUnreadAt || 0) < 120e3) return;
+  if (!commMe() || !Drive.token() || Date.now() - (S.commUnreadAt || 0) < 50e3) return;
   S.commUnreadAt = Date.now();
-  try { const r = await comm('unread'); S.commUnread = r.unread || 0; S.commInvites = r.invites || 0; const n = S.commUnread + S.commInvites;
-    const tab = $('.maintabs [data-v=community]'); if (tab) tab.innerHTML = 'Community' + (n ? `<i class="badge">${n}</i>` : ''); } catch (e) {}
+  try { const r = await comm('unread'); S.commUnread = r.unread || 0; S.commInvites = r.invites || 0; S.commNotifs = r.notifs || 0; commBadges(); } catch (e) {}
 }
 
 // ── Eventi: dal vivo, online o ascolto in diretta, con inviti e risposte ──
@@ -3056,6 +3060,63 @@ function newShare() {
 }
 function newPost() {
   pickItem(tr('Su quale opera vuoi scrivere?'), it => { S.commWork = { work: workKey(it), tipo: it.tipo, titolo: it.titolo, autore: it.autore || '', cover: /^https:/.test(it.coverUrl || '') ? it.coverUrl : '', own: !it.desiderio, it }; postSheet(); });
+}
+
+// ── Notifiche: campanella in Community, pallino sulla linguetta, suono quando arriva qualcosa di nuovo ──
+const commTotal = () => (S.commUnread || 0) + (S.commInvites || 0) + (S.commNotifs || 0);
+function commBadges() {
+  const n = commTotal();
+  const tab = $('.maintabs [data-v=community]'); if (tab) tab.innerHTML = 'Community' + (n ? `<i class="badge">${n}</i>` : '');
+  const bell = $('.bell'); if (bell) bell.innerHTML = '🔔' + (S.commNotifs ? `<i class="badge">${S.commNotifs}</i>` : '');
+  const seg = $('.cseg [data-v=messaggi]'); if (seg) seg.innerHTML = tr('Messaggi') + (S.commUnread ? `<i class="badge">${S.commUnread}</i>` : '');
+  if (S.commPrevTotal != null && n > S.commPrevTotal) commDing();
+  S.commPrevTotal = n;
+}
+const soundOn = () => { try { return localStorage.getItem('commSound') !== '0'; } catch (e) { return true; } };
+let audioCtx = null;
+// il telefono permette i suoni solo dopo un tocco: preparo l'audio al primo tocco
+document.addEventListener('pointerdown', () => { if (!audioCtx && (window.AudioContext || window.webkitAudioContext)) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } else if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {}); }, { passive: true });
+function commDing() {
+  if (navigator.vibrate) try { navigator.vibrate([60, 40, 60]); } catch (e) {}
+  if (!soundOn() || !audioCtx) return;
+  try {
+    const t = audioCtx.currentTime;
+    [[880, 0], [1320, 0.12]].forEach(([f, d]) => {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = 'sine'; o.frequency.value = f; g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(0.25, t + d + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.35);
+      o.connect(g).connect(audioCtx.destination); o.start(t + d); o.stop(t + d + 0.4);
+    });
+  } catch (e) {}
+}
+setInterval(() => { if (document.visibilityState === 'visible') commUnreadCheck(); }, 60e3);
+const OFFER_VERB = { vendo: 'in vendita', presto: 'in prestito', regalo: 'in regalo' };
+function notifText(x) {
+  const d = x.data || {}; const t = `«${d.titolo || d.title || ''}»`; const who = `<b translate="no">${esc(x.nick || '?')}</b>`;
+  const what = { review: 'la tua recensione di', post: 'il tuo articolo su', share: 'il tuo pezzo condiviso' }[d.type] || '';
+  const T = `<span translate="no">${esc(t)}</span>`;
+  if (x.kind === 'comment') return `${who} <span>ha commentato ${what}</span> ${T}${d.body ? `: <i translate="no">“${esc(d.body)}”</i>` : ''}`;
+  if (x.kind === 'reply') return `${who} <span>ha commentato anche lui su</span> ${T}${d.body ? `: <i translate="no">“${esc(d.body)}”</i>` : ''}`;
+  if (x.kind === 'invite') return `${who} <span>ti ha invitato a</span> <span translate="no">«${esc(d.title || '')}»</span>${d.starts ? ` · ${esc(evWhen(d.starts))}` : ''}`;
+  if (x.kind === 'rsvp') return `${who} <span>partecipa al tuo evento</span> <span translate="no">«${esc(d.title || '')}»</span>`;
+  if (x.kind === 'offer') return `${who} <span>ha messo ${OFFER_VERB[d.offer] || 'a disposizione'}</span> ${T}${d.price != null && d.offer === 'vendo' ? ' · ' + esc(money(+d.price)) : ''} <span>che cerchi</span>`;
+  if (x.kind === 'post') return `${who} <span>ha scritto un articolo su</span> ${T}`;
+  return who;
+}
+const NOTIF_ICO = { comment: '💬', reply: '💬', invite: '📅', rsvp: '✅', offer: '🏷️', post: '📝' };
+async function notifsOpen() {
+  openSheet(`<h2>Notifiche</h2><div id="notifList">${loadingHTML('Carico…')}</div>`);
+  let d; try { d = await comm('notifs', { markRead: true }); } catch (e) { const b = $('#notifList'); if (b) b.innerHTML = `<p class="note">${esc(commErrMsg(e))}</p>`; return; }
+  S.notifs = d.items || []; S.commNotifs = 0; commBadges();
+  const b = $('#notifList'); if (!b) return;
+  b.innerHTML = S.notifs.map((x, i) => `<button class="notif ${x.read ? '' : 'new'}" data-a="notifGo" data-i="${i}"><span class="nico">${NOTIF_ICO[x.kind] || '🔔'}</span><span class="ntxt">${notifText(x)}<small>${esc(commAgo(x.at))}</small></span></button>`).join('')
+    || '<p class="note">Nessuna notifica. Qui arrivano i commenti ai tuoi post, gli inviti agli eventi, chi partecipa ai tuoi e i pezzi che cerchi messi a disposizione.</p>';
+}
+function notifGo(i) {
+  const x = (S.notifs || [])[i]; if (!x) return; const d = x.data || {};
+  if (x.kind === 'invite' || x.kind === 'rsvp') return eventOpen(d.id);
+  if (d.type === 'post' || x.kind === 'post') return postOpen(d.id);
+  if (d.type === 'review') return discussionOpen({ type: 'review', id: d.id });
+  if (d.type === 'share' || x.kind === 'offer') return discussionOpen({ type: 'share', member: d.member, work: d.work, kind: d.kind || 'own' });
 }
 
 // ── Blog dell'opera ──
@@ -3545,6 +3606,8 @@ Object.assign(actions, {
   discWork: () => { const x = S.disc && S.disc.item; if (x) workSheet(x); },
   discOffer: () => { const x = S.disc && S.disc.item; if (!x) return; S.commMatch = { tmp: [x] }; offerSheet({ dataset: { m: 'tmp', i: '0', to: x.member, nick: x.nick, mode: x.kind === 'wish' ? 'give' : 'ask' } }); },
   discDel: async el => { if (!confirm(tr('Eliminare il commento?'))) return; try { await comm('delete', { kind: 'comment', id: el.dataset.id }); discussionOpen(S.disc.q); } catch (e) { toast(commErrMsg(e)); } },
+  notifsOpen: () => notifsOpen(),
+  notifGo: el => notifGo(+el.dataset.i),
   commNew: () => commNew(),
   newChat: () => newChat(),
   newShare: () => newShare(),
@@ -3594,6 +3657,7 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.id === 'langSel' && window.I18N) { I18N.set(t.value); location.reload(); return; }
+  if (t.id === 'commSoundT') { try { localStorage.setItem('commSound', t.checked ? '1' : '0'); } catch (er) {} if (t.checked) commDing(); }
   if (t.id === 'sort') { S.sort = t.value; localStorage.setItem('sort', S.sort); renderGrid(); }
   if (t.dataset.f && S.draft) S.draft[t.dataset.f] = t.type === 'checkbox' ? t.checked : t.value;
 });

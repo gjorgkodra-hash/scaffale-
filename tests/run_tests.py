@@ -93,6 +93,15 @@ def comm_handle(tok, b):
         COMM['reviews'] = [r for r in COMM['reviews'] if not (r['work'] == b['work'] and r['mid'] == me['id'])]
         COMM['reviews'].insert(0, {'id': nid_(), 'work': b['work'], 'tipo': b['tipo'], 'titolo': b['titolo'], 'autore': b.get('autore', ''), 'cover': b.get('cover', ''), 'stars': b.get('stars'), 'body': b.get('body', ''), 'mid': me['id'], 'nick': me['nick'], 'at': '2026-10-11T10:00:00Z', 'hidden': False})
         return 200, {'ok': True}
+    if a == 'notifs':
+        L = [n for n in COMM.get('notifs', []) if n['to'] == me['id']]
+        out = [{'id': str(k), 'kind': n['kind'], 'data': n['data'], 'read': n['read'], 'at': '2026-10-11T21:00:00Z', 'nick': n['nick']} for k, n in enumerate(L)][::-1]
+        if b.get('markRead'):
+            for n in L: n['read'] = True
+        return 200, {'items': out}
+    if a == 'comment' and b.get('review'):
+        r = next((x for x in COMM['reviews'] if x['id'] == b['review']), None)
+        if r and r['mid'] != me['id']: COMM.setdefault('notifs', []).append({'to': r['mid'], 'kind': 'comment', 'nick': me['nick'], 'read': False, 'data': {'type': 'review', 'id': r['id'], 'titolo': r['titolo'], 'body': b['body'], 'yours': True}})
     if a == 'comment': COMM['comments'].append({'id': nid_(), 'review': b.get('review'), 'post': b.get('post'), 'share': (b['share']['member'], b['share']['work'], b['share']['kind']) if b.get('share') else None, 'body': b['body'], 'mid': me['id'], 'nick': me['nick'], 'at': '2026-10-11T11:00:00Z'}); return 200, {'ok': True}
     if a == 'report':
         for r in COMM['reviews']:
@@ -125,7 +134,8 @@ def comm_handle(tok, b):
         out = [{'id': x['id'], 'other': [m for m in x['members'] if m != me['id']][0], 'nick': nick([m for m in x['members'] if m != me['id']][0]), 'titolo': x['titolo'], 'cover': x['cover'], 'at': x['msgs'][-1]['at'],
                 'unread': x['msgs'][-1]['from'] != me['id'], 'last': {'body': x['msgs'][-1]['body'], 'offer': x['msgs'][-1]['offer'], 'price': x['msgs'][-1]['price'], 'mine': x['msgs'][-1]['from'] == me['id']}} for x in mine]
         inv = sum(1 for e in COMM.get('events', {}).values() if me['id'] in e['invited'] and me['id'] not in e['rsvps'])
-        return 200, ({'threads': out} if a == 'threads' else {'unread': sum(1 for o in out if o['unread']), 'invites': inv})
+        nn = sum(1 for n in COMM.get('notifs', []) if n['to'] == me['id'] and not n['read'])
+        return 200, ({'threads': out} if a == 'threads' else {'unread': sum(1 for o in out if o['unread']), 'invites': inv, 'notifs': nn})
     if a == 'thread':
         th = next(x for x in ths if x['id'] == b['id']); other = [m for m in th['members'] if m != me['id']][0]
         return 200, {'thread': {'id': th['id'], 'other': other, 'nick': nick(other), 'titolo': th['titolo'], 'cover': th['cover'], 'blocked': False}, 'messages': [{'id': m['id'], 'mine': m['from'] == me['id'], 'body': m['body'], 'offer': m['offer'], 'price': m['price'], 'at': m['at']} for m in th['msgs']]}
@@ -366,6 +376,13 @@ async def t_community(b, base):
     await page2.fill('form.creply textarea', 'Concordo!'); await page2.evaluate("document.querySelector('form.creply').requestSubmit()")
     await page2.wait_for_selector('.ccom', timeout=5000)
     check('risposta a una recensione', 'Concordo' in await page2.evaluate("document.querySelector('.ccom').textContent"))
+    await page.evaluate("S.commUnreadAt=0; commUnreadCheck()"); await page.wait_for_timeout(400)
+    check('notifica del commento (campanella)', await page.evaluate("S.commNotifs") == 1)
+    await page.evaluate("notifsOpen()"); await page.wait_for_selector('.notif', timeout=5000)
+    check('testo della notifica', 'Concordo' in await page.evaluate("document.querySelector('.notif').textContent"))
+    await page.click('.notif'); await page.wait_for_selector('#discList', timeout=5000)
+    check('notifica apre la discussione', 'Concordo' in await page.evaluate("document.querySelector('#discList').textContent"))
+    await page.evaluate("closeSheet()")
     await page2.evaluate("go('home', null, true)"); await page2.click('[data-a=mainTab][data-v=community]')
     await page2.wait_for_selector('#commList .crow', timeout=8000)
     check('scheda Community accanto a Novità', await page2.evaluate("[...document.querySelectorAll('.maintabs button')].map(b=>b.dataset.v).join()") == 'home,community,list')
