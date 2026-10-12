@@ -277,7 +277,7 @@ async def new_page(b, base, lang='it', init='', no_vision=False):
     page = await ctx.new_page(); errs = []
     page.on('pageerror', lambda e: errs.append(str(e)))
     await page.route('**/*', make_route(no_vision))
-    await page.add_init_script(f"if(!sessionStorage.getItem('t')){{sessionStorage.setItem('t','1'); localStorage.setItem('cfg_lang','{lang}'); localStorage.setItem('cfg_discogsToken','TEST'); localStorage.setItem('seenVersion', '9.9.9'); localStorage.setItem('mainTab', 'list'); {init}}}")
+    await page.add_init_script(f"if(!sessionStorage.getItem('t')){{sessionStorage.setItem('t','1'); localStorage.setItem('cfg_lang','{lang}'); localStorage.setItem('cfg_discogsToken','TEST'); localStorage.setItem('seenVersion', '9.9.9'); localStorage.setItem('mainTab', 'list'); localStorage.setItem('welcomed', '1'); {init}}}")
     await page.goto(base + '/index.html'); await page.wait_for_timeout(800)
     return page, errs
 
@@ -391,6 +391,13 @@ async def t_community(b, base):
     await page2.wait_for_selector('#commList .crow', timeout=8000)
     check('scheda Community accanto a Novità', await page2.evaluate("[...document.querySelectorAll('.maintabs button')].map(b=>b.dataset.v).join()") == 'home,community,list')
     check('ultime recensioni nella scheda Community', 'Anna' in await page2.evaluate("document.querySelector('#commList').textContent"))
+    await page2.click('[data-a=commSeg][data-v=messaggi]'); await page2.wait_for_selector('#commList .cempty', timeout=5000)
+    check('messaggi vuoti: propone una nuova conversazione', await page2.evaluate("!!document.querySelector('#commList .cempty [data-a=newChat]')"))
+    await page2.click('#commList [data-a=goScambi]'); await page2.wait_for_selector('#commList [data-a=wishSearch]', timeout=8000)
+    check('scambi vuoti: propone di offrire un pezzo e aggiungere un desiderio', await page2.evaluate("!!document.querySelector('[data-a=newShare]') && !!document.querySelector('[data-a=wishSearch]')"))
+    await page2.click('[data-a=wishSearch]'); await page2.wait_for_selector('#sheet input', timeout=5000)
+    check('aggiungi un desiderio apre la ricerca in modalità desideri', await page2.evaluate("S.pickWish === true && !$('#sheetWrap').classList.contains('hidden')"))
+    await page2.evaluate("closeSheet(); S.pickWish=false; S.commSeg='bacheca'")
     await page.evaluate("go('community', null, true)"); await page.wait_for_timeout(300)
     check('invito ad attivare le notifiche push', await page.evaluate("!!document.querySelector('.pushhint')"))
     await page.evaluate("pushGo('review:' + COMM.x)".replace('COMM.x', "'" + [r for r in COMM['reviews']][0]['id'] + "'")); await page.wait_for_selector('#discList', timeout=5000)
@@ -580,6 +587,30 @@ async def t_silent_login(b, base):
     check('nessun ciclo di tentativi', len(OAUTH['hits']) == n)
     check('nessun errore JavaScript', not ec, ec)
 
+async def t_welcome(b, base):
+    print('\nBenvenuto e controlli in background')
+    page, errs = await new_page(b, base, init="localStorage.removeItem('welcomed'); localStorage.removeItem('seenVersion');")
+    await page.wait_for_selector('.welcome', timeout=5000)
+    check('primo avvio: benvenuto passo 1', 'Cataloga' in await page.evaluate("document.querySelector('.welcome h2').textContent"))
+    await page.click('[data-a=welcomeStep]'); await page.click('[data-a=welcomeStep]')
+    check('passo 3: community', 'community' in await page.evaluate("document.querySelector('.welcome h2').textContent"))
+    check('tre pallini, l\'ultimo acceso', await page.evaluate("[...document.querySelectorAll('.wdots i')].map(i=>i.className).join()") == ',,on')
+    await page.click('[data-a=welcomeAdd]'); await page.wait_for_selector('[data-a=addScan]', timeout=3000)
+    check('aggiungi il primo pezzo apre Aggiungi', True)
+    check('novità non mostrate a un nuovo utente', await page.evaluate("localStorage.getItem('seenVersion') === VERSION"))
+    await page.reload(); await page.wait_for_timeout(1200)
+    check('benvenuto solo la prima volta', await page.evaluate("!document.querySelector('.welcome')"))
+    await page.evaluate("go('settings')"); await page.click('[data-a=welcome]')
+    check('guida introduttiva dalle Impostazioni', await page.evaluate("!!document.querySelector('.welcome')"))
+    # chi ha già pezzi non vede il benvenuto
+    p2, e2 = await new_page(b, base, init="localStorage.removeItem('welcomed');")
+    await p2.evaluate(SEED, ITEMS); await p2.reload(); await p2.wait_for_timeout(1200)
+    check('utente con collezione: niente benvenuto', await p2.evaluate("!document.querySelector('.welcome')"))
+    # controllo novità community: ogni 3 minuti, ogni 10 con le notifiche push
+    gaps = await p2.evaluate("(()=>{ const a = COMM_GAP(); localStorage.setItem('pushOn','1'); const pn = window.Notification; window.Notification = {permission:'granted'}; const b = COMM_GAP(); window.Notification = pn; localStorage.removeItem('pushOn'); return [a, b]; })()")
+    check('controllo in background: 3 min, 10 con il push', gaps == [180000, 600000], gaps)
+    check('nessun errore JavaScript', not (errs + e2), errs + e2)
+
 async def t_home(b, base):
     print('\nHome "Novità"')
     page, errs = await new_page(b, base)
@@ -611,7 +642,7 @@ async def main():
     base = serve()
     async with async_playwright() as pw:
         b = await pw.chromium.launch()
-        for t in (t_basics, t_check_and_value, t_auto_online, t_book_rating, t_community, t_exchange, t_events, t_batch_import, t_cover, t_sync, t_silent_login, t_home):
+        for t in (t_basics, t_check_and_value, t_auto_online, t_book_rating, t_community, t_exchange, t_events, t_batch_import, t_cover, t_sync, t_silent_login, t_welcome, t_home):
             try: await t(b, base)
             except Exception as e: check(t.__name__ + ' (eccezione)', False, repr(e)[:300])
         await b.close()

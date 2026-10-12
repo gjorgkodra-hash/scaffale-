@@ -1,5 +1,5 @@
 // Scaffale — service worker: l'app funziona anche offline
-const VERSION = 'scaffale-v2.14.0';
+const VERSION = 'scaffale-v2.15.0';
 const SHELL = ['./', './index.html', './app.css', './app.js', './i18n.js', './legal.js', './config.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 const LIBS = /(unpkg\.com|cdn\.jsdelivr\.net|fastly\.jsdelivr\.net)\/(npm\/)?(@zxing|barcode-detector|zxing-wasm|tesseract)|tessdata\.projectnaptha\.com|fonts\.(googleapis|gstatic)\.com/;
@@ -34,9 +34,13 @@ self.addEventListener('fetch', e => {
 // Notifiche push della Community (arrivano anche con l'app chiusa)
 self.addEventListener('push', e => {
   let d = {}; try { d = e.data ? e.data.json() : {}; } catch (er) { d = { title: 'Spinyl', body: e.data ? e.data.text() : '' }; }
-  e.waitUntil(self.registration.showNotification(d.title || 'Spinyl', {
-    body: d.body || '', icon: 'icon-192.png', badge: 'icon-192.png', tag: d.tag || undefined, renotify: !!d.tag, data: { go: d.go || 'notifs' },
-  }));
+  e.waitUntil(Promise.all([
+    self.registration.showNotification(d.title || 'Spinyl', {
+      body: d.body || '', icon: 'icon-192.png', badge: 'icon-192.png', tag: d.tag || undefined, renotify: !!d.tag, data: { go: d.go || 'notifs' },
+    }),
+    // se l'app è aperta, aggiorna subito i pallini delle notifiche
+    self.clients.matchAll({ type: 'window' }).then(list => list.forEach(c => c.postMessage({ type: 'push' }))),
+  ]));
 });
 self.addEventListener('notificationclick', e => {
   e.notification.close();

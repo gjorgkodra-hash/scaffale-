@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.14.0';
+const VERSION = '2.15.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -271,7 +271,7 @@ function render() {
   else if (S.view === 'stats') app.innerHTML = viewStats();
   else if (S.view === 'batch') app.innerHTML = viewBatch();
   else if (S.view === 'home') { app.innerHTML = viewHome(); renderFeed(); loadFeed(); }
-  else if (S.view === 'community' && COMM_URL) { app.innerHTML = viewCommunity(); loadCommunity(); S.commUnreadAt = 0; commUnreadCheck(); }
+  else if (S.view === 'community' && COMM_URL) { app.innerHTML = viewCommunity(); loadCommunity(); commUnreadCheck(30e3); }
   else { S.view = 'list'; app.innerHTML = viewList(); renderGrid(); centerChip(false); }
   hydratePhotos(app);
 }
@@ -705,7 +705,7 @@ function viewSettings() {
     <div class="section"><h3>Privacy e termini</h3>
       <p class="note">La tua collezione resta sul telefono e sul tuo Google Drive. Niente pubblicità, niente tracciamento.</p>
       <div class="stack"><button class="btn block" data-a="legal" data-v="privacy">Informativa privacy</button><button class="btn block" data-a="legal" data-v="terms">Termini d'uso</button><button class="btn block" data-a="legal" data-v="rules">Regole della community</button></div></div>
-    <div class="stack"><button class="btn block" data-a="forceUpdate">${ic('download', 18)}Cerca aggiornamenti</button></div>
+    <div class="stack"><button class="btn block" data-a="welcome">Guida introduttiva</button><button class="btn block" data-a="forceUpdate">${ic('download', 18)}Cerca aggiornamenti</button></div>
     <p class="note" style="text-align:center">Spinyl ${VERSION} · ${live().length} pezzi</p>
   </div>`;
 }
@@ -2329,6 +2329,11 @@ function showUpdateBar() {
   document.body.appendChild(b);
 }
 const NEWS = {
+  '2.15': [
+    ['Benvenuto', "Chi apre Spinyl per la prima volta trova una guida in 3 passi (la rivedi da Impostazioni › Guida introduttiva)."],
+    ['Sezioni vuote più utili', 'Bacheca, Eventi, Scambi e Messaggi, quando sono vuoti, ti suggeriscono cosa fare: condividere un pezzo, aggiungere un desiderio, invitare un amico.'],
+    ['Meno consumo', "L'app controlla le novità della community meno spesso; con le notifiche attive arrivano subito col push."],
+  ],
   '2.5': [
     ['Home Novità', 'La prima pagina mostra i nuovi album dei tuoi artisti, i nuovi libri dei tuoi autori, i film al cinema e cosa stai leggendo.'],
   ],
@@ -2390,6 +2395,30 @@ const NEWS = {
   ],
 };
 const verNum = v => String(v || '0').split('.').slice(0, 2).map(Number).reduce((a, n) => a * 1000 + (n || 0), 0);
+// ── Benvenuto in 3 passi: solo al primo avvio (collezione vuota), poi dalle Impostazioni ──
+const WELCOME = [
+  ['📚 💿 🎬', 'Cataloga in un attimo', 'Scansiona il codice a barre, fotografa la copertina o cerca per titolo: copertina, autore, anno, valore e voti online si compilano da soli.'],
+  ['☁️', 'Al sicuro sul tuo Drive', "La collezione resta sul telefono e si copia nella cartella Scaffale del tuo Google Drive. Funziona anche offline: niente account nuovi, niente pubblicità."],
+  ['👋', 'Una community tra appassionati', 'Recensioni, blog, scambi, prestiti ed eventi, solo su invito. La tua collezione resta privata finché non scegli tu cosa condividere.'],
+];
+function maybeWelcome() {
+  let done = true; try { done = localStorage.getItem('welcomed') === '1'; localStorage.setItem('welcomed', '1'); } catch (e) {}
+  if (done || live().length || S.openJoin) return false;
+  try { localStorage.setItem('seenVersion', VERSION); } catch (e) {}
+  setTimeout(() => welcomeOpen(0), 500);
+  return true;
+}
+function welcomeOpen(step) {
+  S.welcomeStep = step = Math.max(0, Math.min(WELCOME.length - 1, +step || 0));
+  const [em, t, d] = WELCOME[step]; const last = step === WELCOME.length - 1;
+  const extra = step === 1 && cfg('clientId') && !Drive.token() ? `<button class="btn block" data-a="login">${ic('cloud', 18)}Collega Google Drive</button>` : '';
+  const end = last ? `<button class="btn primary block" data-a="welcomeAdd">${ic('scan', 18)}Aggiungi il primo pezzo</button>${COMM_URL && !commMe() ? '<button class="btn block" data-a="welcomeJoin">Ho un codice invito</button>' : ''}` : '';
+  openSheet(`<div class="welcome"><div class="wem" aria-hidden="true">${em}</div><h2>${t}</h2><p>${d}</p>
+    <div class="wdots">${WELCOME.map((_, i) => `<i class="${i === step ? 'on' : ''}"></i>`).join('')}</div>
+    <div class="stack">${extra}${end}${last ? '' : `<button class="btn primary block" data-a="welcomeStep" data-v="${step + 1}">Avanti</button>`}
+      <button class="more" data-a="closeSheet">${last ? 'Esplora da solo' : 'Salta'}</button></div></div>`);
+}
+
 function maybeWhatsNew() {
   let seen = null; try { seen = localStorage.getItem('seenVersion'); localStorage.setItem('seenVersion', VERSION); } catch (e) { return; }
   if (seen === VERSION || (!seen && !live().length)) return;
@@ -2713,6 +2742,11 @@ function commCtx() {
   return it ? { work: workKey(it), tipo: it.tipo, titolo: it.titolo, autore: it.autore || '', cover: /^https:/.test(it.coverUrl || '') ? it.coverUrl : '', own: !it.desiderio, it } : null;
 }
 
+// Sezione vuota: spiega cosa fare e propone l'azione giusta (btns: [azione, etichetta, principale?])
+function emptyHTML(em, title, text, btns = []) {
+  return `<div class="cempty">${em ? `<div class="cem" aria-hidden="true">${em}</div>` : ''}${title ? `<b>${title}</b>` : ''}<p>${text}</p>
+    ${btns.length ? `<div class="cebtns">${btns.map(([a, l, p]) => `<button class="btn sm ${p ? 'primary' : ''}" data-a="${a}">${l}</button>`).join('')}</div>` : ''}</div>`;
+}
 // ── Scheda "Community": Bacheca · Scambi · Messaggi ──
 function viewCommunity() {
   const me = commMe(); const seg = S.commSeg || 'bacheca';
@@ -2742,7 +2776,9 @@ async function loadCommunity() {
           : `<div class="chead"><span class="ctag">${x.kind === 'wish' ? '🔎 <span>Lo cerca</span>' : x.offer ? esc(offerTxt(x.offer, x.price)) : '📀 <span>Ce l\'ha</span>'}</span><b translate="no">${esc(x.nick)}</b><small>${esc(commAgo(x.at))}</small></div>${x.note ? `<p translate="no">${esc(x.note)}</p>` : ''}`;
         return `<button class="crow t-${esc(x.tipo)}" data-a="boardOpen" data-i="${i}">${coverMini(x)}<div><b translate="no">${esc(x.titolo)}</b><span translate="no">${esc(x.autore || '')}</span>${head}
           <span class="ccount">💬 ${x.comments ? `<span translate="no">${x.comments}</span> · ` : ''}<span>${x.comments ? 'Commenta' : 'Commenta per primo'}</span></span></div></button>`;
-      }).join('') || '<p class="note">Ancora niente qui: scrivi una recensione o condividi un pezzo.</p>';
+      }).join('') || emptyHTML('🌱', 'La bacheca è ancora vuota', 'Rompi il ghiaccio: condividi un pezzo della tua collezione o scrivi un articolo su un disco, un libro o un film che ami.',
+        [['newShare', 'Condividi un pezzo', 1], ['newPost', 'Scrivi un articolo'], ['commInvite', 'Invita un amico']]);
+      if (S.commBoard.length && S.commBoard.length < 6) b().insertAdjacentHTML('beforeend', emptyHTML('', 'La community cresce con te', 'Più amici ci sono, più scambi, recensioni ed eventi. Ogni invito vale per 5 persone.', [['commInvite', 'Invita un amico']]));
       hydratePhotos(b());
     } else if (seg === 'eventi') {
       await loadEvents(b);
@@ -2755,8 +2791,12 @@ async function loadCommunity() {
           <div class="chead"><b translate="no">${esc(x.nick)}</b><span class="ctag">${mode === 'give' ? '🔎 <span>Lo cerca</span>' : x.offer ? esc(offerTxt(x.offer, x.price)) : '📀 <span>Ce l\'ha</span>'}</span></div>
           <div class="cacts"><button class="btn sm" data-a="offerSheet" data-to="${esc(x.member)}" data-nick="${esc(x.nick)}" data-mode="${mode}" data-m="${mode === 'give' ? 'wanted' : 'available'}" data-i="${i}">${mode === 'give' ? 'Offri' : 'Chiedi'}</button></div></div></div>`;
       b().innerHTML = `<label class="field inline swtoggle"><span>Condividi la mia lista desideri</span><input type="checkbox" id="shareWishToggle" ${sw ? 'checked' : ''}></label>
-        <h3 class="chtitle">Cercano cose che hai</h3>${d.wanted.map((x, i) => card(x, i, 'give')).join('') || '<p class="note">Nessuno cerca, per ora, qualcosa della tua collezione.</p>'}
-        <h3 class="chtitle">Hanno cose che cerchi</h3>${d.available.map((x, i) => card(x, i, 'ask')).join('') || '<p class="note">Nessuno ha condiviso, per ora, qualcosa della tua lista desideri.</p>'}
+        <h3 class="chtitle">Cercano cose che hai</h3>${d.wanted.map((x, i) => card(x, i, 'give')).join('') || (own.length
+          ? emptyHTML('', '', 'Nessuno cerca, per ora, qualcosa della tua collezione. Hai un doppione o qualcosa che non ascolti più? Mettilo in vendita, in prestito o in regalo.', [['newShare', 'Offri un pezzo']])
+          : emptyHTML('', '', 'Aggiungi i tuoi pezzi alla collezione: ti diremo chi li sta cercando.', [['add', 'Aggiungi alla collezione']]))}
+        <h3 class="chtitle">Hanno cose che cerchi</h3>${d.available.map((x, i) => card(x, i, 'ask')).join('') || (wish.length
+          ? emptyHTML('', '', 'Nessuno ha condiviso, per ora, qualcosa della tua lista desideri. Condividila: chi ce l\'ha potrà scriverti.', sw ? [['wishSearch', 'Aggiungi un desiderio']] : [['shareWishOn', 'Condividi la lista desideri', 1]])
+          : emptyHTML('', '', 'Cosa stai cercando? Aggiungi un disco, un libro o un film alla lista desideri: ti avvisiamo quando qualcuno ce l\'ha.', [['wishSearch', 'Aggiungi un desiderio', 1]]))}
         <p class="note home-foot">Per mettere in vendita, in prestito o in regalo un pezzo: aprilo › Modifica › Condividi con la community.</p>`;
       hydratePhotos(b());
       const t = $('#shareWishToggle'); if (t) t.addEventListener('change', () => { try { localStorage.setItem('shareWish', t.checked ? '1' : '0'); } catch (e) {} commSyncShares(true).then(() => toast(t.checked ? 'Lista desideri condivisa' : 'Lista desideri non più condivisa')).catch(er => toast(commErrMsg(er))); });
@@ -2766,7 +2806,7 @@ async function loadCommunity() {
       if (!b() || S.commSeg !== 'messaggi') return;
       b().innerHTML = S.commThreads.map(t => `<button class="crow thrd ${t.unread ? 'unread' : ''}" data-a="threadOpen" data-id="${esc(t.id)}">${coverMini({ tipo: 'vinile', titolo: t.titolo, cover: t.cover })}<div><b translate="no">${esc(t.nick)}</b>${t.titolo ? `<span translate="no">${esc(t.titolo)}</span>` : ''}
           <p>${t.last ? (t.last.mine ? '<span>Tu:</span> ' : '') + (t.last.offer ? esc(offerTxt(t.last.offer, t.last.price)) + (t.last.body ? ' · ' : '') : '') + `<span translate="no">${esc(t.last.body)}</span>` : ''}</p></div></button>`).join('')
-        || '<p class="note">Nessun messaggio. Dalla sezione Scambi puoi contattare chi ha o cerca i tuoi pezzi.</p>';
+        || emptyHTML('💬', 'Nessun messaggio', 'Scrivi a un membro della community, oppure vai negli Scambi per contattare chi ha o cerca i tuoi pezzi.', [['newChat', 'Nuova conversazione', 1], ['goScambi', 'Vai agli Scambi']]);
       hydratePhotos(b());
       commBadges();
     }
@@ -2865,7 +2905,7 @@ async function threadOpen(id, quiet) {
       ta.value = ''; try { await comm('send', { thread: id, body }); threadOpen(id, true); } catch (er) { ta.value = body; toast(er.message === 'bloccato' ? 'Non puoi scrivere a questa persona' : commErrMsg(er)); }
     });
     clearInterval(threadPoll);
-    threadPoll = setInterval(() => { if ($('#sheetWrap').classList.contains('hidden') || S.threadOpenId !== id || !$('#msgs')) { clearInterval(threadPoll); S.threadOpenId = null; return; } threadOpen(id, true); }, 15000);
+    threadPoll = setInterval(() => { if ($('#sheetWrap').classList.contains('hidden') || S.threadOpenId !== id || !$('#msgs')) { clearInterval(threadPoll); S.threadOpenId = null; return; } if (document.visibilityState === 'visible') threadOpen(id, true); }, 20000);
   }
   if (S.view === 'community' && S.commSeg === 'messaggi' && !quiet) loadCommunity();
 }
@@ -2874,8 +2914,11 @@ async function threadBlock() {
   if (!t.blocked && !confirm(tr('Bloccare questa persona? Non potrà più scriverti e non vedrai più i suoi contenuti.'))) return;
   try { await comm('block', { member: t.other, off: t.blocked }); toast(t.blocked ? 'Sbloccato' : 'Bloccato'); S.threadOpenId = null; closeSheet(); if (S.view === 'community') loadCommunity(); } catch (e) { toast(commErrMsg(e)); }
 }
-async function commUnreadCheck() {
-  if (!commMe() || !Drive.token() || Date.now() - (S.commUnreadAt || 0) < 50e3) return;
+// Controllo leggero di messaggi, inviti e notifiche. Con le notifiche push attive basta raramente:
+// le novità arrivano col push (e il service worker avvisa l'app aperta).
+const COMM_GAP = () => (pushOn() ? 10 : 3) * 60e3;
+async function commUnreadCheck(minGap) {
+  if (!commMe() || !Drive.token() || Date.now() - (S.commUnreadAt || 0) < (minGap ?? COMM_GAP() - 5e3)) return;
   S.commUnreadAt = Date.now();
   try { const r = await comm('unread'); S.commUnread = r.unread || 0; S.commInvites = r.invites || 0; S.commNotifs = r.notifs || 0; commBadges(); } catch (e) {}
 }
@@ -2898,7 +2941,7 @@ async function loadEvents(box) {
   const d = await comm('events'); S.commEvents = d;
   if (!box() || S.commSeg !== 'eventi') return;
   box().innerHTML = `<div class="stack"><button class="btn primary block" data-a="eventNew">${ic('plus', 18)}Crea un evento</button></div>
-    ${d.upcoming.map(evCard).join('') || '<p class="note">Nessun evento in programma. Crea il primo: un ascolto, un club del libro, un mercatino di scambio…</p>'}
+    ${d.upcoming.map(evCard).join('') || emptyHTML('📅', 'Nessun evento in programma', 'Crea il primo: un ascolto in diretta di un disco, un club del libro, un cineforum, un mercatino di scambio… e invita chi vuoi.', [['commInvite', 'Invita un amico']])}
     ${d.past.length ? `<h3 class="chtitle">Passati</h3>${d.past.map(evCard).join('')}` : ''}`;
   hydratePhotos(box());
 }
@@ -2976,7 +3019,7 @@ async function eventOpen(id, quiet) {
     ta.value = ''; try { await comm('eventMsg', { id, body }); eventOpen(id, true); } catch (er) { ta.value = body; toast(commErrMsg(er)); }
   });
   clearInterval(evPoll);
-  evPoll = setInterval(() => { if ($('#sheetWrap').classList.contains('hidden') || S.eventOpenId !== id || !$('#emsgs')) { clearInterval(evPoll); S.eventOpenId = null; return; } eventOpen(id, true); }, live ? 5000 : 20000);
+  evPoll = setInterval(() => { if ($('#sheetWrap').classList.contains('hidden') || S.eventOpenId !== id || !$('#emsgs')) { clearInterval(evPoll); S.eventOpenId = null; return; } if (document.visibilityState === 'visible') eventOpen(id, true); }, live ? 5000 : 60000);
 }
 const liveItemsByWork = w => live().find(i => workKey(i) === w && !i.desiderio);
 async function rsvp(v) {
@@ -3102,7 +3145,7 @@ function commDing() {
     });
   } catch (e) {}
 }
-setInterval(() => { if (document.visibilityState === 'visible') commUnreadCheck(); }, 60e3);
+setInterval(() => { if (document.visibilityState === 'visible') commUnreadCheck(); }, 60e3); // controlla ogni minuto se è passato abbastanza tempo
 const OFFER_VERB = { vendo: 'in vendita', presto: 'in prestito', regalo: 'in regalo' };
 function notifText(x) {
   const d = x.data || {}; const t = `«${d.titolo || d.title || ''}»`; const who = `<b translate="no">${esc(x.nick || '?')}</b>`;
@@ -3186,7 +3229,10 @@ async function pushGo(go) {
   return notifsOpen();
 }
 const go_ = (v) => go(v, null, true);
-if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.type === 'push-go') pushGo(e.data.go); });
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => {
+  if (e.data && e.data.type === 'push-go') pushGo(e.data.go);
+  if (e.data && e.data.type === 'push') commUnreadCheck(0); // è arrivata una notifica mentre l'app è aperta: aggiorna i pallini
+});
 
 // ── Privacy, termini, regole; i miei dati (scarica, elimina) ──
 function legalHTML(kind) {
@@ -3708,6 +3754,13 @@ Object.assign(actions, {
   commDel: el => commDel(el.dataset.kind, el.dataset.id),
   commReport: el => commReport(el.dataset.kind, el.dataset.id),
   commInvite: () => commInvite(),
+  welcomeStep: el => welcomeOpen(el.dataset.v),
+  goScambi: () => { S.commSeg = 'scambi'; render(); },
+  shareWishOn: () => { try { localStorage.setItem('shareWish', '1'); } catch (e) {} commSyncShares(true).then(() => { toast('Lista desideri condivisa'); loadCommunity(); }).catch(er => toast(commErrMsg(er))); },
+  welcome: () => welcomeOpen(0),
+  welcomeAdd: () => sheetAdd(),
+  welcomeJoin: () => { closeSheet(); if (!Drive.token()) return toast('Prima collega Google Drive: la community usa lo stesso accesso', 5000); commJoinSheet(); },
+  wishSearch: () => { S.intoDraft = false; S.coverMode = null; sheetSearch(S.addTipo); S.pickWish = true; },
   discWork: () => { const x = S.disc && S.disc.item; if (x) workSheet(x); },
   discOffer: () => { const x = S.disc && S.disc.item; if (!x) return; S.commMatch = { tmp: [x] }; offerSheet({ dataset: { m: 'tmp', i: '0', to: x.member, nick: x.nick, mode: x.kind === 'wish' ? 'give' : 'ask' } }); },
   discDel: async el => { if (!confirm(tr('Eliminare il commento?'))) return; try { await comm('delete', { kind: 'comment', id: el.dataset.id }); discussionOpen(S.disc.q); } catch (e) { toast(commErrMsg(e)); } },
@@ -3812,7 +3865,7 @@ document.addEventListener('visibilitychange', () => {
   if (cfg('clientId') && !Drive.token() && S.dirty && safeToLeave()) { Drive.silentLogin(); return; }
   scheduleSync(800);
   if (S.swReg) S.swReg.update().catch(() => {}); // controlla se è uscita una nuova versione
-  commUnreadCheck();
+  commUnreadCheck(60e3); // tornando nell'app: aggiorna se è passato almeno un minuto
 });
 
 /* ── Avvio ─────────────────────────────────────────────────── */
@@ -3842,7 +3895,7 @@ document.addEventListener('visibilitychange', () => {
     if (Drive.token()) { sync(); if (justLogged === true) toast('Collegato a Google Drive'); }
     else { setSync('login'); setTimeout(() => { if (safeToLeave()) Drive.silentLogin(); }, 600); }
   }
-  maybeWhatsNew();
+  if (!maybeWelcome()) maybeWhatsNew();
   runBatch(); runCovers();
   if ('serviceWorker' in navigator) {
     const hadController = !!navigator.serviceWorker.controller;

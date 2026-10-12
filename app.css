@@ -620,3 +620,18 @@ label.check { display: flex; gap: 10px; align-items: center; margin: 6px 0 12px;
 .legal p, .legal li { font-size: 14px; line-height: 1.55; }
 .legal ul { padding-left: 20px; }
 .legallinks { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+
+/* Benvenuto e sezioni vuote */
+.welcome { text-align: center; padding: 8px 4px 4px; }
+.welcome .wem { font-size: 44px; line-height: 1.2; margin: 6px 0 10px; }
+.welcome h2 { margin: 0 0 8px; }
+.welcome p { color: var(--muted); font-size: 15px; line-height: 1.5; margin: 0 auto 16px; max-width: 34em; }
+.wdots { display: flex; justify-content: center; gap: 8px; margin: 0 0 16px; }
+.wdots i { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+.wdots i.on { background: var(--accent); width: 22px; border-radius: 4px; }
+.welcome .more { display: block; margin: 4px auto 0; }
+.cempty { background: var(--card); border-radius: var(--r); padding: 16px; margin: 4px 0 14px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.cempty .cem { font-size: 30px; line-height: 1; }
+.cempty b { font-size: 16px; }
+.cempty p { color: var(--muted); font-size: 14px; line-height: 1.45; margin: 0; }
+.cebtns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
