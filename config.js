@@ -26,6 +26,7 @@ window.SCAFFALE_CONFIG = {
 
   // Notifiche push: funzione Supabase che registra il telefono + chiave pubblica VAPID (pubblica per natura)
   PUSH_URL: 'https://rixpxmjphydezosyhjzz.supabase.co/functions/v1/push',
+  FEEDBACK_URL: 'https://rixpxmjphydezosyhjzz.supabase.co/functions/v1/feedback',
   VAPID_PUBLIC: 'BIXQo58Vyrqy2dFBPiHC7Gcha8DApvlZBO0C6ytJYTfPk5LTV-J51yHmQpHintAbGJbG1Er0-VKwmBj8wbNFpE8',
 
   // Chi gestisce Spinyl e a chi scrivere per la privacy (cambiare con l'indirizzo del dominio quando ci sarà)

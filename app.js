@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.15.0';
+const VERSION = '2.16.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -702,6 +702,11 @@ function viewSettings() {
       </details>
     </div>
     ${commSettingsHTML()}
+    <div class="section"><h3>Aiuto e suggerimenti</h3>
+      <p class="note">Qualcosa non va o ti manca qualcosa? Scrivici: leggiamo tutto.</p>
+      <div class="stack"><button class="btn block" data-a="feedback" data-v="bug">🐞 <span>Segnala un problema</span></button><button class="btn block" data-a="feedback" data-v="idea">💡 <span>Proponi un'idea</span></button>
+        ${commMe() && commMe().admin ? '<button class="btn block" data-a="feedbackAdmin">📮 <span>Segnalazioni ricevute</span></button>' : ''}</div>
+      ${FEEDBACK_URL ? `<label class="field inline"><span>Invia in automatico gli errori tecnici dell'app (anonimi, ci aiutano a correggerli)</span><input type="checkbox" id="errT" ${errOn() ? 'checked' : ''}></label>` : ''}</div>
     <div class="section"><h3>Privacy e termini</h3>
       <p class="note">La tua collezione resta sul telefono e sul tuo Google Drive. Niente pubblicità, niente tracciamento.</p>
       <div class="stack"><button class="btn block" data-a="legal" data-v="privacy">Informativa privacy</button><button class="btn block" data-a="legal" data-v="terms">Termini d'uso</button><button class="btn block" data-a="legal" data-v="rules">Regole della community</button></div></div>
@@ -2329,6 +2334,11 @@ function showUpdateBar() {
   document.body.appendChild(b);
 }
 const NEWS = {
+  '2.16': [
+    ['Scrivici', "Impostazioni › Aiuto e suggerimenti (o in fondo alla Home): segnala un problema o proponi un'idea. Leggiamo tutto."],
+    ['Errori corretti più in fretta', "Se l'app va in errore ci arriva una segnalazione tecnica anonima. Puoi disattivarla nelle Impostazioni."],
+    ['Prova delle notifiche', 'Nelle Impostazioni della community puoi inviarti una notifica di prova, anche ad app chiusa.'],
+  ],
   '2.15': [
     ['Benvenuto', "Chi apre Spinyl per la prima volta trova una guida in 3 passi (la rivedi da Impostazioni › Guida introduttiva)."],
     ['Sezioni vuote più utili', 'Bacheca, Eventi, Scambi e Messaggi, quando sono vuoti, ti suggeriscono cosa fare: condividere un pezzo, aggiungere un desiderio, invitare un amico.'],
@@ -2681,6 +2691,7 @@ function commSettingsHTML() {
   return `<div class="section"><h3>Community</h3>
     ${me ? `<p class="note">Sei dentro come <b translate="no">${esc(me.nick)}</b>${me.admin ? ' · amministratore' : ''}. Ogni invito vale per 5 amici.</p>
       ${pushSupported() ? `<label class="field inline"><span>Notifiche sul telefono (anche ad app chiusa)</span><input type="checkbox" id="pushT" ${pushOn() ? 'checked' : ''}></label>` : (isIOS() && !isStandalone() ? '<p class="note">Per le notifiche sul telefono aggiungi Spinyl alla schermata Home e aprila da lì.</p>' : '')}
+      ${pushOn() ? '<div class="stack"><button class="btn block" data-a="pushTest">Invia una notifica di prova</button><button class="btn block" data-a="pushTest" data-v="later">Prova ad app chiusa (tra 10 secondi)</button></div>' : ''}
       <label class="field inline"><span>Suono e vibrazione per le notifiche</span><input type="checkbox" id="commSoundT" ${soundOn() ? 'checked' : ''}></label>
       <div class="stack"><button class="btn block" data-a="commInvite">${ic('share', 18)}Invita un amico</button>
         <button class="btn block" data-a="commExport">${ic('download', 18)}Scarica i miei dati</button>
@@ -3157,9 +3168,10 @@ function notifText(x) {
   if (x.kind === 'rsvp') return `${who} <span>partecipa al tuo evento</span> <span translate="no">«${esc(d.title || '')}»</span>`;
   if (x.kind === 'offer') return `${who} <span>ha messo ${OFFER_VERB[d.offer] || 'a disposizione'}</span> ${T}${d.price != null && d.offer === 'vendo' ? ' · ' + esc(money(+d.price)) : ''} <span>che cerchi</span>`;
   if (x.kind === 'post') return `${who} <span>ha scritto un articolo su</span> ${T}`;
+  if (x.kind === 'feedback') return `<b>${d.type === 'idea' ? 'Nuova idea' : 'Nuova segnalazione'}</b>${d.body ? `: <i translate="no">“${esc(d.body)}”</i>` : ''}`;
   return who;
 }
-const NOTIF_ICO = { comment: '💬', reply: '💬', invite: '📅', rsvp: '✅', offer: '🏷️', post: '📝' };
+const NOTIF_ICO = { comment: '💬', reply: '💬', invite: '📅', rsvp: '✅', offer: '🏷️', post: '📝', feedback: '📮' };
 async function notifsOpen() {
   openSheet(`<h2>Notifiche</h2><div id="notifList">${loadingHTML('Carico…')}</div>`);
   let d; try { d = await comm('notifs', { markRead: true }); } catch (e) { const b = $('#notifList'); if (b) b.innerHTML = `<p class="note">${esc(commErrMsg(e))}</p>`; return; }
@@ -3170,10 +3182,95 @@ async function notifsOpen() {
 }
 function notifGo(i) {
   const x = (S.notifs || [])[i]; if (!x) return; const d = x.data || {};
+  if (x.kind === 'feedback') return feedbackAdmin();
   if (x.kind === 'invite' || x.kind === 'rsvp') return eventOpen(d.id);
   if (d.type === 'post' || x.kind === 'post') return postOpen(d.id);
   if (d.type === 'review') return discussionOpen({ type: 'review', id: d.id });
   if (d.type === 'share' || x.kind === 'offer') return discussionOpen({ type: 'share', member: d.member, work: d.work, kind: d.kind || 'own' });
+}
+
+
+// ── Segnalazioni: problemi e idee scritti dagli utenti, errori tecnici anonimi dell'app ──
+const FEEDBACK_URL = BASE.FEEDBACK_URL || '';
+async function fbCall(body, withName) {
+  const h = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + COMM_KEY, apikey: COMM_KEY };
+  const tok = withName && Drive.token(); if (tok) h['x-google-token'] = tok;
+  const r = await fetch(FEEDBACK_URL, { method: 'POST', headers: h, body: JSON.stringify(body), keepalive: body.action === 'error' });
+  if (!r.ok) throw new CommErr(r.status, (await r.json().catch(() => ({}))).error || 'errore');
+  return r.json();
+}
+const errOn = () => { try { return localStorage.getItem('errReport') !== '0'; } catch (e) { return true; } };
+const ERRQ = []; let errSent = 0;
+// rumore che non dipende dall'app: estensioni, rete assente, script di altri siti
+const ERR_SKIP = /^Script error\.?$|ResizeObserver loop|Load failed|NetworkError|Failed to fetch|AbortError|aborted|(chrome|moz|safari(-web)?)-extension:|webkit-masked-url/i;
+function errCatch(message, source, stack) {
+  message = String(message || '').slice(0, 500); source = String(source || ''); stack = String(stack || '');
+  if (!FEEDBACK_URL || !COMM_KEY || !message || ERR_SKIP.test([message, source, stack].join(' '))) return;
+  const key = message + '|' + source; S.errSeen = S.errSeen || new Set();
+  if (S.errSeen.has(key) || errSent + ERRQ.length >= 8) return; // al massimo 8 errori diversi per sessione
+  S.errSeen.add(key); S.lastErrors = [...(S.lastErrors || []), message].slice(-5);
+  if (!errOn()) return;
+  const strip = x => x.split(location.origin).join('');
+  ERRQ.push({ message, source: strip(source), stack: strip(stack).slice(0, 2000), view: String(S.view || '') });
+  clearTimeout(S.errT); S.errT = setTimeout(errFlush, 3000);
+}
+async function errFlush() {
+  if (!ERRQ.length) return;
+  if (!navigator.onLine) { S.errT = setTimeout(errFlush, 60e3); return; }
+  const batch = ERRQ.splice(0); errSent += batch.length;
+  try { await fbCall({ action: 'error', errors: batch, version: VERSION, ua: navigator.userAgent }); } catch (e) {}
+}
+window.addEventListener('error', e => { if (e.message) errCatch(e.message, e.filename ? `${e.filename}:${e.lineno}:${e.colno}` : '', e.error && e.error.stack); });
+window.addEventListener('unhandledrejection', e => { const r = e.reason; if (r == null) return; errCatch(r.message || String(r), '', r.stack); });
+
+function fbDiag() {
+  let push = 'no'; try { push = pushSupported() ? (pushOn() ? 'on' : Notification.permission) : (isIOS() && !isStandalone() ? 'serve Home' : 'no'); } catch (e) {}
+  return { version: VERSION, ua: navigator.userAgent, lang: LNG(), app: isStandalone() ? 'installata' : 'browser', schermo: `${innerWidth}x${innerHeight}`,
+    pezzi: live().length, drive: !cfg('clientId') ? 'off' : Drive.token() ? 'ok' : S.syncState || 'login', sync: S.syncError || '', community: !!commMe(), push, online: navigator.onLine, errori: S.lastErrors || [] };
+}
+function feedbackSheet(kind, keep) {
+  S.fbKind = kind === 'idea' ? 'idea' : 'bug';
+  openSheet(`<h2>Scrivici</h2>
+    <div class="seg" id="fbKind"><button type="button" class="${S.fbKind === 'bug' ? 'on' : ''}" data-a="fbKind" data-v="bug">🐞 <span>Un problema</span></button><button type="button" class="${S.fbKind === 'idea' ? 'on' : ''}" data-a="fbKind" data-v="idea">💡 <span>Un'idea</span></button></div>
+    <label class="field"><span>${S.fbKind === 'bug' ? 'Cosa è successo? Cosa stavi facendo?' : 'Cosa ti piacerebbe trovare in Spinyl?'}</span><textarea id="fbText" rows="5" maxlength="4000">${esc((keep || {}).text || '')}</textarea></label>
+    <label class="field"><span>Come ricontattarti (facoltativo)</span><input id="fbContact" maxlength="200" value="${esc((keep || {}).contact || '')}" placeholder="email, telefono o nome nella community"></label>
+    <label class="field inline"><span>Allega i dati tecnici (versione, telefono, ultimi errori; niente della tua collezione)</span><input type="checkbox" id="fbDiag" ${S.fbKind === 'bug' ? 'checked' : ''}></label>
+    ${commMe() ? '<label class="field inline"><span>Firma con il mio nome nella community</span><input type="checkbox" id="fbName" checked></label>' : ''}
+    <div class="stack"><button class="btn primary block" data-a="fbSend">Invia</button></div>
+    <p class="note">Leggiamo tutto. Le segnalazioni sono private: gli altri utenti non le vedono.</p>`);
+}
+async function fbSend(btn) {
+  const text = ($('#fbText') || {}).value.trim(), contact = ($('#fbContact') || {}).value.trim();
+  if (text.length < 3) return toast('Scrivi qualche parola in più');
+  if (!navigator.onLine) return toast('Sei offline: riprova quando torna la connessione');
+  btn.disabled = true;
+  try {
+    await fbCall({ action: 'send', kind: S.fbKind, message: text, contact, version: VERSION, lang: LNG(), diag: $('#fbDiag').checked ? fbDiag() : null }, !!($('#fbName') || {}).checked);
+    closeSheet(); toast(S.fbKind === 'idea' ? "Grazie per l'idea!" : 'Grazie! Ci guardiamo al più presto', 4000);
+  } catch (e) { btn.disabled = false; toast(e.message === 'troppi' ? 'Hai inviato molte segnalazioni: riprova tra un po\'' : 'Invio non riuscito, riprova'); }
+}
+// Amministratore: segnalazioni ricevute ed errori dell'app
+async function feedbackAdmin() {
+  openSheet(`<h2>Segnalazioni ricevute</h2><div id="fbList">${loadingHTML('Carico…')}</div>`);
+  let d; try { d = await comm('feedbackList'); } catch (e) { const b = $('#fbList'); if (b) b.innerHTML = `<p class="note">${esc(commErrMsg(e))}</p>`; return; }
+  const b = $('#fbList'); if (!b) return;
+  const pre = x => `<details><summary>Dati tecnici</summary><pre translate="no">${esc(typeof x === 'string' ? x : JSON.stringify(x, null, 1))}</pre></details>`;
+  const fb = d.feedback.map(x => `<div class="fbrow ${x.status === 'fatto' ? 'done' : ''}"><div class="chead"><span class="ctag">${x.kind === 'idea' ? '💡 <span>Idea</span>' : '🐞 <span>Problema</span>'}</span><b translate="no">${esc(x.nick || x.contact || '—')}</b><small>${esc(commAgo(x.created_at))} · <span translate="no">${esc(x.version)}</span></small></div>
+      <p translate="no">${esc(x.message)}</p>${x.contact ? `<small translate="no">${esc(x.contact)}</small>` : ''}${x.diag ? pre(x.diag) : ''}
+      <div class="cacts">${x.status === 'fatto' ? '<span>✓ Fatto</span>' : `<button data-a="fbStatus" data-id="${esc(x.id)}">Segna come fatto</button>`}</div></div>`).join('') || '<p class="note">Nessuna segnalazione, per ora.</p>';
+  const er = d.errors.map(x => `<div class="fbrow"><div class="chead"><b translate="no">${esc(x.message)}</b><small translate="no">×${x.count} · ${esc(x.version)} · ${esc(commAgo(x.last_seen))}</small></div>
+      <small translate="no">${esc([x.source, x.view].filter(Boolean).join(' · '))}</small>${x.stack ? pre(x.stack + '\n\n' + x.ua) : ''}
+      <div class="cacts"><button data-a="fbErrDone" data-id="${esc(x.hash)}">Risolto</button></div></div>`).join('') || '<p class="note">Nessun errore aperto.</p>';
+  b.innerHTML = `<h4 class="csub">Problemi e idee</h4>${fb}<h4 class="csub">Errori dell'app</h4>${er}`;
+}
+// Prova delle notifiche push: subito o tra 10 secondi (per provarle ad app chiusa)
+async function pushTest(delay) {
+  try {
+    const reg = await navigator.serviceWorker.ready; const sub = await reg.pushManager.getSubscription();
+    if (!sub) return pushEnable();
+    const r = await pushCall({ sub: sub.toJSON(), lang: LNG(), test: true, delay: !!delay });
+    toast(delay ? 'Ora chiudi Spinyl o blocca il telefono: la notifica arriva tra 10 secondi' : r.test && r.test < 300 ? 'Notifica inviata' : 'Il servizio di notifiche ha risposto ' + r.test, 6000);
+  } catch (e) { toast(e.code === 401 ? COMM_ERR.login : 'Prova non riuscita: ' + (e.message || e)); }
 }
 
 // ── Notifiche push (anche ad app chiusa) ──
@@ -3226,6 +3323,7 @@ async function pushGo(go) {
   if (k === 'thread') { S.commSeg = 'messaggi'; render(); return threadOpen(id); }
   if (k === 'post') return postOpen(id);
   if (k === 'review') return discussionOpen({ type: 'review', id });
+  if (k === 'feedback') return feedbackAdmin();
   return notifsOpen();
 }
 const go_ = (v) => go(v, null, true);
@@ -3546,6 +3644,7 @@ function viewHome() {
     ${empty ? `<div class="hint"><b>Benvenuto in Spinyl!</b><span>Aggiungi i tuoi primi libri, dischi e film: qui compariranno le novità dei tuoi autori, artisti e registi.</span><button class="btn primary" data-a="add">${ic('plus', 18)}Aggiungi</button></div>` : ''}
     <div id="feedRows"></div>
     <p class="note home-foot" id="feedFoot"></p>
+    ${FEEDBACK_URL ? '<p class="note home-foot"><button class="more" data-a="feedback" data-v="idea">Un problema o un\'idea? Scrivici</button></p>' : ''}
   </div>`;
 }
 function feedCard(c, rowKey, i) {
@@ -3755,6 +3854,13 @@ Object.assign(actions, {
   commReport: el => commReport(el.dataset.kind, el.dataset.id),
   commInvite: () => commInvite(),
   welcomeStep: el => welcomeOpen(el.dataset.v),
+  feedback: el => feedbackSheet(el.dataset.v),
+  fbKind: el => feedbackSheet(el.dataset.v, { text: ($('#fbText') || {}).value, contact: ($('#fbContact') || {}).value }),
+  fbSend: el => fbSend(el),
+  feedbackAdmin: () => feedbackAdmin(),
+  fbStatus: el => comm('feedbackStatus', { id: el.dataset.id, status: 'fatto' }).then(feedbackAdmin).catch(e => toast(commErrMsg(e))),
+  fbErrDone: el => comm('feedbackStatus', { error: el.dataset.id }).then(feedbackAdmin).catch(e => toast(commErrMsg(e))),
+  pushTest: el => pushTest(el.dataset.v === 'later'),
   goScambi: () => { S.commSeg = 'scambi'; render(); },
   shareWishOn: () => { try { localStorage.setItem('shareWish', '1'); } catch (e) {} commSyncShares(true).then(() => { toast('Lista desideri condivisa'); loadCommunity(); }).catch(er => toast(commErrMsg(er))); },
   welcome: () => welcomeOpen(0),
@@ -3821,6 +3927,7 @@ document.addEventListener('change', e => {
   const t = e.target;
   if (t.id === 'langSel' && window.I18N) { I18N.set(t.value); location.reload(); return; }
   if (t.id === 'pushT') { t.checked ? pushEnable() : pushDisable(); return; }
+  if (t.id === 'errT') { try { localStorage.setItem('errReport', t.checked ? '1' : '0'); } catch (er) {} return; }
   if (t.id === 'commSoundT') { try { localStorage.setItem('commSound', t.checked ? '1' : '0'); } catch (er) {} if (t.checked) commDing(); }
   if (t.id === 'sort') { S.sort = t.value; localStorage.setItem('sort', S.sort); renderGrid(); }
   if (t.dataset.f && S.draft) S.draft[t.dataset.f] = t.type === 'checkbox' ? t.checked : t.value;

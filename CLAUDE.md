@@ -21,3 +21,6 @@ dati in IndexedDB sul telefono, copia su Google Drive dell'utente, pubblicata co
 - Notifiche push: funzione Supabase `push` (verify_jwt false). Il database (trigger → `notify()`/`push_send()` con pg_net)
   la chiama con il segreto `push_secret` del Vault; la chiave VAPID privata è nel Vault (`vapid_jwk`), MAI nel repository.
   La chiave pubblica VAPID è in config.js e in `supabase/functions/push/index.ts`. Il telefono si iscrive chiamando `push` con il token Google.
+- Segnalazioni: funzione Supabase `feedback` (verify_jwt true, basta la anon key: funziona anche senza community).
+  Tabelle `feedback` (problemi/idee, trigger → notifica + push agli admin) e `client_errors` (errori raggruppati per hash, RPC `log_client_error`).
+  L'admin le legge in Impostazioni › Segnalazioni ricevute (azioni `feedbackList`/`feedbackStatus` della funzione community). Nessun IP salvato: solo `ip_hash` giornaliero.

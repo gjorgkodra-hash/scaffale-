@@ -75,6 +75,7 @@ OAUTH = {'mode': 'ok', 'hits': []}
 
 # Community finta: stessa logica essenziale della funzione Supabase
 COMM = {'members': {}, 'invites': {'AMICO1': 0}, 'reviews': [], 'comments': [], 'n': 0}
+FEEDBACK = {'sent': [], 'errors': [], 'tokens': []}
 def comm_handle(tok, b):
     import itertools
     if not tok: return 401, {'error': 'login'}
@@ -97,6 +98,10 @@ def comm_handle(tok, b):
     if a == 'deleteAccount':
         if b.get('confirm') != me['nick']: return 400, {'error': 'conferma'}
         COMM['members'].pop(gid, None); COMM['reviews'] = [r for r in COMM['reviews'] if r['mid'] != me['id']]; return 200, {'ok': True}
+    if a == 'feedbackList':
+        if not me.get('admin'): return 400, {'error': 'azione'}
+        return 200, {'feedback': [dict(id='f%d' % i, created_at='2026-10-12T10:00:00Z', kind=x['kind'], message=x['message'], contact=x.get('contact', ''), version=x.get('version', ''), diag=x.get('diag'), status='nuovo', nick='') for i, x in enumerate(FEEDBACK['sent'])],
+                     'errors': [dict(hash='h%d' % i, message=e['message'], source=e.get('source', ''), stack=e.get('stack', ''), version='x', ua='', view=e.get('view', ''), count=1, last_seen='2026-10-12T10:00:00Z') for i, e in enumerate(FEEDBACK['errors'])]}
     if a == 'notifs':
         L = [n for n in COMM.get('notifs', []) if n['to'] == me['id']]
         out = [{'id': str(k), 'kind': n['kind'], 'data': n['data'], 'read': n['read'], 'at': '2026-10-11T21:00:00Z', 'nick': n['nick']} for k, n in enumerate(L)][::-1]
@@ -249,6 +254,11 @@ def make_route(no_vision=False):
             cb = q.get('callback', [''])[0]; return await r.fulfill(status=200, content_type='text/javascript', body=f'{cb}({{"results":[]}});')
         if h.endswith('.supabase.co'):
             if r.request.method == 'OPTIONS': return await r.fulfill(status=200, headers={'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': 'POST'})
+            if p.path.endswith('/feedback'):
+                fb = json.loads(r.request.post_data or '{}')
+                if fb.get('action') == 'error': FEEDBACK['errors'].extend(fb.get('errors', [])); return await J({'ok': True})
+                if len(fb.get('message', '')) < 3: return await J({'error': 'vuoto'}, 400)
+                FEEDBACK['sent'].append(fb); FEEDBACK['tokens'].append(r.request.headers.get('x-google-token', '')); return await J({'ok': True})
             st, o = comm_handle(r.request.headers.get('x-google-token', ''), json.loads(r.request.post_data or '{}'))
             return await J(o, st)
         if h == 'api.rss2json.com':
@@ -393,9 +403,10 @@ async def t_community(b, base):
     check('ultime recensioni nella scheda Community', 'Anna' in await page2.evaluate("document.querySelector('#commList').textContent"))
     await page2.click('[data-a=commSeg][data-v=messaggi]'); await page2.wait_for_selector('#commList .cempty', timeout=5000)
     check('messaggi vuoti: propone una nuova conversazione', await page2.evaluate("!!document.querySelector('#commList .cempty [data-a=newChat]')"))
-    await page2.click('#commList [data-a=goScambi]'); await page2.wait_for_selector('#commList [data-a=wishSearch]', timeout=8000)
-    check('scambi vuoti: propone di offrire un pezzo e aggiungere un desiderio', await page2.evaluate("!!document.querySelector('[data-a=newShare]') && !!document.querySelector('[data-a=wishSearch]')"))
-    await page2.click('[data-a=wishSearch]'); await page2.wait_for_selector('#sheet input', timeout=5000)
+    # (i desideri di Bruno dipendono da cosa è già arrivato da Drive: senza desideri propone di aggiungerne, con desideri di condividerli)
+    await page2.click('#commList [data-a=goScambi]'); await page2.wait_for_selector('#commList [data-a=wishSearch], #commList [data-a=shareWishOn]', timeout=8000)
+    check('scambi vuoti: propone di offrire un pezzo e aggiungere/condividere i desideri', await page2.evaluate("!!document.querySelector('[data-a=newShare]') && !!document.querySelector('#commList [data-a=wishSearch], #commList [data-a=shareWishOn]')"))
+    await page2.evaluate("actions.wishSearch()"); await page2.wait_for_selector('#sheet input', timeout=5000)
     check('aggiungi un desiderio apre la ricerca in modalità desideri', await page2.evaluate("S.pickWish === true && !$('#sheetWrap').classList.contains('hidden')"))
     await page2.evaluate("closeSheet(); S.pickWish=false; S.commSeg='bacheca'")
     await page.evaluate("go('community', null, true)"); await page.wait_for_timeout(300)
@@ -611,6 +622,47 @@ async def t_welcome(b, base):
     check('controllo in background: 3 min, 10 con il push', gaps == [180000, 600000], gaps)
     check('nessun errore JavaScript', not (errs + e2), errs + e2)
 
+async def t_feedback(b, base):
+    print('\nSegnalazioni ed errori')
+    page, errs = await new_page(b, base, init="localStorage.setItem('gtoken', JSON.stringify({t:'FB', exp: Date.now()+3600e3}));")
+    await page.evaluate(SEED, ITEMS)
+    await page.evaluate("go('settings')"); await page.click('[data-a=feedback][data-v=bug]')
+    await page.fill('#fbText', 'ok'); await page.click('[data-a=fbSend]'); await page.wait_for_timeout(300)
+    check('messaggio troppo corto: non invia', len(FEEDBACK['sent']) == 0)
+    await page.fill('#fbText', 'La scansione si blocca'); await page.click('[data-a=fbKind][data-v=idea]')
+    check('cambiando tipo il testo resta', await page.input_value('#fbText') == 'La scansione si blocca')
+    await page.click('[data-a=fbKind][data-v=bug]'); await page.fill('#fbContact', 'mario@example.com')
+    await page.click('[data-a=fbSend]'); await page.wait_for_function("document.querySelector('#sheetWrap').classList.contains('hidden')", timeout=5000)
+    x = FEEDBACK['sent'][-1] if FEEDBACK['sent'] else {}
+    check('segnalazione inviata con contatto', x.get('kind') == 'bug' and x.get('contact') == 'mario@example.com')
+    d = json.dumps(x.get('diag') or {})
+    check('dati tecnici: versione e telefono, niente collezione', '"version"' in d and '"ua"' in d and 'Dark Side' not in d and 'Pink Floyd' not in d, d[:200])
+    check('senza community: segnalazione anonima', FEEDBACK['tokens'][-1] == '')
+    # errori dell'app: inviati una volta sola, si possono disattivare
+    await page.evaluate("setTimeout(() => { nonEsiste1() }); setTimeout(() => { nonEsiste1() }, 50); setTimeout(() => { Promise.reject(new Error('promessa rotta')) }, 10); 0")
+    await page.wait_for_timeout(3600)
+    msgs = [e['message'] for e in FEEDBACK['errors']]
+    check('errore inviato una sola volta', sum('nonEsiste1' in m for m in msgs) == 1, msgs)
+    check('anche le promesse rifiutate', any('promessa rotta' in m for m in msgs), msgs)
+    check('niente indirizzo del sito nei dati', not any('localhost' in (e.get('source', '') + e.get('stack', '')) or '127.0.0.1' in (e.get('source', '') + e.get('stack', '')) for e in FEEDBACK['errors']))
+    await page.evaluate("go('settings')"); await page.click('#errT')
+    await page.evaluate("setTimeout(() => { nonEsiste2() })"); await page.wait_for_timeout(3400)
+    check('errori automatici disattivabili', not any('nonEsiste2' in e['message'] for e in FEEDBACK['errors']))
+    await page.evaluate("errCatch('Script error.', '', ''); errCatch('x', 'chrome-extension://abc/x.js', '')"); await page.wait_for_timeout(100)
+    # amministratore: vede le segnalazioni
+    admin, e2 = await new_page(b, base, init="localStorage.setItem('gtoken', JSON.stringify({t:'ADM', exp: Date.now()+3600e3}));")
+    await admin.evaluate("commJoinSheet()"); await admin.fill('#commNick', 'Gjorg'); await admin.fill('#commCode', 'AMICO1'); await admin.check('#commOk')
+    await admin.evaluate("commJoin()"); await admin.wait_for_function("!!commMe()", timeout=5000)
+    COMM['members']['g-ADM']['admin'] = True
+    await admin.evaluate("setCommMe({...commMe(), admin: true}); go('settings')")
+    await admin.click('[data-a=feedbackAdmin]'); await admin.wait_for_selector('.fbrow', timeout=5000)
+    t = await admin.evaluate("document.querySelector('#fbList').textContent")
+    check('amministratore: segnalazioni ed errori', 'La scansione si blocca' in t and 'nonEsiste1' in t, t[:200])
+    await admin.evaluate("closeSheet(); go('settings')"); await admin.click('[data-a=feedback][data-v=idea]')
+    await admin.fill('#fbText', 'Vorrei la modalità scura'); await admin.click('[data-a=fbSend]'); await admin.wait_for_timeout(400)
+    check('membro: segnalazione con il token Google', FEEDBACK['tokens'][-1] == 'ADM')
+    check('nessun errore JavaScript (oltre a quelli di prova)', not [x for x in errs + e2 if 'nonEsiste' not in x and 'promessa rotta' not in x], errs + e2)
+
 async def t_home(b, base):
     print('\nHome "Novità"')
     page, errs = await new_page(b, base)
@@ -642,7 +694,7 @@ async def main():
     base = serve()
     async with async_playwright() as pw:
         b = await pw.chromium.launch()
-        for t in (t_basics, t_check_and_value, t_auto_online, t_book_rating, t_community, t_exchange, t_events, t_batch_import, t_cover, t_sync, t_silent_login, t_welcome, t_home):
+        for t in (t_basics, t_check_and_value, t_auto_online, t_book_rating, t_community, t_exchange, t_events, t_batch_import, t_cover, t_sync, t_silent_login, t_welcome, t_feedback, t_home):
             try: await t(b, base)
             except Exception as e: check(t.__name__ + ' (eccezione)', False, repr(e)[:300])
         await b.close()

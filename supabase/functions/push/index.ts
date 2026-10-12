@@ -17,8 +17,10 @@ const T: Record<string, Record<string, string>> = {
 const OFFER: Record<string, Record<string, string>> = { it: { vendo: "In vendita", presto: "In prestito", regalo: "In regalo", compro: "Vuole comprarlo", prestito: "Chiede in prestito" },
   en: { vendo: "For sale", presto: "Can lend", regalo: "Free", compro: "Wants to buy", prestito: "Asks to borrow" }, es: { vendo: "En venta", presto: "En préstamo", regalo: "Lo regala", compro: "Quiere comprarlo", prestito: "Pide prestado" } };
 
+const FB: Record<string, [string, string]> = { it: ["Nuova segnalazione", "Nuova idea"], en: ["New problem report", "New idea"], es: ["Nuevo problema", "Nueva idea"] };
 function text(lang: string, p: any) {
   const L = T[lang] || T.it; const d = p.data || {};
+  if (p.kind === "feedback") { const f = FB[lang] || FB.it; return { title: d.type === "idea" ? f[1] : f[0], body: String(d.body || "").slice(0, 160), go: "feedback", tag: "feedback:" + (d.id || "") }; }
   const key = p.kind === "offer" ? "offer_" + (d.offer || "vendo") : p.kind;
   const title = (L[key] || "{n}").replace("{n}", p.nick || "Spinyl").replace("{w}", `«${d.titolo || d.title || ""}»`).replace("{e}", `«${d.title || ""}»`);
   let body = d.body ? String(d.body) : "";
@@ -53,9 +55,14 @@ async function subscribe(req: Request) {
     if (!cfg) { const { data } = await db.rpc("push_config"); cfg = { jwk: JSON.parse(data.jwk), secret: data.secret }; }
     const t = { it: "Notifiche attive", en: "Notifications on", es: "Notificaciones activadas" }[lang];
     const x = { it: "Ti avviseremo di commenti, messaggi, inviti e offerte.", en: "We'll tell you about comments, messages, invites and offers.", es: "Te avisaremos de comentarios, mensajes, invitaciones y ofertas." }[lang];
-    const rr = await sendPush({ endpoint, p256dh: keys.p256dh, auth: keys.auth }, { title: t, body: x, go: "notifs", tag: "welcome" }, { jwk: cfg.jwk, pub: VAPID_PUB, subject: "mailto:spinyl@users.noreply.github.com" });
-    if (!rr.ok) console.error("test push", rr.status, await rr.text());
-    return new Response(JSON.stringify({ ok: true, test: rr.status }), { headers: h });
+    const send = async () => {
+      const rr = await sendPush({ endpoint, p256dh: keys.p256dh, auth: keys.auth }, { title: t, body: x, go: "notifs", tag: "welcome" }, { jwk: cfg!.jwk, pub: VAPID_PUB, subject: "mailto:spinyl@users.noreply.github.com" });
+      if (!rr.ok) console.error("test push", rr.status, await rr.text());
+      return rr.status;
+    };
+    // prova "ad app chiusa": risponde subito e manda la notifica dopo 10 secondi
+    if (b.delay) { (globalThis as any).EdgeRuntime?.waitUntil(new Promise((r) => setTimeout(r, 10000)).then(send).catch(console.error)); return new Response(JSON.stringify({ ok: true, test: 202 }), { headers: h }); }
+    return new Response(JSON.stringify({ ok: true, test: await send() }), { headers: h });
   }
   return new Response(JSON.stringify({ ok: true }), { headers: h });
 }

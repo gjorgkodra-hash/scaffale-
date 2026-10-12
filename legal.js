@@ -2,7 +2,7 @@
 // {contatto} e {gestore} vengono sostituiti dall'app con i valori di config.js.
 window.SPINYL_LEGAL = {
   it: {
-    updated: 'Ultimo aggiornamento: 11 ottobre 2026',
+    updated: 'Ultimo aggiornamento: 12 ottobre 2026',
     privacy: `
 <h3>Chi è responsabile dei dati</h3>
 <p>Spinyl è gestita da {gestore}. Per qualsiasi domanda sui tuoi dati scrivi a <b>{contatto}</b>.</p>
@@ -15,6 +15,7 @@ window.SPINYL_LEGAL = {
 <p>Per suggerirti scambi, il telefono invia al server l'elenco delle opere che possiedi e desideri (autore e titolo semplificati), solo per il confronto: non viene salvato né mostrato a nessuno, a meno che tu non scelga di condividere.</p>
 <h3>Notifiche</h3>
 <p>Se attivi le notifiche sul telefono salviamo l'indirizzo di consegna fornito dal browser. Le notifiche passano dai servizi push di Google, Apple o Mozilla.</p>
+<p>Se ci scrivi da «Segnala un problema» o «Proponi un'idea» salviamo il messaggio, il contatto che scegli di lasciare e, se lo spunti, i dati tecnici (versione dell'app, modello di telefono e browser, lingua, ultimi errori: nulla della tua collezione). Se l'app va in errore inviamo in automatico una segnalazione tecnica anonima (messaggio d'errore, versione, browser), che puoi disattivare nelle Impostazioni. Non salviamo il tuo indirizzo IP, solo un'impronta che cambia ogni giorno e serve a bloccare gli abusi.</p>
 <h3>Cosa non facciamo</h3>
 <p>Niente pubblicità, niente profilazione, nessuna vendita o cessione di dati a terzi, nessun sistema di tracciamento.</p>
 <h3>Perché e per quanto tempo</h3>
@@ -45,7 +46,7 @@ window.SPINYL_LEGAL = {
 </ul>`,
   },
   en: {
-    updated: 'Last updated: 11 October 2026',
+    updated: 'Last updated: 12 October 2026',
     privacy: `
 <h3>Who is responsible for your data</h3>
 <p>Spinyl is run by {gestore}. For any question about your data write to <b>{contatto}</b>.</p>
@@ -58,6 +59,7 @@ window.SPINYL_LEGAL = {
 <p>To suggest swaps, your phone sends the server the list of works you own and want (simplified author and title), only for matching: it is not stored or shown to anyone unless you choose to share.</p>
 <h3>Notifications</h3>
 <p>If you turn on phone notifications we store the delivery address provided by your browser. Notifications go through the push services of Google, Apple or Mozilla.</p>
+<p>If you write to us via «Report a problem» or «Suggest an idea» we store the message, any contact you choose to leave and, if you tick it, technical data (app version, phone model and browser, language, recent errors: nothing from your collection). If the app hits an error it automatically sends an anonymous technical report (error message, version, browser), which you can turn off in Settings. We don't store your IP address, only a fingerprint that changes every day and is used to stop abuse.</p>
 <h3>What we don't do</h3>
 <p>No advertising, no profiling, no selling or sharing of data with third parties, no tracking.</p>
 <h3>Why and for how long</h3>
@@ -88,7 +90,7 @@ window.SPINYL_LEGAL = {
 </ul>`,
   },
   es: {
-    updated: 'Última actualización: 11 de octubre de 2026',
+    updated: 'Última actualización: 12 de octubre de 2026',
     privacy: `
 <h3>Quién es responsable de los datos</h3>
 <p>Spinyl está gestionada por {gestore}. Para cualquier pregunta sobre tus datos escribe a <b>{contatto}</b>.</p>
@@ -101,6 +103,7 @@ window.SPINYL_LEGAL = {
 <p>Para sugerirte intercambios, el teléfono envía al servidor la lista de obras que tienes y deseas (autor y título simplificados), solo para compararlas: no se guarda ni se muestra a nadie salvo que decidas compartir.</p>
 <h3>Notificaciones</h3>
 <p>Si activas las notificaciones guardamos la dirección de entrega que da el navegador. Las notificaciones pasan por los servicios push de Google, Apple o Mozilla.</p>
+<p>Si nos escribes desde «Informar de un problema» o «Proponer una idea» guardamos el mensaje, el contacto que decidas dejar y, si lo marcas, los datos técnicos (versión de la app, modelo de teléfono y navegador, idioma, últimos errores: nada de tu colección). Si la app falla, envía automáticamente un informe técnico anónimo (mensaje de error, versión, navegador), que puedes desactivar en Ajustes. No guardamos tu dirección IP, solo una huella que cambia cada día y sirve para frenar abusos.</p>
 <h3>Lo que no hacemos</h3>
 <p>Sin publicidad, sin perfiles, sin venta ni cesión de datos a terceros, sin rastreo.</p>
 <h3>Por qué y durante cuánto tiempo</h3>

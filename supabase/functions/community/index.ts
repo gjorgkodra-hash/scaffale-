@@ -476,6 +476,24 @@ async function handle(body: any, who: { gid: string; email: string }) {
     return { reviews: (data || []).filter((r: any) => !r.members.banned).slice(0, 20).map((r: any) => ({ work: r.work_key, tipo: r.tipo, titolo: r.titolo, autore: r.autore, cover: r.cover_url, stars: r.stars, body: r.body.slice(0, 200), nick: r.members.nick, at: r.updated_at })) };
   }
 
+  // ── Segnalazioni ricevute (solo amministratore) ──
+  if (a === "feedbackList" && admin) {
+    const [{ data: fb }, { data: er }] = await Promise.all([
+      db.from("feedback").select("id,created_at,kind,message,contact,member_id,version,lang,diag,status").order("created_at", { ascending: false }).limit(100),
+      db.from("client_errors").select("hash,message,source,stack,version,ua,view,count,first_seen,last_seen,done").eq("done", false).order("last_seen", { ascending: false }).limit(50),
+    ]);
+    const ids = [...new Set((fb || []).map((x: any) => x.member_id).filter(Boolean))];
+    const { data: ms } = ids.length ? await db.from("members").select("id,nick").in("id", ids) : { data: [] };
+    const nick = new Map((ms || []).map((m: any) => [m.id, m.nick]));
+    return { feedback: (fb || []).map((x: any) => ({ ...x, nick: nick.get(x.member_id) || "" })), errors: er || [] };
+  }
+  if (a === "feedbackStatus" && admin) {
+    if (body.error) { await db.from("client_errors").update({ done: true }).eq("hash", clean(body.error, 40)); return { ok: true }; }
+    const status = ["nuovo", "visto", "fatto"].includes(body.status) ? body.status : "visto";
+    await db.from("feedback").update({ status }).eq("id", clean(body.id, 40));
+    return { ok: true };
+  }
+
   if (a === "ban" && admin) {
     await db.from("members").update({ banned: true }).eq("nick", clean(body.nick, 24)).neq("role", "admin");
     return { ok: true };
