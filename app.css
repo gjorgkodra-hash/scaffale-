@@ -635,3 +635,23 @@ label.check { display: flex; gap: 10px; align-items: center; margin: 6px 0 12px;
 .cempty b { font-size: 16px; }
 .cempty p { color: var(--muted); font-size: 14px; line-height: 1.45; margin: 0; }
 .cebtns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+
+/* Profili, valutazioni */
+.nick { font: inherit; font-weight: 700; color: var(--ink); padding: 0; background: none; border: 0; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 60%, transparent); text-underline-offset: 3px; cursor: pointer; }
+.nick.big { font-size: inherit; font-weight: inherit; font-style: inherit; }
+.chead small[translate] { margin-left: 0; }
+.cmeme { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; background: none; border: 0; padding: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; min-width: 0; }
+.cmeme small { color: var(--muted); font-size: 12px; }
+.prof { display: flex; align-items: center; gap: 14px; margin: 4px 0 10px; }
+.prof h2 { margin: 0; }
+.prof > div:last-child { display: flex; flex-direction: column; gap: 2px; }
+.prof span, .prof small { color: var(--muted); font-size: 14px; }
+.prof small { font-size: 12px; }
+.pava { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; font-size: 26px; font-weight: 800; background: var(--accent); color: var(--accent-ink); flex: none; }
+.pstats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 12px 0; }
+.pstats div { background: var(--card); border-radius: 14px; padding: 10px 6px; text-align: center; display: flex; flex-direction: column; gap: 2px; }
+.pstats b { font-size: 17px; }
+.pstats span { color: var(--muted); font-size: 11px; line-height: 1.2; }
+.raterow { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; background: var(--card); border-radius: 14px; padding: 10px 12px; margin: 0 0 10px; font-size: 14px; }
+.loanbox small.due { color: var(--ink); font-weight: 600; }
+.loanbox.late small.due { color: var(--err); }

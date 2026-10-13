@@ -87,8 +87,25 @@ def comm_handle(tok, b):
         if COMM['invites'].get(b.get('code', '').upper(), 9) >= 5: return 403, {'error': 'invito'}
         if any(m['nick'] == b.get('nick') for m in COMM['members'].values()): return 409, {'error': 'nick-preso'}
         COMM['invites'][b['code'].upper()] += 1
-        me = COMM['members'][gid] = {'id': nid_(), 'nick': b['nick'], 'admin': False}; return 200, {'member': me}
+        me = COMM['members'][gid] = {'id': nid_(), 'nick': b['nick'], 'admin': False, 'city': b.get('city', '')}; return 200, {'member': me}
     if not me: return 403, {'error': 'membro'}
+    mem = lambda mid: next((m for m in COMM['members'].values() if m['id'] == mid), {})
+    if a == 'profileSave': me['city'] = b.get('city', ''); me['bio'] = b.get('bio', ''); return 200, {'member': {k: me[k] for k in ('id', 'nick', 'admin', 'city')}}
+    if a == 'profile':
+        m = mem(b['id'])
+        if not m: return 404, {'error': 'membro'}
+        rs = [r for r in COMM.get('ratings', []) if r['rated'] == m['id']]
+        offers = [dict(x, city=m.get('city', '')) for x in COMM.get('shares', {}).get(m['id'], []) if x['kind'] == 'own' and x.get('offer')]
+        return 200, {'profile': {'id': m['id'], 'nick': m['nick'], 'city': m.get('city', ''), 'bio': m.get('bio', ''), 'since': '2026-10-01T10:00:00Z', 'mine': m['id'] == me['id'], 'blocked': False,
+            'counts': {'reviews': sum(1 for r in COMM['reviews'] if r['mid'] == m['id']), 'posts': 0, 'own': 0, 'wish': 0}, 'rating': {'avg': round(sum(r['stars'] for r in rs) / len(rs), 1) if rs else None, 'n': len(rs)},
+            'ratings': [{'id': 'r%d' % i, 'nick': mem(r['rater'])['nick'], 'stars': r['stars'], 'body': r['body'], 'at': '2026-10-13T10:00:00Z', 'mine': r['rater'] == me['id']} for i, r in enumerate(rs)], 'offers': offers}}
+    if a == 'rate':
+        th = next(x for x in COMM.get('threads', {}).values() if x['id'] == b['thread']); other = [m for m in th['members'] if m != me['id']][0]
+        if not (any(m['from'] == me['id'] for m in th['msgs']) and any(m['from'] == other for m in th['msgs'])): return 400, {'error': 'scambio'}
+        R = COMM.setdefault('ratings', []); R[:] = [r for r in R if not (r['thread'] == th['id'] and r['rater'] == me['id'])]
+        R.append({'thread': th['id'], 'rater': me['id'], 'rated': other, 'stars': b['stars'], 'body': b.get('body', '')})
+        COMM.setdefault('notifs', []).append({'to': other, 'kind': 'rating', 'nick': me['nick'], 'read': False, 'data': {'stars': b['stars'], 'body': b.get('body', '')}})
+        return 200, {'ok': True}
     if a == 'invite': c = 'NEW%d' % len(COMM['invites']); COMM['invites'][c] = 0; return 200, {'code': c}
     if a == 'review':
         COMM['reviews'] = [r for r in COMM['reviews'] if not (r['work'] == b['work'] and r['mid'] == me['id'])]
@@ -127,6 +144,7 @@ def comm_handle(tok, b):
         COMM.setdefault('shares', {})[me['id']] = [dict(x, member=me['id'], nick=me['nick'], at='2026-10-11T12:00:00Z') for x in b.get('items', [])]; return 200, {'ok': True}
     allsh = [x for L in COMM.get('shares', {}).values() for x in L]
     if a == 'match':
+        allsh = [dict(x, city=mem(x['member']).get('city', '')) for x in allsh]
         return 200, {'wanted': [x for x in allsh if x['kind'] == 'wish' and x['work'] in b.get('own', []) and x['member'] != me['id']],
                      'available': [x for x in allsh if x['kind'] == 'own' and x['work'] in b.get('wish', []) and x['member'] != me['id']]}
     if a == 'offer':
@@ -147,7 +165,9 @@ def comm_handle(tok, b):
         return 200, ({'threads': out} if a == 'threads' else {'unread': sum(1 for o in out if o['unread']), 'invites': inv, 'notifs': nn})
     if a == 'thread':
         th = next(x for x in ths if x['id'] == b['id']); other = [m for m in th['members'] if m != me['id']][0]
-        return 200, {'thread': {'id': th['id'], 'other': other, 'nick': nick(other), 'titolo': th['titolo'], 'cover': th['cover'], 'blocked': False}, 'messages': [{'id': m['id'], 'mine': m['from'] == me['id'], 'body': m['body'], 'offer': m['offer'], 'price': m['price'], 'at': m['at']} for m in th['msgs']]}
+        both = any(m['from'] == me['id'] for m in th['msgs']) and any(m['from'] == other for m in th['msgs'])
+        myR = next(({'stars': r['stars'], 'body': r['body']} for r in COMM.get('ratings', []) if r['thread'] == th['id'] and r['rater'] == me['id']), None)
+        return 200, {'thread': {'id': th['id'], 'other': other, 'nick': nick(other), 'titolo': th['titolo'], 'cover': th['cover'], 'blocked': False, 'canRate': both, 'myRating': myR}, 'messages': [{'id': m['id'], 'mine': m['from'] == me['id'], 'body': m['body'], 'offer': m['offer'], 'price': m['price'], 'at': m['at']} for m in th['msgs']]}
     if a == 'post':
         pid = nid_(); COMM.setdefault('posts', []).insert(0, dict(b, id=pid, nick=me['nick'], mid=me['id'], at='2026-10-11T13:00:00Z')); return 200, {'id': pid}
     if a == 'postGet':
@@ -167,7 +187,7 @@ def comm_handle(tok, b):
         x = next(x for x in allsh if x['member'] == b['member'] and x['work'] == b['work'] and x['kind'] == b['kind'])
         return 200, {'item': dict(x, type='share', mine=x['member'] == me['id']), 'comments': cmt(lambda c: c.get('share') == (b['member'], b['work'], b['kind']))}
     EV = COMM.setdefault('events', {})
-    if a == 'members': return 200, {'members': [{'id': m['id'], 'nick': m['nick']} for m in COMM['members'].values() if m['id'] != me['id']]}
+    if a == 'members': return 200, {'members': [{'id': m['id'], 'nick': m['nick'], 'city': m.get('city', '')} for m in COMM['members'].values() if m['id'] != me['id']]}
     if a in ('eventCreate', 'eventEdit'):
         if a == 'eventEdit': e = EV[b['id']]; e.update({k: v for k, v in b.items() if k not in ('action', 'invite', 'id')})
         else: e = EV.setdefault('e%d' % (len(EV) + 1), dict(b, id='e%d' % (len(EV) + 1), creator=me['id'], nick=me['nick'], invited=[], rsvps={me['id']: 'si'}, msgs=[]))
@@ -458,6 +478,32 @@ async def t_exchange(b, base):
     await carla.fill('#msgText', 'Affare fatto!'); await carla.evaluate("document.querySelector('#msgForm').requestSubmit()")
     await carla.wait_for_function("document.querySelector('#msgs').textContent.includes('Affare fatto')", timeout=5000)
     check('risposta nella conversazione', True)
+    # dopo lo scambio: valutazione e profilo
+    await carla.wait_for_selector('#rateBox [data-a=rateSheet]', timeout=5000)
+    check('conversazione: invito a valutare lo scambio', 'Valuta' in await carla.evaluate("document.querySelector('#rateBox').textContent"))
+    await carla.click('#rateBox [data-a=rateSheet]'); await carla.click('[data-a=rateSend]'); await carla.wait_for_timeout(200)
+    check('senza stelle non invia', not COMM.get('ratings'))
+    await carla.click('[data-a=rateStar][data-v="5"]'); await carla.fill('#rateBody', 'Gentilissimo e puntuale'); await carla.click('[data-a=rateSend]')
+    await carla.wait_for_selector('#rateBox .raterow', timeout=5000); await carla.wait_for_function("document.querySelector('#rateBox').textContent.includes('La tua valutazione')", timeout=5000)
+    check('valutazione salvata', len(COMM.get('ratings', [])) == 1 and COMM['ratings'][0]['stars'] == 5)
+    await carla.click('.thead2 [data-a=profileOpen]'); await carla.wait_for_selector('.prof', timeout=5000)
+    t = await carla.evaluate("document.querySelector('#sheet').textContent")
+    check('profilo di Dario con la valutazione', 'Dario' in t and 'Gentilissimo' in t and '★ 5' in t, t[:200])
+    await dario.evaluate("S.commUnreadAt=0; commUnreadCheck(0)"); await dario.wait_for_timeout(300)
+    await dario.evaluate("notifsOpen()"); await dario.wait_for_selector('.notif', timeout=5000)
+    check('notifica della valutazione', 'valutato' in await dario.evaluate("document.querySelector('#notifList').textContent"))
+    await dario.click('.notif'); await dario.wait_for_selector('.prof', timeout=5000)
+    check('la notifica apre il mio profilo', await dario.evaluate("S.profile.mine && S.profile.rating.n === 1"))
+    # città nel profilo e filtro "nella mia città"
+    await dario.click('#sheet [data-a=profileEdit]'); await dario.fill('#pfCity', 'Torino'); await dario.fill('#pfBio', 'Vinili grunge'); await dario.click('[data-a=profileSave]')
+    await dario.wait_for_function("(commMe()||{}).city === 'Torino'", timeout=5000)
+    check('città salvata nel profilo', COMM['members']['g-DARIO']['city'] == 'Torino')
+    await carla.evaluate("closeSheet()"); await carla.evaluate("setCommMe({...commMe(), city: 'Alessandria'})"); COMM['members']['g-CARLA']['city'] = 'Alessandria'
+    await dario.evaluate("closeSheet(); S.commSeg='scambi'; go('community', null, true)"); await dario.wait_for_selector('#nearToggle', timeout=8000)
+    check('Scambi: città di chi cerca', 'Alessandria' in await dario.evaluate("document.querySelector('#commList').textContent"))
+    await dario.click('#nearToggle'); await dario.wait_for_function("!document.querySelector('#commList [data-a=offerSheet][data-mode=give]')", timeout=8000)
+    check('filtro nella mia città: Carla (Alessandria) nascosta a Torino', 'Nessuno nella tua città' in await dario.evaluate("document.querySelector('#commList').textContent"))
+    await dario.evaluate("localStorage.setItem('nearMe','0')")
     # Dario mette in vendita un pezzo e scrive un articolo nel blog dell'opera
     await dario.evaluate("closeSheet(); const it=byId('d1'); it.condiviso=true; it.offerta='vendo'; it.prezzoRichiesto='25'; saveItem(it)")
     await dario.wait_for_timeout(3200)
@@ -663,6 +709,32 @@ async def t_feedback(b, base):
     check('membro: segnalazione con il token Google', FEEDBACK['tokens'][-1] == 'ADM')
     check('nessun errore JavaScript (oltre a quelli di prova)', not [x for x in errs + e2 if 'nonEsiste' not in x and 'promessa rotta' not in x], errs + e2)
 
+async def t_loans(b, base):
+    print('\nPrestiti con data di restituzione')
+    page, errs = await new_page(b, base)
+    import datetime
+    d = lambda n: (datetime.date.today() + datetime.timedelta(days=n)).isoformat()
+    await page.evaluate(SEED, [dict(id='l1', tipo='libro', titolo='Dune', autore='Frank Herbert', prestatoA='Luca', prestatoIl=d(-20), restituireEntro=d(-2)),
+                               dict(id='l2', tipo='vinile', titolo='Kind of Blue', autore='Miles Davis', prestatoA='Sara', prestatoIl=d(-3), restituireEntro=d(2)),
+                               dict(id='l3', tipo='cd', titolo='OK Computer', autore='Radiohead', prestatoA='Ugo', prestatoIl=d(-5), restituireEntro=d(30))])
+    await page.click('.chip[data-v=prestito]'); await page.wait_for_timeout(200)
+    tags = await page.evaluate("[...document.querySelectorAll('.card .tag.loan')].map(t=>t.textContent+(t.classList.contains('late')?'!':'')).join('|')")
+    check('etichette: in ritardo, rientra tra 2 giorni, in prestito', 'In ritardo!' in tags and 'Rientra tra 2 giorni' in tags and 'In prestito' in tags, tags)
+    await page.evaluate("go('detail','l1')"); await page.wait_for_selector('.loanbox', timeout=3000)
+    t = await page.evaluate("document.querySelector('.loanbox').textContent")
+    check('scheda: in ritardo di 2 giorni', 'In ritardo di 2 giorni' in t and await page.evaluate("document.querySelector('.loanbox').classList.contains('late')"), t)
+    check('promemoria nel calendario', await page.evaluate("!!document.querySelector('[data-a=loanIcs]')"))
+    async with page.expect_download() as dl:
+        await page.evaluate("navigator.canShare=null; loanIcs()")
+    ics = open(await (await dl.value).path()).read()
+    check('file calendario con la data', 'DTSTART;VALUE=DATE:' + d(-2).replace('-', '') in ics and 'Dune' in ics)
+    await page.evaluate("actions.edit({dataset:{id:'l3'}})"); await page.wait_for_selector('[data-f=restituireEntro]', timeout=3000)
+    check('modifica: campo da restituire entro', await page.input_value('[data-f=restituireEntro]') == d(30))
+    check('Novità: da ricordare i prestiti in ritardo o in scadenza', await page.evaluate("localRow('ricorda').map(i=>i.id).join()") == 'l1,l2')
+    await page.evaluate("go('detail','l1')"); await page.click('[data-a=returned]'); await page.wait_for_timeout(200)
+    check('restituito: via anche la data', await page.evaluate("byId('l1').restituireEntro === '' && !byId('l1').prestatoA"))
+    check('nessun errore JavaScript', not errs, errs)
+
 async def t_home(b, base):
     print('\nHome "Novità"')
     page, errs = await new_page(b, base)
@@ -694,7 +766,7 @@ async def main():
     base = serve()
     async with async_playwright() as pw:
         b = await pw.chromium.launch()
-        for t in (t_basics, t_check_and_value, t_auto_online, t_book_rating, t_community, t_exchange, t_events, t_batch_import, t_cover, t_sync, t_silent_login, t_welcome, t_feedback, t_home):
+        for t in (t_basics, t_check_and_value, t_auto_online, t_book_rating, t_community, t_exchange, t_events, t_batch_import, t_cover, t_sync, t_silent_login, t_welcome, t_feedback, t_loans, t_home):
             try: await t(b, base)
             except Exception as e: check(t.__name__ + ' (eccezione)', False, repr(e)[:300])
         await b.close()

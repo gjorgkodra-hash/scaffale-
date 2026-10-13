@@ -31,7 +31,7 @@ const clean = (s: unknown, n: number) => String(s ?? "").replace(/[\u0000-\u0008
 const NICK = /^[\p{L}\p{N}_.\- ]{2,24}$/u;
 
 async function member(gid: string) {
-  const { data } = await db.from("members").select("id,nick,role,banned,email").eq("google_id", gid).maybeSingle();
+  const { data } = await db.from("members").select("id,nick,role,banned,email,city,bio").eq("google_id", gid).maybeSingle();
   return data;
 }
 async function writeBudget(mid: string) {
@@ -50,7 +50,7 @@ async function blockedSet(mid: string) {
   const { data } = await db.from("blocks").select("member_id,blocked_id").or(`member_id.eq.${mid},blocked_id.eq.${mid}`).limit(1000);
   return new Set((data || []).map((b: any) => (b.member_id === mid ? b.blocked_id : b.member_id)));
 }
-const shareOut = (x: any) => ({ member: x.member_id, nick: x.members.nick, work: x.work_key, kind: x.kind, tipo: x.tipo, titolo: x.titolo, autore: x.autore, anno: x.anno, formato: x.formato, cover: x.cover_url, offer: x.offer, price: x.price, note: x.note, at: x.updated_at });
+const shareOut = (x: any) => ({ member: x.member_id, nick: x.members.nick, city: x.members.city || "", work: x.work_key, kind: x.kind, tipo: x.tipo, titolo: x.titolo, autore: x.autore, anno: x.anno, formato: x.formato, cover: x.cover_url, offer: x.offer, price: x.price, note: x.note, at: x.updated_at });
 async function myThread(id: string, mid: string) {
   const { data } = await db.from("threads").select("id,a,b,work_key,titolo,cover_url").eq("id", id).maybeSingle();
   if (!data || (data.a !== mid && data.b !== mid)) throw new E(404, "conversazione");
@@ -70,10 +70,10 @@ const inviteCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (
 async function handle(body: any, who: { gid: string; email: string }) {
   const me = await member(who.gid);
   const a = String(body.action || "");
-  if (a === "me") return { member: me && !me.banned ? { id: me.id, nick: me.nick, admin: me.role === "admin" } : null, banned: !!me?.banned };
+  if (a === "me") return { member: me && !me.banned ? { id: me.id, nick: me.nick, admin: me.role === "admin", city: me.city || "" } : null, banned: !!me?.banned };
 
   if (a === "join") {
-    if (me) return { member: { id: me.id, nick: me.nick, admin: me.role === "admin" } };
+    if (me) return { member: { id: me.id, nick: me.nick, admin: me.role === "admin", city: me.city || "" } };
     const nick = clean(body.nick, 24);
     if (!NICK.test(nick)) throw new E(400, "nick");
     const admin = ADMINS.includes(who.email);
@@ -84,10 +84,10 @@ async function handle(body: any, who: { gid: string; email: string }) {
       if (!data || data.uses >= data.max_uses) throw new E(403, "invito");
       inv = data;
     }
-    const { data: m, error } = await db.from("members").insert({ google_id: who.gid, email: who.email, nick, role: admin ? "admin" : "member", invited_by: inv?.created_by ?? null, accepted_terms_at: new Date().toISOString() }).select("id,nick,role").single();
+    const { data: m, error } = await db.from("members").insert({ google_id: who.gid, email: who.email, nick, role: admin ? "admin" : "member", invited_by: inv?.created_by ?? null, accepted_terms_at: new Date().toISOString(), city: clean(body.city, 60) }).select("id,nick,role,city").single();
     if (error) throw new E(409, /nick/.test(error.message) ? "nick-preso" : "errore");
     if (inv) await db.from("invites").update({ uses: inv.uses + 1 }).eq("code", inv.code).eq("uses", inv.uses);
-    return { member: { id: m.id, nick: m.nick, admin: m.role === "admin" } };
+    return { member: { id: m.id, nick: m.nick, admin: m.role === "admin", city: m.city || "" } };
   }
 
   if (!me || me.banned) throw new E(403, "membro");
@@ -97,9 +97,10 @@ async function handle(body: any, who: { gid: string; email: string }) {
   if (a === "export") {
     const q = (t: string, col = "member_id") => db.from(t).select("*").eq(col, me.id).limit(5000).then((r: any) => r.data || []);
     const [profile, reviews, comments, posts, shares, messages, events, rsvps, blocks, invites] = await Promise.all([
-      db.from("members").select("nick,email,role,created_at,accepted_terms_at").eq("id", me.id).single().then((r: any) => r.data),
+      db.from("members").select("nick,email,role,city,bio,created_at,accepted_terms_at").eq("id", me.id).single().then((r: any) => r.data),
       q("reviews"), q("comments"), q("posts"), q("shares"), q("messages"), q("events"), q("event_rsvps"), q("blocks"), q("invites", "created_by")]);
-    return { exportedAt: new Date().toISOString(), profile, reviews, comments, posts, shares, messages, events, rsvps, blocks, invites };
+    const ratings = await q("ratings", "rater_id");
+    return { exportedAt: new Date().toISOString(), profile, reviews, comments, posts, shares, messages, events, rsvps, blocks, invites, ratings };
   }
   if (a === "deleteAccount") {
     if (clean(body.confirm, 24) !== me.nick) throw new E(400, "conferma");
@@ -219,7 +220,7 @@ async function handle(body: any, who: { gid: string; email: string }) {
     const own = (Array.isArray(body.own) ? body.own : []).slice(0, 3000).map((k: unknown) => clean(k, 300)).filter(Boolean);
     const wish = (Array.isArray(body.wish) ? body.wish : []).slice(0, 1000).map((k: unknown) => clean(k, 300)).filter(Boolean);
     const blocked = await blockedSet(me.id);
-    const pick = "member_id,work_key,kind,tipo,titolo,autore,anno,formato,cover_url,offer,price,note,updated_at,members!inner(nick,banned)";
+    const pick = "member_id,work_key,kind,tipo,titolo,autore,anno,formato,cover_url,offer,price,note,updated_at,members!inner(nick,banned,city)";
     const q = async (keys: string[], kind: string) => {
       const out: any[] = [];
       for (let i = 0; i < keys.length; i += 150) {
@@ -279,7 +280,9 @@ async function handle(body: any, who: { gid: string; email: string }) {
     const other = th.a === me.id ? th.b : th.a;
     const { data: o } = await db.from("members").select("nick").eq("id", other).maybeSingle();
     const { data: bl } = await db.from("blocks").select("member_id").eq("member_id", me.id).eq("blocked_id", other).maybeSingle();
-    return { thread: { id: th.id, other, nick: o?.nick || "?", titolo: th.titolo, cover: th.cover_url, work: th.work_key, blocked: !!bl },
+    const both = (msgs || []).some((m: any) => m.member_id === me.id) && (msgs || []).some((m: any) => m.member_id === other);
+    const { data: myR } = await db.from("ratings").select("stars,body").eq("thread_id", th.id).eq("rater_id", me.id).maybeSingle();
+    return { thread: { id: th.id, other, nick: o?.nick || "?", titolo: th.titolo, cover: th.cover_url, work: th.work_key, blocked: !!bl, canRate: both, myRating: myR || null },
       messages: (msgs || []).map((m: any) => ({ id: m.id, mine: m.member_id === me.id, body: m.body, offer: m.offer, price: m.price, at: m.created_at })) };
   }
   if (a === "unread") {
@@ -315,7 +318,7 @@ async function handle(body: any, who: { gid: string; email: string }) {
 
   // ── Eventi ──
   if (a === "members") {
-    const { data } = await db.from("members").select("id,nick").eq("banned", false).neq("id", me.id).order("nick").limit(500);
+    const { data } = await db.from("members").select("id,nick,city").eq("banned", false).neq("id", me.id).order("nick").limit(500);
     const blocked = await blockedSet(me.id);
     return { members: (data || []).filter((m: any) => !blocked.has(m.id)) };
   }
@@ -357,7 +360,7 @@ async function handle(body: any, who: { gid: string; email: string }) {
     const blocked = await blockedSet(me.id);
     const { data: inv } = await db.from("event_invites").select("event_id").eq("member_id", me.id);
     const invited = new Set((inv || []).map((x: any) => x.event_id));
-    const sel = "id,member_id,title,kind,starts_at,place,link,work_key,tipo,titolo,autore,cover_url,visibility,members!events_member_id_fkey!inner(nick,banned)";
+    const sel = "id,member_id,title,kind,starts_at,place,link,work_key,tipo,titolo,autore,cover_url,visibility,members!events_member_id_fkey!inner(nick,banned,city)";
     const [{ data: up }, { data: past }] = await Promise.all([
       db.from("events").select(sel).eq("hidden", false).gte("starts_at", since).order("starts_at").limit(100),
       db.from("events").select(sel).eq("hidden", false).lt("starts_at", since).order("starts_at", { ascending: false }).limit(15),
@@ -369,7 +372,7 @@ async function handle(body: any, who: { gid: string; email: string }) {
     const out = (e: any) => {
       const r = (rs || []).filter((x: any) => x.event_id === e.id);
       return { id: e.id, title: e.title, kind: e.kind, starts: e.starts_at, place: e.place, link: e.link, work: e.work_key, tipo: e.tipo, titolo: e.titolo, autore: e.autore, cover: e.cover_url,
-        visibility: e.visibility, nick: e.members.nick, mine: e.member_id === me.id, invited: invited.has(e.id), my: (r.find((x: any) => x.member_id === me.id) || {}).status || "",
+        visibility: e.visibility, nick: e.members.nick, city: e.members.city || "", member: e.member_id, mine: e.member_id === me.id, invited: invited.has(e.id), my: (r.find((x: any) => x.member_id === me.id) || {}).status || "",
         going: r.filter((x: any) => x.status === "si").length };
     };
     return { upcoming: (up || []).filter(vis).map(out), past: (past || []).filter(vis).map(out) };
@@ -418,10 +421,10 @@ async function handle(body: any, who: { gid: string; email: string }) {
   }
 
   if (a === "report") {
-    const kind = ["comment", "post", "message", "event", "eventmsg"].includes(body.kind) ? body.kind : "review"; const id = clean(body.id, 40);
+    const kind = ["comment", "post", "message", "event", "eventmsg", "rating"].includes(body.kind) ? body.kind : "review"; const id = clean(body.id, 40);
     await db.from("reports").upsert({ kind, target_id: id, member_id: me.id, reason: clean(body.reason, 300) }, { onConflict: "kind,target_id,member_id" });
     const { count } = await db.from("reports").select("id", { count: "exact", head: true }).eq("kind", kind).eq("target_id", id);
-    const table = kind === "comment" ? "comments" : kind === "post" ? "posts" : kind === "review" ? "reviews" : kind === "event" ? "events" : "";
+    const table = kind === "comment" ? "comments" : kind === "post" ? "posts" : kind === "review" ? "reviews" : kind === "event" ? "events" : kind === "rating" ? "ratings" : "";
     if (table && ((count || 0) >= 3 || admin)) await db.from(table).update({ hidden: true }).eq("id", id); // 3 segnalazioni (o l'amministratore) → nascosto
     return { ok: true };
   }
@@ -439,7 +442,7 @@ async function handle(body: any, who: { gid: string; email: string }) {
       return { item: { type: "review", id: r.id, work: r.work_key, tipo: r.tipo, titolo: r.titolo, autore: r.autore, cover: r.cover_url, stars: r.stars, body: r.body, nick: r.members.nick, member: r.member_id, mine: r.member_id === me.id, at: r.updated_at }, comments: mapC(cms || []) };
     }
     const sm = clean(body.member, 40), sw = clean(body.work, 300), sk = body.kind === "wish" ? "wish" : "own";
-    const { data: x } = await db.from("shares").select("member_id,work_key,kind,tipo,titolo,autore,anno,formato,cover_url,offer,price,note,updated_at,members!inner(nick,banned)").eq("member_id", sm).eq("work_key", sw).eq("kind", sk).maybeSingle();
+    const { data: x } = await db.from("shares").select("member_id,work_key,kind,tipo,titolo,autore,anno,formato,cover_url,offer,price,note,updated_at,members!inner(nick,banned,city)").eq("member_id", sm).eq("work_key", sw).eq("kind", sk).maybeSingle();
     if (!x || !ok(x)) throw new E(404, "condivisione");
     const { data: cms } = await cm(db.from("comments").select("id,body,created_at,member_id,members!inner(nick,banned)").eq("share_member", sm).eq("share_work", sw).eq("share_kind", sk));
     return { item: { type: "share", ...shareOut(x), mine: x.member_id === me.id }, comments: mapC(cms || []) };
@@ -449,7 +452,7 @@ async function handle(body: any, who: { gid: string; email: string }) {
     const [{ data: rv }, { data: ps }, { data: sh }] = await Promise.all([
       db.from("reviews").select("id,work_key,tipo,titolo,autore,cover_url,stars,body,updated_at,member_id,members!inner(nick,banned)").eq("hidden", false).order("updated_at", { ascending: false }).limit(30),
       db.from("posts").select("id,work_key,tipo,titolo,autore,cover_url,title,body,created_at,member_id,members!inner(nick,banned)").eq("hidden", false).order("created_at", { ascending: false }).limit(20),
-      db.from("shares").select("member_id,work_key,kind,tipo,titolo,autore,anno,formato,cover_url,offer,price,note,updated_at,members!inner(nick,banned)").order("updated_at", { ascending: false }).limit(40),
+      db.from("shares").select("member_id,work_key,kind,tipo,titolo,autore,anno,formato,cover_url,offer,price,note,updated_at,members!inner(nick,banned,city)").order("updated_at", { ascending: false }).limit(40),
     ]);
     const ok = (x: any) => !x.members.banned && !blocked.has(x.member_id);
     const items = [
@@ -474,6 +477,49 @@ async function handle(body: any, who: { gid: string; email: string }) {
   if (a === "recent") {
     const { data } = await db.from("reviews").select("work_key,tipo,titolo,autore,cover_url,stars,body,updated_at,members!inner(nick,banned)").eq("hidden", false).order("updated_at", { ascending: false }).limit(40);
     return { reviews: (data || []).filter((r: any) => !r.members.banned).slice(0, 20).map((r: any) => ({ work: r.work_key, tipo: r.tipo, titolo: r.titolo, autore: r.autore, cover: r.cover_url, stars: r.stars, body: r.body.slice(0, 200), nick: r.members.nick, at: r.updated_at })) };
+  }
+
+  // ── Profili e valutazioni ──
+  if (a === "profileSave") {
+    const city = clean(body.city, 60), bio = clean(body.bio, 300);
+    await db.from("members").update({ city, bio }).eq("id", me.id);
+    return { member: { id: me.id, nick: me.nick, admin, city } };
+  }
+  if (a === "profile") {
+    const id = clean(body.id, 40);
+    const { data: m } = await db.from("members").select("id,nick,city,bio,created_at,banned").eq("id", id).maybeSingle();
+    if (!m || m.banned) throw new E(404, "membro");
+    const blocked = await blockedSet(me.id);
+    const { data: iBlocked } = await db.from("blocks").select("member_id").eq("member_id", me.id).eq("blocked_id", m.id).maybeSingle();
+    if (blocked.has(m.id) && !iBlocked) throw new E(404, "membro"); // mi ha bloccato
+    const cnt = (t: string, f: (q: any) => any) => f(db.from(t).select("member_id", { count: "exact", head: true }).eq("member_id", m.id)).then((r: any) => r.count || 0);
+    const [nRev, nPost, nOwn, nWish, { data: rt }, { data: offers }] = await Promise.all([
+      cnt("reviews", (q) => q.eq("hidden", false)), cnt("posts", (q) => q.eq("hidden", false)), cnt("shares", (q) => q.eq("kind", "own")), cnt("shares", (q) => q.eq("kind", "wish")),
+      db.from("ratings").select("id,stars,body,created_at,rater_id,members!ratings_rater_id_fkey(nick,banned)").eq("rated_id", m.id).eq("hidden", false).order("created_at", { ascending: false }).limit(100),
+      db.from("shares").select("work_key,kind,tipo,titolo,autore,anno,formato,cover_url,offer,price,note,updated_at").eq("member_id", m.id).eq("kind", "own").neq("offer", "").order("updated_at", { ascending: false }).limit(30),
+    ]);
+    const rs = (rt || []).filter((r: any) => r.members && !r.members.banned && !blocked.has(r.rater_id));
+    const avg = rs.length ? Math.round(rs.reduce((s: number, r: any) => s + r.stars, 0) / rs.length * 10) / 10 : null;
+    return { profile: { id: m.id, nick: m.nick, city: m.city, bio: m.bio, since: m.created_at, mine: m.id === me.id, blocked: !!iBlocked,
+      counts: { reviews: nRev, posts: nPost, own: nOwn, wish: nWish }, rating: { avg, n: rs.length },
+      ratings: rs.slice(0, 20).map((r: any) => ({ id: r.id, nick: r.members.nick, stars: r.stars, body: r.body, at: r.created_at, mine: r.rater_id === me.id })),
+      offers: (offers || []).map((x: any) => ({ member: m.id, nick: m.nick, city: m.city, work: x.work_key, kind: x.kind, tipo: x.tipo, titolo: x.titolo, autore: x.autore, anno: x.anno, formato: x.formato, cover: x.cover_url, offer: x.offer, price: x.price, note: x.note, at: x.updated_at })) } };
+  }
+  if (a === "rate") {
+    await writeBudget(me.id);
+    const th = await myThread(clean(body.thread, 40), me.id);
+    const other = th.a === me.id ? th.b : th.a;
+    // si valuta solo dopo un vero scambio di messaggi: entrambi hanno scritto
+    const [{ count: c1 }, { count: c2 }] = await Promise.all([
+      db.from("messages").select("id", { count: "exact", head: true }).eq("thread_id", th.id).eq("member_id", me.id),
+      db.from("messages").select("id", { count: "exact", head: true }).eq("thread_id", th.id).eq("member_id", other),
+    ]);
+    if (!c1 || !c2) throw new E(400, "scambio");
+    if (!(+body.stars >= 1)) throw new E(400, "voto");
+    const stars = Math.max(1, Math.min(5, Math.round(+body.stars)));
+    const { error } = await db.from("ratings").upsert({ thread_id: th.id, rater_id: me.id, rated_id: other, stars, body: clean(body.body, 500), updated_at: new Date().toISOString() }, { onConflict: "thread_id,rater_id" });
+    if (error) throw new E(500, "errore");
+    return { ok: true };
   }
 
   // ── Segnalazioni ricevute (solo amministratore) ──

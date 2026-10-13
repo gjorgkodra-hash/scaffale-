@@ -2,7 +2,7 @@
 // {contatto} e {gestore} vengono sostituiti dall'app con i valori di config.js.
 window.SPINYL_LEGAL = {
   it: {
-    updated: 'Ultimo aggiornamento: 12 ottobre 2026',
+    updated: 'Ultimo aggiornamento: 13 ottobre 2026',
     privacy: `
 <h3>Chi è responsabile dei dati</h3>
 <p>Spinyl è gestita da {gestore}. Per qualsiasi domanda sui tuoi dati scrivi a <b>{contatto}</b>.</p>
@@ -11,7 +11,7 @@ window.SPINYL_LEGAL = {
 <h3>Ricerche su servizi esterni</h3>
 <p>Per trovare dati, copertine e prezzi il telefono interroga direttamente servizi pubblici: Google Libri, Open Library, MusicBrainz, Cover Art Archive, Discogs, Apple (iTunes), Deezer, TMDB, Wikipedia, UPCitemdb e, per gli articoli, rss2json. A questi servizi arrivano solo il codice a barre o le parole cercate, oltre ai dati tecnici di ogni collegamento internet (come l'indirizzo IP). Se usi il riconoscimento dalla copertina con Google Vision, la foto viene inviata a Google per l'analisi. Il token Discogs, se lo inserisci, resta sul tuo telefono.</p>
 <h3>Community (solo se ci entri)</h3>
-<p>Se entri nella community salviamo su un server Supabase in Unione Europea (Francoforte): il tuo indirizzo email e l'identificativo Google (servono solo a riconoscerti e non sono mostrati agli altri), il nome che scegli, le recensioni, i commenti, gli articoli, i pezzi e i desideri che decidi di condividere, i messaggi, gli eventi e le risposte, le segnalazioni, i blocchi e le notifiche. Gli altri membri vedono il tuo nome e ciò che pubblichi; i messaggi privati li vedono solo i partecipanti alla conversazione.</p>
+<p>Se entri nella community salviamo su un server Supabase in Unione Europea (Francoforte): il tuo indirizzo email e l'identificativo Google (servono solo a riconoscerti e non sono mostrati agli altri), il nome che scegli, la città e la presentazione se le inserisci, le recensioni, le valutazioni dopo gli scambi, i commenti, gli articoli, i pezzi e i desideri che decidi di condividere, i messaggi, gli eventi e le risposte, le segnalazioni, i blocchi e le notifiche. Gli altri membri vedono il tuo nome e ciò che pubblichi; i messaggi privati li vedono solo i partecipanti alla conversazione.</p>
 <p>Per suggerirti scambi, il telefono invia al server l'elenco delle opere che possiedi e desideri (autore e titolo semplificati), solo per il confronto: non viene salvato né mostrato a nessuno, a meno che tu non scelga di condividere.</p>
 <h3>Notifiche</h3>
 <p>Se attivi le notifiche sul telefono salviamo l'indirizzo di consegna fornito dal browser. Le notifiche passano dai servizi push di Google, Apple o Mozilla.</p>
@@ -46,7 +46,7 @@ window.SPINYL_LEGAL = {
 </ul>`,
   },
   en: {
-    updated: 'Last updated: 12 October 2026',
+    updated: 'Last updated: 13 October 2026',
     privacy: `
 <h3>Who is responsible for your data</h3>
 <p>Spinyl is run by {gestore}. For any question about your data write to <b>{contatto}</b>.</p>
@@ -55,7 +55,7 @@ window.SPINYL_LEGAL = {
 <h3>Searches on external services</h3>
 <p>To find details, covers and prices your phone queries public services directly: Google Books, Open Library, MusicBrainz, Cover Art Archive, Discogs, Apple (iTunes), Deezer, TMDB, Wikipedia, UPCitemdb and, for articles, rss2json. They receive only the barcode or the words you search, plus the technical data of any internet connection (such as your IP address). If you use cover recognition with Google Vision, the photo is sent to Google for analysis. Your Discogs token, if you enter it, stays on your phone.</p>
 <h3>Community (only if you join)</h3>
-<p>If you join the community we store on a Supabase server in the European Union (Frankfurt): your email address and Google identifier (used only to recognise you, never shown to others), the name you choose, your reviews, comments, articles, the items and wishes you choose to share, messages, events and replies, reports, blocks and notifications. Other members see your name and what you publish; private messages are seen only by the people in the conversation.</p>
+<p>If you join the community we store on a Supabase server in the European Union (Frankfurt): your email address and Google identifier (used only to recognise you, never shown to others), the name you choose, your city and bio if you add them, your reviews, ratings after swaps, comments, articles, the items and wishes you choose to share, messages, events and replies, reports, blocks and notifications. Other members see your name and what you publish; private messages are seen only by the people in the conversation.</p>
 <p>To suggest swaps, your phone sends the server the list of works you own and want (simplified author and title), only for matching: it is not stored or shown to anyone unless you choose to share.</p>
 <h3>Notifications</h3>
 <p>If you turn on phone notifications we store the delivery address provided by your browser. Notifications go through the push services of Google, Apple or Mozilla.</p>
@@ -90,7 +90,7 @@ window.SPINYL_LEGAL = {
 </ul>`,
   },
   es: {
-    updated: 'Última actualización: 12 de octubre de 2026',
+    updated: 'Última actualización: 13 de octubre de 2026',
     privacy: `
 <h3>Quién es responsable de los datos</h3>
 <p>Spinyl está gestionada por {gestore}. Para cualquier pregunta sobre tus datos escribe a <b>{contatto}</b>.</p>
@@ -99,7 +99,7 @@ window.SPINYL_LEGAL = {
 <h3>Búsquedas en servicios externos</h3>
 <p>Para encontrar datos, portadas y precios el teléfono consulta directamente servicios públicos: Google Libros, Open Library, MusicBrainz, Cover Art Archive, Discogs, Apple (iTunes), Deezer, TMDB, Wikipedia, UPCitemdb y, para los artículos, rss2json. Solo reciben el código de barras o las palabras buscadas, además de los datos técnicos de cualquier conexión a internet (como la dirección IP). Si usas el reconocimiento de portada con Google Vision, la foto se envía a Google para analizarla. El token de Discogs, si lo introduces, se queda en tu teléfono.</p>
 <h3>Comunidad (solo si entras)</h3>
-<p>Si entras en la comunidad guardamos en un servidor de Supabase en la Unión Europea (Fráncfort): tu correo y el identificador de Google (sirven solo para reconocerte y no se muestran a los demás), el nombre que elijas, tus reseñas, comentarios, artículos, lo que decidas compartir de tu colección y tus deseos, mensajes, eventos y respuestas, denuncias, bloqueos y notificaciones. Los demás miembros ven tu nombre y lo que publicas; los mensajes privados solo los ven quienes participan en la conversación.</p>
+<p>Si entras en la comunidad guardamos en un servidor de Supabase en la Unión Europea (Fráncfort): tu correo y el identificador de Google (sirven solo para reconocerte y no se muestran a los demás), el nombre que elijas, tu ciudad y presentación si las añades, tus reseñas, las valoraciones tras los intercambios, comentarios, artículos, lo que decidas compartir de tu colección y tus deseos, mensajes, eventos y respuestas, denuncias, bloqueos y notificaciones. Los demás miembros ven tu nombre y lo que publicas; los mensajes privados solo los ven quienes participan en la conversación.</p>
 <p>Para sugerirte intercambios, el teléfono envía al servidor la lista de obras que tienes y deseas (autor y título simplificados), solo para compararlas: no se guarda ni se muestra a nadie salvo que decidas compartir.</p>
 <h3>Notificaciones</h3>
 <p>Si activas las notificaciones guardamos la dirección de entrega que da el navegador. Las notificaciones pasan por los servicios push de Google, Apple o Mozilla.</p>
