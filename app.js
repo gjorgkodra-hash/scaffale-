@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.18.1';
+const VERSION = '2.18.2';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -2733,6 +2733,7 @@ function commSettingsHTML() {
     ${me ? `<p class="note">Sei dentro come <b translate="no">${esc(me.nick)}</b>${me.admin ? ' · amministratore' : ''}. Ogni invito vale per 5 amici.</p>
       ${pushSupported() ? `<label class="field inline"><span>Notifiche sul telefono (anche ad app chiusa)</span><input type="checkbox" id="pushT" ${pushOn() ? 'checked' : ''}></label>` : (isIOS() && !isStandalone() ? '<p class="note">Per le notifiche sul telefono aggiungi Spinyl alla schermata Home e aprila da lì.</p>' : '')}
       ${pushOn() ? '<div class="stack"><button class="btn block" data-a="pushTest">Invia una notifica di prova</button><button class="btn block" data-a="pushTest" data-v="later">Prova ad app chiusa (tra 10 secondi)</button></div>' : ''}
+      ${pushOn() && /Android/i.test(navigator.userAgent) ? '<p class="note">Su Android, se le notifiche arrivano solo quando apri Spinyl, il telefono sta mettendo Chrome a riposo: Impostazioni del telefono › App › Chrome › Batteria › Senza restrizioni. Per il pallino sull\'icona: Impostazioni › Notifiche › Pallino di notifica sull\'icona.</p>' : ''}
       <label class="field inline"><span>Suono e vibrazione per le notifiche</span><input type="checkbox" id="commSoundT" ${soundOn() ? 'checked' : ''}></label>
       <div class="stack"><button class="btn block" data-a="commInvite">${ic('share', 18)}Invita un amico</button>
         <button class="btn block" data-a="commExport">${ic('download', 18)}Scarica i miei dati</button>
