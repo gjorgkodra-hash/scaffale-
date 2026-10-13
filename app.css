@@ -667,3 +667,10 @@ ol.steps li { counter-increment: st; position: relative; padding: 12px 14px 12px
 ol.steps li::before { content: counter(st); position: absolute; left: 14px; top: 12px; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: var(--accent); color: var(--accent-ink); }
 ol.steps li.done::before { content: '✓'; background: var(--ok); }
 ol.steps li span { color: var(--muted); font-size: 14px; line-height: 1.4; }
+
+/* Modifica / elimina dei propri messaggi */
+button.mini { background: none; border: 0; padding: 0; font: inherit; font-size: inherit; color: inherit; opacity: .8; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.msg.mine button.mini { color: inherit; }
+i.edited { font-style: italic; opacity: .75; }
+a.ulink { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; word-break: break-all; }
+.msg.mine a.ulink { color: inherit; font-weight: 600; }

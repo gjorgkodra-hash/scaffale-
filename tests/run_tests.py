@@ -163,11 +163,25 @@ def comm_handle(tok, b):
         inv = sum(1 for e in COMM.get('events', {}).values() if me['id'] in e['invited'] and me['id'] not in e['rsvps'])
         nn = sum(1 for n in COMM.get('notifs', []) if n['to'] == me['id'] and not n['read'])
         return 200, ({'threads': out} if a == 'threads' else {'unread': sum(1 for o in out if o['unread']), 'invites': inv, 'notifs': nn})
+    if a == 'edit':
+        for th in ths:
+            for m in th['msgs']:
+                if m['id'] == b['id']:
+                    if m['from'] != me['id']: return 403, {'error': 'non tuo'}
+                    m['body'] = b['body']; m['edited'] = True; return 200, {'ok': True}
+        for c in COMM['comments']:
+            if c['id'] == b['id']:
+                if c['mid'] != me['id']: return 403, {'error': 'non tuo'}
+                c['body'] = b['body']; c['edited'] = True; return 200, {'ok': True}
+        return 404, {'error': 'x'}
+    if a == 'delete' and b.get('kind') == 'message':
+        for th in ths: th['msgs'] = [m for m in th['msgs'] if not (m['id'] == b['id'] and m['from'] == me['id'])]
+        return 200, {'ok': True}
     if a == 'thread':
         th = next(x for x in ths if x['id'] == b['id']); other = [m for m in th['members'] if m != me['id']][0]
         both = any(m['from'] == me['id'] for m in th['msgs']) and any(m['from'] == other for m in th['msgs'])
         myR = next(({'stars': r['stars'], 'body': r['body']} for r in COMM.get('ratings', []) if r['thread'] == th['id'] and r['rater'] == me['id']), None)
-        return 200, {'thread': {'id': th['id'], 'other': other, 'nick': nick(other), 'titolo': th['titolo'], 'cover': th['cover'], 'blocked': False, 'canRate': both, 'myRating': myR}, 'messages': [{'id': m['id'], 'mine': m['from'] == me['id'], 'body': m['body'], 'offer': m['offer'], 'price': m['price'], 'at': m['at']} for m in th['msgs']]}
+        return 200, {'thread': {'id': th['id'], 'other': other, 'nick': nick(other), 'titolo': th['titolo'], 'cover': th['cover'], 'blocked': False, 'canRate': both, 'myRating': myR}, 'messages': [{'id': m['id'], 'mine': m['from'] == me['id'], 'body': m['body'], 'offer': m['offer'], 'price': m['price'], 'at': m['at'], 'edited': m.get('edited', False)} for m in th['msgs']]}
     if a == 'post':
         pid = nid_(); COMM.setdefault('posts', []).insert(0, dict(b, id=pid, nick=me['nick'], mid=me['id'], at='2026-10-11T13:00:00Z')); return 200, {'id': pid}
     if a == 'postGet':
@@ -180,7 +194,7 @@ def comm_handle(tok, b):
         items += [dict(x, type='share') for x in allsh]
         return 200, {'items': items}
     if a == 'discussion':
-        cmt = lambda f: [{'id': c['id'], 'nick': c['nick'], 'mine': c['mid'] == me['id'], 'body': c['body'], 'at': c['at']} for c in COMM['comments'] if f(c)]
+        cmt = lambda f: [{'id': c['id'], 'nick': c['nick'], 'mine': c['mid'] == me['id'], 'body': c['body'], 'at': c['at'], 'edited': c.get('edited', False)} for c in COMM['comments'] if f(c)]
         if b['type'] == 'review':
             r = next(x for x in COMM['reviews'] if x['id'] == b['id'])
             return 200, {'item': dict(type='review', id=r['id'], work=r['work'], tipo=r['tipo'], titolo=r['titolo'], autore=r['autore'], cover=r['cover'], stars=r['stars'], body=r['body'], nick=r['nick'], member=r['mid'], mine=r['mid'] == me['id'], at=r['at']), 'comments': cmt(lambda c: c.get('review') == r['id'])}
@@ -492,6 +506,22 @@ async def t_exchange(b, base):
     await carla.fill('#msgText', 'Affare fatto!'); await carla.evaluate("document.querySelector('#msgForm').requestSubmit()")
     await carla.wait_for_function("document.querySelector('#msgs').textContent.includes('Affare fatto')", timeout=5000)
     check('risposta nella conversazione', True)
+    # modifica ed eliminazione dei propri messaggi
+    await carla.click('#msgs .msg.mine [data-a=editOpen]'); await carla.wait_for_selector('#editText', timeout=5000)
+    check('modifica: testo attuale nel modulo', await carla.input_value('#editText') == 'Affare fatto!')
+    await carla.fill('#editText', 'Affare fatto, a domani!'); await carla.click('[data-a=editSave]')
+    await carla.wait_for_function("document.querySelector('#msgs') && document.querySelector('#msgs').textContent.includes('a domani')", timeout=5000)
+    check('messaggio modificato con la scritta «modificato»', 'modificato' in await carla.evaluate("document.querySelector('#msgs .msg.mine').textContent"))
+    check('non si possono modificare i messaggi degli altri', await carla.evaluate("!document.querySelector('#msgs .msg:not(.mine) [data-a=editOpen]')"))
+    await carla.fill('#msgText', 'Messaggio sbagliato'); await carla.evaluate("document.querySelector('#msgForm').requestSubmit()")
+    await carla.wait_for_function("document.querySelector('#msgs').textContent.includes('Messaggio sbagliato')", timeout=5000)
+    carla.once('dialog', lambda d: asyncio.ensure_future(d.accept()))
+    await carla.evaluate("[...document.querySelectorAll('#msgs .msg.mine')].pop().querySelector('[data-a=msgDel]').click()")
+    await carla.wait_for_function("document.querySelector('#msgs') && !document.querySelector('#msgs').textContent.includes('Messaggio sbagliato')", timeout=5000)
+    check('messaggio eliminato', True)
+    await carla.fill('#msgText', 'Guarda qui https://example.com/disco?x=1&y=2 grazie'); await carla.evaluate("document.querySelector('#msgForm').requestSubmit()")
+    await carla.wait_for_selector('#msgs a.ulink', timeout=5000)
+    check('link cliccabile nei messaggi', await carla.evaluate("document.querySelector('#msgs a.ulink').href") == 'https://example.com/disco?x=1&y=2')
     # dopo lo scambio: valutazione e profilo
     await carla.wait_for_selector('#rateBox [data-a=rateSheet]', timeout=5000)
     check('conversazione: invito a valutare lo scambio', 'Valuta' in await carla.evaluate("document.querySelector('#rateBox').textContent"))
@@ -680,7 +710,12 @@ async def t_welcome(b, base):
     # controllo novità community: ogni 3 minuti, ogni 10 con le notifiche push
     gaps = await p2.evaluate("(()=>{ const a = COMM_GAP(); localStorage.setItem('pushOn','1'); const pn = window.Notification; window.Notification = {permission:'granted'}; const b = COMM_GAP(); window.Notification = pn; localStorage.removeItem('pushOn'); return [a, b]; })()")
     check('controllo in background: 3 min, 5 con il push', gaps == [180000, 300000], gaps)
-    check('nessun errore JavaScript', not (errs + e2), errs + e2)
+    # condivisione da un'altra app (Android: Condividi › Spinyl)
+    p3, e3 = await new_page(b, base)
+    await p3.goto(base + '/index.html?title=Kind%20of%20Blue&text=&url=https%3A%2F%2Fexample.com%2Fkob'); await p3.wait_for_timeout(1200)
+    t = await p3.evaluate("document.querySelector('#sheet') ? document.querySelector('#sheet').textContent : ''")
+    check('condiviso con Spinyl: link e ricerca', 'Condiviso con Spinyl' in t and 'example.com/kob' in t and await p3.evaluate("!!document.querySelector('[data-a=sharedSearch]')"), t[:120])
+    check('nessun errore JavaScript', not (errs + e2 + e3), errs + e2 + e3)
 
 async def t_feedback(b, base):
     print('\nSegnalazioni ed errori')

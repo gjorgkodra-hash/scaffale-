@@ -124,7 +124,7 @@ async function handle(body: any, who: { gid: string; email: string }) {
     const { data: revs } = await db.from("reviews").select("id,stars,body,created_at,updated_at,member_id,members!inner(nick,banned)").eq("work_key", key).eq("hidden", false).order("updated_at", { ascending: false }).limit(100);
     const list = (revs || []).filter((r: any) => !r.members.banned);
     const ids = list.map((r: any) => r.id);
-    const { data: cms } = ids.length ? await db.from("comments").select("id,review_id,body,created_at,member_id,members!inner(nick,banned)").in("review_id", ids).eq("hidden", false).order("created_at").limit(500) : { data: [] };
+    const { data: cms } = ids.length ? await db.from("comments").select("id,review_id,body,created_at,edited_at,member_id,members!inner(nick,banned)").in("review_id", ids).eq("hidden", false).order("created_at").limit(500) : { data: [] };
     const stars = list.filter((r: any) => r.stars).map((r: any) => r.stars);
     const blocked = await blockedSet(me.id);
     const [{ data: sh }, { data: ps }] = await Promise.all([
@@ -136,7 +136,7 @@ async function handle(body: any, who: { gid: string; email: string }) {
     return { shares, posts,
       avg: stars.length ? Math.round(stars.reduce((s: number, x: number) => s + x, 0) / stars.length * 10) / 10 : null, n: stars.length,
       reviews: list.map((r: any) => ({ id: r.id, nick: r.members.nick, mine: r.member_id === me.id, stars: r.stars, body: r.body, at: r.updated_at,
-        comments: (cms || []).filter((c: any) => c.review_id === r.id && !c.members.banned).map((c: any) => ({ id: c.id, nick: c.members.nick, mine: c.member_id === me.id, body: c.body, at: c.created_at })) })),
+        comments: (cms || []).filter((c: any) => c.review_id === r.id && !c.members.banned).map((c: any) => ({ id: c.id, nick: c.members.nick, mine: c.member_id === me.id, body: c.body, at: c.created_at, edited: !!c.edited_at })) })),
     };
   }
 
@@ -186,11 +186,11 @@ async function handle(body: any, who: { gid: string; email: string }) {
     return { id: data.id };
   }
   if (a === "postGet") {
-    const { data: p } = await db.from("posts").select("id,work_key,tipo,titolo,autore,cover_url,title,body,created_at,member_id,members!inner(nick,banned)").eq("id", clean(body.id, 40)).eq("hidden", false).maybeSingle();
+    const { data: p } = await db.from("posts").select("id,work_key,tipo,titolo,autore,cover_url,title,body,created_at,edited_at,member_id,members!inner(nick,banned)").eq("id", clean(body.id, 40)).eq("hidden", false).maybeSingle();
     if (!p || p.members.banned) throw new E(404, "articolo");
-    const { data: cms } = await db.from("comments").select("id,body,created_at,member_id,members!inner(nick,banned)").eq("post_id", p.id).eq("hidden", false).order("created_at").limit(300);
-    return { post: { id: p.id, work: p.work_key, tipo: p.tipo, titolo: p.titolo, autore: p.autore, cover: p.cover_url, title: p.title, body: p.body, nick: p.members.nick, member: p.member_id, mine: p.member_id === me.id, at: p.created_at },
-      comments: (cms || []).filter((c: any) => !c.members.banned).map((c: any) => ({ id: c.id, nick: c.members.nick, mine: c.member_id === me.id, body: c.body, at: c.created_at })) };
+    const { data: cms } = await db.from("comments").select("id,body,created_at,edited_at,member_id,members!inner(nick,banned)").eq("post_id", p.id).eq("hidden", false).order("created_at").limit(300);
+    return { post: { id: p.id, work: p.work_key, tipo: p.tipo, titolo: p.titolo, autore: p.autore, cover: p.cover_url, title: p.title, body: p.body, nick: p.members.nick, member: p.member_id, mine: p.member_id === me.id, at: p.created_at, edited: !!p.edited_at },
+      comments: (cms || []).filter((c: any) => !c.members.banned).map((c: any) => ({ id: c.id, nick: c.members.nick, mine: c.member_id === me.id, body: c.body, at: c.created_at, edited: !!c.edited_at })) };
   }
 
   // ── Pezzi e desideri condivisi: il telefono manda la lista completa, il server la sostituisce ──
@@ -275,7 +275,7 @@ async function handle(body: any, who: { gid: string; email: string }) {
   }
   if (a === "thread") {
     const th = await myThread(clean(body.id, 40), me.id);
-    const { data: msgs } = await db.from("messages").select("id,member_id,body,offer,price,created_at").eq("thread_id", th.id).order("created_at").limit(500);
+    const { data: msgs } = await db.from("messages").select("id,member_id,body,offer,price,created_at,edited_at").eq("thread_id", th.id).order("created_at").limit(500);
     await db.from("threads").update(th.a === me.id ? { a_read: new Date().toISOString() } : { b_read: new Date().toISOString() }).eq("id", th.id);
     const other = th.a === me.id ? th.b : th.a;
     const { data: o } = await db.from("members").select("nick").eq("id", other).maybeSingle();
@@ -283,7 +283,7 @@ async function handle(body: any, who: { gid: string; email: string }) {
     const both = (msgs || []).some((m: any) => m.member_id === me.id) && (msgs || []).some((m: any) => m.member_id === other);
     const { data: myR } = await db.from("ratings").select("stars,body").eq("thread_id", th.id).eq("rater_id", me.id).maybeSingle();
     return { thread: { id: th.id, other, nick: o?.nick || "?", titolo: th.titolo, cover: th.cover_url, work: th.work_key, blocked: !!bl, canRate: both, myRating: myR || null },
-      messages: (msgs || []).map((m: any) => ({ id: m.id, mine: m.member_id === me.id, body: m.body, offer: m.offer, price: m.price, at: m.created_at })) };
+      messages: (msgs || []).map((m: any) => ({ id: m.id, mine: m.member_id === me.id, body: m.body, offer: m.offer, price: m.price, at: m.created_at, edited: !!m.edited_at })) };
   }
   if (a === "unread") {
     const { data } = await db.from("threads").select("id,a,a_read,b_read,updated_at").or(`a.eq.${me.id},b.eq.${me.id}`).order("updated_at", { ascending: false }).limit(100);
@@ -383,14 +383,14 @@ async function handle(body: any, who: { gid: string; email: string }) {
     const blocked = await blockedSet(me.id);
     const [{ data: rs }, { data: ms }, { data: iv }] = await Promise.all([
       db.from("event_rsvps").select("member_id,status,members!inner(nick)").eq("event_id", e.id),
-      db.from("event_msgs").select("id,member_id,body,created_at,members!inner(nick,banned)").eq("event_id", e.id).order("created_at").limit(500),
+      db.from("event_msgs").select("id,member_id,body,created_at,edited_at,members!inner(nick,banned)").eq("event_id", e.id).order("created_at").limit(500),
       db.from("event_invites").select("member_id,members!inner(nick)").eq("event_id", e.id),
     ]);
     return { event: { id: e.id, title: e.title, body: e.body, kind: e.kind, starts: e.starts_at, place: e.place, link: e.link, work: e.work_key, tipo: e.tipo, titolo: e.titolo, autore: e.autore, cover: e.cover_url,
         visibility: e.visibility, nick: e.members.nick, member: e.member_id, mine: e.member_id === me.id },
       rsvps: (rs || []).map((r: any) => ({ nick: r.members.nick, status: r.status, mine: r.member_id === me.id })),
       invited: (iv || []).map((r: any) => ({ id: r.member_id, nick: r.members.nick })),
-      messages: (ms || []).filter((m: any) => !m.members.banned && !blocked.has(m.member_id)).map((m: any) => ({ id: m.id, nick: m.members.nick, mine: m.member_id === me.id, body: m.body, at: m.created_at })) };
+      messages: (ms || []).filter((m: any) => !m.members.banned && !blocked.has(m.member_id)).map((m: any) => ({ id: m.id, nick: m.members.nick, mine: m.member_id === me.id, body: m.body, at: m.created_at, edited: !!m.edited_at })) };
   }
   if (a === "rsvp") {
     const { data: e } = await db.from("events").select("id,member_id,visibility,hidden").eq("id", clean(body.id, 40)).maybeSingle();
@@ -413,7 +413,28 @@ async function handle(body: any, who: { gid: string; email: string }) {
     await q; return { ok: true };
   }
 
+  // ── Modifica dei propri commenti, messaggi, messaggi degli eventi e articoli ──
+  if (a === "edit") {
+    await writeBudget(me.id);
+    const T: Record<string, [string, number]> = { comment: ["comments", 1000], message: ["messages", 2000], eventmsg: ["event_msgs", 1000], post: ["posts", 8000] };
+    const [t, max] = T[String(body.kind)] || [];
+    if (!t) throw new E(400, "tipo");
+    const id = clean(body.id, 40), text = clean(body.body, max);
+    const { data: row } = await db.from(t).select(t === "messages" ? "member_id,offer" : "member_id").eq("id", id).maybeSingle();
+    if (!row || (row as any).member_id !== me.id) throw new E(403, "non tuo");
+    if (!text && !(t === "messages" && (row as any).offer)) throw new E(400, "vuoto");
+    const upd: any = { body: text, edited_at: new Date().toISOString() };
+    if (t === "posts") { const title = clean(body.title, 150); if (title.length < 2) throw new E(400, "titolo"); upd.title = title; }
+    await db.from(t).update(upd).eq("id", id).eq("member_id", me.id);
+    return { ok: true };
+  }
+
   if (a === "delete") {
+    if (body.kind === "message" || body.kind === "eventmsg") {
+      let q = db.from(body.kind === "message" ? "messages" : "event_msgs").delete().eq("id", clean(body.id, 40));
+      if (!(admin && body.kind === "eventmsg")) q = q.eq("member_id", me.id);
+      await q; return { ok: true };
+    }
     const t = body.kind === "comment" ? "comments" : body.kind === "post" ? "posts" : "reviews";
     let q = db.from(t).delete().eq("id", clean(body.id, 40));
     if (!admin) q = q.eq("member_id", me.id);
@@ -434,17 +455,17 @@ async function handle(body: any, who: { gid: string; email: string }) {
     const blocked = await blockedSet(me.id);
     const ok = (x: any) => !x.members.banned && !blocked.has(x.member_id);
     const cm = (q: any) => q.eq("hidden", false).order("created_at").limit(300);
-    const mapC = (cms: any[]) => (cms || []).filter(ok).map((c: any) => ({ id: c.id, nick: c.members.nick, mine: c.member_id === me.id, body: c.body, at: c.created_at }));
+    const mapC = (cms: any[]) => (cms || []).filter(ok).map((c: any) => ({ id: c.id, nick: c.members.nick, mine: c.member_id === me.id, body: c.body, at: c.created_at, edited: !!c.edited_at }));
     if (body.type === "review") {
       const { data: r } = await db.from("reviews").select("id,work_key,tipo,titolo,autore,cover_url,stars,body,updated_at,member_id,members!inner(nick,banned)").eq("id", clean(body.id, 40)).eq("hidden", false).maybeSingle();
       if (!r || !ok(r)) throw new E(404, "recensione");
-      const { data: cms } = await cm(db.from("comments").select("id,body,created_at,member_id,members!inner(nick,banned)").eq("review_id", r.id));
+      const { data: cms } = await cm(db.from("comments").select("id,body,created_at,edited_at,member_id,members!inner(nick,banned)").eq("review_id", r.id));
       return { item: { type: "review", id: r.id, work: r.work_key, tipo: r.tipo, titolo: r.titolo, autore: r.autore, cover: r.cover_url, stars: r.stars, body: r.body, nick: r.members.nick, member: r.member_id, mine: r.member_id === me.id, at: r.updated_at }, comments: mapC(cms || []) };
     }
     const sm = clean(body.member, 40), sw = clean(body.work, 300), sk = body.kind === "wish" ? "wish" : "own";
     const { data: x } = await db.from("shares").select("member_id,work_key,kind,tipo,titolo,autore,anno,formato,cover_url,offer,price,note,updated_at,members!inner(nick,banned,city)").eq("member_id", sm).eq("work_key", sw).eq("kind", sk).maybeSingle();
     if (!x || !ok(x)) throw new E(404, "condivisione");
-    const { data: cms } = await cm(db.from("comments").select("id,body,created_at,member_id,members!inner(nick,banned)").eq("share_member", sm).eq("share_work", sw).eq("share_kind", sk));
+    const { data: cms } = await cm(db.from("comments").select("id,body,created_at,edited_at,member_id,members!inner(nick,banned)").eq("share_member", sm).eq("share_work", sw).eq("share_kind", sk));
     return { item: { type: "share", ...shareOut(x), mine: x.member_id === me.id }, comments: mapC(cms || []) };
   }
   if (a === "board") {

@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.18.2';
+const VERSION = '2.20.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -2361,6 +2361,13 @@ function showUpdateBar() {
   document.body.appendChild(b);
 }
 const NEWS = {
+  '2.20': [
+    ['Link cliccabili', 'I link scritti nei messaggi, nei commenti e negli articoli ora si aprono con un tocco.'],
+    ['Condividi con Spinyl', "Su Android, da Chrome, YouTube o qualsiasi app: Condividi › Spinyl, e lo mandi a un membro, ci scrivi un articolo o lo cerchi per la collezione (serve reinstallare l'app una volta)."],
+  ],
+  '2.19': [
+    ['Modifica i tuoi messaggi', "Messaggi privati, commenti, chat degli eventi e articoli: tocca «Modifica» sotto quello che hai scritto (o «Elimina»). Gli altri vedono la scritta «modificato»."],
+  ],
   '2.18.1': [
     ['Notifiche più affidabili', "A ogni apertura Spinyl rinnova l'iscrizione alle notifiche: se sullo stesso telefono si cambia account, arrivano alla persona giusta."],
   ],
@@ -2662,9 +2669,9 @@ function renderComm(it) {
   if (S.commFor !== it.id) { S.commFor = it.id; S.commStars = mine ? mine.stars || 0 : 0; S.commAll = false; }
   const list = S.commAll ? d.reviews : d.reviews.slice(0, 5);
   const rev = r => `<div class="crev"><div class="chead"><b translate="no">${esc(r.nick)}</b>${r.stars ? `<span class="cstars">${'★'.repeat(r.stars)}<i>${'★'.repeat(5 - r.stars)}</i></span>` : ''}<small>${esc(commAgo(r.at))}</small></div>
-      ${r.body ? `<p translate="no">${esc(r.body)}</p>` : ''}
-      ${r.comments.map(cm => `<div class="ccom"><b translate="no">${esc(cm.nick)}</b> <span translate="no">${esc(cm.body)}</span>
-        <span class="cacts">${cm.mine || commMe().admin ? `<button data-a="commDel" data-kind="comment" data-id="${esc(cm.id)}">Elimina</button>` : `<button data-a="commReport" data-kind="comment" data-id="${esc(cm.id)}">Segnala</button>`}</span></div>`).join('')}
+      ${r.body ? `<p translate="no">${lk(r.body)}</p>` : ''}
+      ${r.comments.map(cm => `<div class="ccom"><b translate="no">${esc(cm.nick)}</b> <span translate="no">${lk(cm.body)}</span>${editedTag(cm)}
+        <span class="cacts">${cm.mine ? editBtn('comment', cm.id, cm.body, 'work') : ''}${cm.mine || commMe().admin ? `<button data-a="commDel" data-kind="comment" data-id="${esc(cm.id)}">Elimina</button>` : `<button data-a="commReport" data-kind="comment" data-id="${esc(cm.id)}">Segnala</button>`}</span></div>`).join('')}
       <div class="cacts"><button data-a="commReply" data-id="${esc(r.id)}">Rispondi</button>${r.mine || commMe().admin ? `<button data-a="commDel" data-kind="review" data-id="${esc(r.id)}">Elimina</button>` : `<button data-a="commReport" data-kind="review" data-id="${esc(r.id)}">Segnala</button>`}</div>
       <form class="composer creply hidden" data-review="${esc(r.id)}"><textarea rows="1" maxlength="1000" placeholder="Rispondi…"></textarea><button type="submit">Invia</button></form></div>`;
   box.innerHTML = `${d.avg ? `<div class="cavg"><b>★ ${esc(String(d.avg).replace('.', LNG() === 'en' ? '.' : ','))}</b><span>${d.n === 1 ? '1 voto' : d.n + ' voti'} nella community</span></div>` : ''}
@@ -2843,6 +2850,11 @@ function commCtx() {
 }
 
 // Sezione vuota: spiega cosa fare e propone l'azione giusta (btns: [azione, etichetta, principale?])
+// testo scritto dagli utenti: i link diventano cliccabili (si aprono fuori dall'app)
+const lk = t => esc(t).replace(/\b(?:https?:\/\/|www\.)[^\s<]+[^\s<.,;:!?)\]'"»]/gi, u => {
+  const href = /^www\./i.test(u) ? 'https://' + u : u; const show = u.replace(/^https?:\/\//i, '');
+  return `<a class="ulink" href="${href}" target="_blank" rel="noopener nofollow ugc">${show.length > 48 ? show.slice(0, 45) + '…' : show}</a>`;
+});
 // nome di un membro che apre il suo profilo
 const nickBtn = (id, nick) => id ? `<button class="nick" data-a="profileOpen" data-id="${esc(id)}" translate="no">${esc(nick)}</button>` : `<b translate="no">${esc(nick)}</b>`;
 const sameCity = (a, b) => !!a && !!b && norm(a) === norm(b);
@@ -2937,11 +2949,11 @@ async function discussionOpen(q, keepScroll) {
     : `<span class="ctag">${x.kind === 'wish' ? '🔎 <span>Lo cerca</span>' : x.offer ? esc(offerTxt(x.offer, x.price)) : '📀 <span>Ce l\'ha</span>'}</span>`;
   const own = live().find(i => workKey(i) === x.work && !i.desiderio);
   openSheet(`<div class="pickcard">${coverMini(x)}<div><b translate="no">${esc(x.titolo)}</b><span translate="no">${esc(x.autore || '')}</span><button class="more" data-a="discWork">Apri l'opera ›</button></div></div>
-    <div class="crev"><div class="chead">${nickBtn(x.member, x.nick)}${x.city ? `<small translate="no">📍 ${esc(x.city)}</small>` : ''}${what}<small>${esc(commAgo(x.at))}</small></div>${(x.type === 'review' ? x.body : x.note) ? `<p translate="no">${esc(x.type === 'review' ? x.body : x.note)}</p>` : ''}</div>
+    <div class="crev"><div class="chead">${nickBtn(x.member, x.nick)}${x.city ? `<small translate="no">📍 ${esc(x.city)}</small>` : ''}${what}<small>${esc(commAgo(x.at))}</small></div>${(x.type === 'review' ? x.body : x.note) ? `<p translate="no">${lk(x.type === 'review' ? x.body : x.note)}</p>` : ''}</div>
     ${!x.mine && x.type === 'share' ? `<div class="stack"><button class="btn block" data-a="discOffer">${x.kind === 'wish' ? (own ? 'Offri il tuo' : 'Scrivi') : 'Chiedi'}</button></div>` : ''}
     <h4 class="csub">Commenti</h4>
-    <div id="discList">${d.comments.map(c => `<div class="ccom"><b translate="no">${esc(c.nick)}</b> <span translate="no">${esc(c.body)}</span><small> · ${esc(commAgo(c.at))}</small>
-      <span class="cacts">${c.mine || me.admin ? `<button data-a="discDel" data-id="${esc(c.id)}">Elimina</button>` : `<button data-a="commReport" data-kind="comment" data-id="${esc(c.id)}">Segnala</button>`}</span></div>`).join('') || '<p class="note">Ancora nessun commento: scrivi il primo!</p>'}</div>
+    <div id="discList">${d.comments.map(c => `<div class="ccom"><b translate="no">${esc(c.nick)}</b> <span translate="no">${lk(c.body)}</span><small> · ${esc(commAgo(c.at))}${editedTag(c)}</small>
+      <span class="cacts">${c.mine ? editBtn('comment', c.id, c.body, 'disc') : ''}${c.mine || me.admin ? `<button data-a="discDel" data-id="${esc(c.id)}">Elimina</button>` : `<button data-a="commReport" data-kind="comment" data-id="${esc(c.id)}">Segnala</button>`}</span></div>`).join('') || '<p class="note">Ancora nessun commento: scrivi il primo!</p>'}</div>
     <form class="composer" id="discForm"><textarea rows="1" maxlength="1000" placeholder="Commenta…"></textarea><button type="submit">Invia</button></form>`);
   hydratePhotos($('#sheet'));
   $('#discForm').addEventListener('submit', async e => {
@@ -2961,7 +2973,7 @@ function workSheet(x) {
   comm('work', { work: x.work }).then(d => {
     const b = $('#commSheet'); if (!b) return;
     b.innerHTML = `${d.avg ? `<div class="cavg"><b>★ ${esc(String(d.avg).replace('.', LNG() === 'en' ? '.' : ','))}</b><span>${d.n === 1 ? '1 voto nella community' : d.n + ' voti nella community'}</span></div>` : ''}` +
-      d.reviews.slice(0, 10).map(r => `<div class="crev"><div class="chead"><b translate="no">${esc(r.nick)}</b>${r.stars ? `<span class="cstars">${'★'.repeat(r.stars)}<i>${'★'.repeat(5 - r.stars)}</i></span>` : ''}<small>${esc(commAgo(r.at))}</small></div>${r.body ? `<p translate="no">${esc(r.body)}</p>` : ''}</div>`).join('') +
+      d.reviews.slice(0, 10).map(r => `<div class="crev"><div class="chead"><b translate="no">${esc(r.nick)}</b>${r.stars ? `<span class="cstars">${'★'.repeat(r.stars)}<i>${'★'.repeat(5 - r.stars)}</i></span>` : ''}<small>${esc(commAgo(r.at))}</small></div>${r.body ? `<p translate="no">${lk(r.body)}</p>` : ''}</div>`).join('') +
       commPeopleHTML(d, { own: false }) + commPostsHTML(d);
   }).catch(e => { const b = $('#commSheet'); if (b) b.innerHTML = `<p class="note">${esc(commErrMsg(e))}</p>`; });
 }
@@ -2976,7 +2988,7 @@ async function profileOpen(id) {
   const dec = v => String(v).replace('.', LNG() === 'en' ? '.' : ',');
   openSheet(`<div class="prof"><div class="pava" aria-hidden="true">${esc((d.nick || '?').slice(0, 1).toUpperCase())}</div>
       <div><h2 translate="no">${esc(d.nick)}</h2>${d.city ? `<span translate="no">📍 ${esc(d.city)}</span>` : ''}<small><span>Nella community da</span> ${esc(since)}</small></div></div>
-    ${d.bio ? `<p class="prose" translate="no">${esc(d.bio)}</p>` : d.mine ? '<p class="note">Scrivi due righe su di te: cosa collezioni, cosa cerchi.</p>' : ''}
+    ${d.bio ? `<p class="prose" translate="no">${lk(d.bio)}</p>` : d.mine ? '<p class="note">Scrivi due righe su di te: cosa collezioni, cosa cerchi.</p>' : ''}
     <div class="pstats"><div><b>${d.rating.avg != null ? '★ ' + esc(dec(d.rating.avg)) : '—'}</b><span>${d.rating.n === 1 ? '1 valutazione' : d.rating.n + ' valutazioni'}</span></div>
       <div><b>${d.counts.reviews}</b><span>recensioni</span></div><div><b>${d.counts.own}</b><span>pezzi condivisi</span></div><div><b>${d.counts.wish}</b><span>desideri</span></div></div>
     <div class="stack">${d.mine ? '<button class="btn primary block" data-a="profileEdit">Modifica il profilo</button>'
@@ -2984,7 +2996,7 @@ async function profileOpen(id) {
     ${d.offers.length ? `<h4 class="csub">Disponibili per scambio</h4>${d.offers.map((x, i) => `<div class="crow t-${esc(x.tipo)}">${coverMini(x)}<div><b translate="no">${esc(x.titolo)}</b><span translate="no">${esc(x.autore || '')}</span>
       <div class="chead"><span class="ctag">${esc(offerTxt(x.offer, x.price))}</span></div>${d.mine ? '' : `<div class="cacts"><button class="btn sm" data-a="profileAsk" data-i="${i}">Chiedi</button></div>`}</div></div>`).join('')}` : ''}
     <h4 class="csub">Valutazioni</h4>
-    ${d.ratings.map(r => `<div class="crev"><div class="chead"><b translate="no">${esc(r.nick)}</b>${stars(r.stars)}<small>${esc(commAgo(r.at))}</small></div>${r.body ? `<p translate="no">${esc(r.body)}</p>` : ''}
+    ${d.ratings.map(r => `<div class="crev"><div class="chead"><b translate="no">${esc(r.nick)}</b>${stars(r.stars)}<small>${esc(commAgo(r.at))}</small></div>${r.body ? `<p translate="no">${lk(r.body)}</p>` : ''}
       ${r.mine ? '' : `<span class="cacts"><button data-a="commReport" data-kind="rating" data-id="${esc(r.id)}">Segnala</button></span>`}</div>`).join('')
       || `<p class="note">${d.mine ? 'Dopo uno scambio o un prestito, chi ha trattato con te può lasciarti una valutazione.' : 'Ancora nessuna valutazione.'}</p>`}
     ${d.mine ? '' : `<p class="note legallinks"><button class="more" data-a="profileBlock">${d.blocked ? 'Sblocca' : 'Blocca'}</button></p>`}`);
@@ -3022,6 +3034,58 @@ async function rateSend() {
   catch (e) { toast(e.message === 'scambio' ? 'Potete valutarvi dopo che avete scritto entrambi' : commErrMsg(e)); }
 }
 
+// ── Ricevuto da un'altra app con Condividi › Spinyl: mandalo a qualcuno, scrivine, o cercalo per la collezione ──
+function sharedOpen() {
+  const s = S.shared; if (!s) return;
+  const link = (s.url || (String(s.text).match(/https?:\/\/\S+/) || [''])[0]).trim();
+  const words = String(s.title || s.text || '').replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim();
+  S.sharedMsg = [words, link].filter(Boolean).join('\n');
+  openSheet(`<h2>Condiviso con Spinyl</h2>
+    <div class="crev"><p translate="no">${lk(S.sharedMsg || '')}</p></div>
+    <div class="newopts">
+      ${commMe() ? `<button data-a="sharedChat"><b>💬 <span>Invia a un membro</span></b><span>In un messaggio privato</span></button>
+      <button data-a="sharedPost"><b>📝 <span>Scrivi un articolo</span></b><span>Sul blog di un'opera della tua collezione, con il link</span></button>` : ''}
+      ${words ? `<button data-a="sharedSearch"><b>🔎 <span>Cerca per la collezione</span></b><span translate="no">${esc(words.slice(0, 80))}</span></button>` : ''}
+    </div>`);
+}
+
+// ── Modificare ed eliminare i propri commenti, messaggi e articoli ──
+const EDIT = new Map(); // id → testo attuale (per riempire il modulo di modifica)
+const editedTag = x => x && x.edited ? ' · <i class="edited">modificato</i>' : '';
+const editBtn = (kind, id, body, ctx, mini) => { EDIT.set(id, body); return `<button class="${mini ? 'mini' : ''}" data-a="editOpen" data-kind="${kind}" data-id="${esc(id)}" data-ctx="${ctx}">Modifica</button>`; };
+const delBtn = (kind, id, ctx) => `<button class="mini" data-a="msgDel" data-kind="${kind}" data-id="${esc(id)}" data-ctx="${ctx}">Elimina</button>`;
+// dopo la modifica si torna dov'eri
+function editBack(ctx) {
+  if (ctx === 'thread' && S.thread) { S.threadOpenId = null; return threadOpen(S.thread.id); }
+  if (ctx === 'event' && S.event) { S.eventOpenId = null; return eventOpen(S.event.event.id); }
+  if (ctx === 'disc' && S.disc) return discussionOpen(S.disc.q);
+  if (ctx === 'post' && S.postOpenId) return postOpen(S.postOpenId);
+  closeSheet(); const it = byId(S.id); if (it) loadComm(it, true);
+}
+function editOpen(el) {
+  const { kind, id, ctx } = el.dataset; const cur = EDIT.get(id); if (cur == null) return;
+  S.edit = { kind, id, ctx };
+  const post = kind === 'post'; const body = post ? cur.body : cur;
+  const max = { comment: 1000, message: 2000, eventmsg: 1000, post: 8000 }[kind] || 1000;
+  openSheet(`<h2>${post ? "Modifica l'articolo" : kind === 'comment' ? 'Modifica il commento' : 'Modifica il messaggio'}</h2>
+    ${post ? `<label class="field"><span>Titolo</span><input id="editTitle" maxlength="150" value="${esc(cur.title)}"></label>` : ''}
+    <label class="field"><span>Testo</span><textarea id="editText" rows="${post ? 10 : 4}" maxlength="${max}">${esc(body)}</textarea></label>
+    <p class="note">Gli altri vedranno la scritta «modificato».</p>
+    <div class="stack"><button class="btn primary block" data-a="editSave">Salva</button><button class="more" data-a="editCancel">Annulla</button></div>`);
+  const t = $('#editText'); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
+}
+async function editSave() {
+  const e = S.edit; if (!e) return;
+  const body = ($('#editText') || {}).value.trim(); const title = ($('#editTitle') || {}).value;
+  try { await comm('edit', { kind: e.kind, id: e.id, body, title }); toast('Modificato'); S.edit = null; editBack(e.ctx); }
+  catch (er) { toast(er.message === 'vuoto' ? 'Il testo non può essere vuoto' : commErrMsg(er)); }
+}
+async function msgDel(el) {
+  const { kind, id, ctx } = el.dataset;
+  if (!confirm(tr('Eliminare il messaggio?'))) return;
+  try { await comm('delete', { kind, id }); toast('Eliminato'); editBack(ctx); } catch (e) { toast(commErrMsg(e)); }
+}
+
 // ── Proposte e messaggi privati ──
 function offerSheet(el) {
   const ctx = el.dataset.m ? (() => { const x = ((S.commMatch || {})[el.dataset.m] || [])[+el.dataset.i]; return x && { work: x.work, tipo: x.tipo, titolo: x.titolo, autore: x.autore, cover: x.cover }; })() : commCtx();
@@ -3056,7 +3120,7 @@ let threadPoll = null;
 async function threadOpen(id, quiet) {
   let d; try { d = await comm('thread', { id }); } catch (e) { if (!quiet) toast(commErrMsg(e)); return; }
   S.thread = d.thread;
-  const msgs = d.messages.map(m => `<div class="msg ${m.mine ? 'mine' : ''}">${m.offer ? `<b class="moffer">${esc(offerTxt(m.offer, m.price))}</b>` : ''}${m.body ? `<p translate="no">${esc(m.body)}</p>` : ''}<small>${esc(fmtDateTime(Date.parse(m.at)))}</small></div>`).join('');
+  const msgs = d.messages.map(m => `<div class="msg ${m.mine ? 'mine' : ''}">${m.offer ? `<b class="moffer">${esc(offerTxt(m.offer, m.price))}</b>` : ''}${m.body ? `<p translate="no">${lk(m.body)}</p>` : ''}<small>${esc(fmtDateTime(Date.parse(m.at)))}${editedTag(m)}${m.mine ? ' · ' + editBtn('message', m.id, m.body, 'thread', true) + ' · ' + delBtn('message', m.id, 'thread') : ''}</small></div>`).join('');
   const rateBox = d.thread.canRate && !d.thread.blocked ? `<div class="raterow">${d.thread.myRating ? `<span><span>La tua valutazione:</span> <span class="cstars">${'★'.repeat(d.thread.myRating.stars)}<i>${'★'.repeat(5 - d.thread.myRating.stars)}</i></span></span><button class="more" data-a="rateSheet">Modifica</button>`
       : `<span>Vi siete accordati? Com'è andata?</span><button class="btn sm" data-a="rateSheet">⭐ <span>Valuta lo scambio</span></button>`}</div>` : '';
   const html = `<div class="thead2"><div><h2><button class="nick big" data-a="profileOpen" data-id="${esc(d.thread.other)}" translate="no">${esc(d.thread.nick)}</button></h2>${d.thread.titolo ? `<span translate="no">${esc(d.thread.titolo)}</span>` : ''}</div>
@@ -3171,13 +3235,14 @@ async function eventOpen(id, quiet) {
   const going = d.rsvps.filter(r => r.status === 'si'), maybe = d.rsvps.filter(r => r.status === 'forse');
   const mineItem = e.work && live && liveItemsByWork(e.work);
   const tracks = mineItem && mineItem.tracklist ? String(mineItem.tracklist).split('\n').map(t => t.trim()).filter(Boolean).slice(0, 60) : [];
-  const msgs = d.messages.map(m => `<div class="emsg ${m.mine ? 'mine' : ''}"><b translate="no">${esc(m.nick)}</b> <span translate="no">${esc(m.body)}</span><small>${esc(new Date(m.at).toLocaleTimeString(LOC(), { hour: '2-digit', minute: '2-digit' }))}</small></div>`).join('');
+  const admin = (commMe() || {}).admin;
+  const msgs = d.messages.map(m => `<div class="emsg ${m.mine ? 'mine' : ''}"><b translate="no">${esc(m.nick)}</b> <span translate="no">${lk(m.body)}</span><small>${esc(new Date(m.at).toLocaleTimeString(LOC(), { hour: '2-digit', minute: '2-digit' }))}${editedTag(m)}${m.mine ? ' · ' + editBtn('eventmsg', m.id, m.body, 'event', true) : ''}${m.mine || admin ? ' · ' + delBtn('eventmsg', m.id, 'event') : ''}</small></div>`).join('');
   if (quiet && $('#emsgs') && S.eventOpenId === id) { const m = $('#emsgs'); const end = m.scrollTop + m.clientHeight >= m.scrollHeight - 30; m.innerHTML = msgs || ''; if (end) m.scrollTop = m.scrollHeight; return; }
   S.eventOpenId = id;
   openSheet(`<div class="evhead">${e.cover ? coverMini(e) : ''}<div><span class="ctag">${ico} <span>${kl}</span>${live ? ' · <i class="evchip live">● <span>In corso</span></i>' : ''}</span><h2 translate="no">${esc(e.title)}</h2>
       <span>${esc(evWhen(e.starts))}</span>${e.place ? `<span translate="no">📍 ${esc(e.place)}</span>` : ''}${e.titolo ? `<span translate="no">${esc([e.titolo, e.autore].filter(Boolean).join(' · '))}</span>` : ''}
       <span><span>Organizza</span> ${nickBtn(e.member, e.nick)}${e.visibility === 'invite' ? ' · <span>solo invitati</span>' : ''}</span></div></div>
-    ${e.body ? `<p class="prose" translate="no">${esc(e.body)}</p>` : ''}
+    ${e.body ? `<p class="prose" translate="no">${lk(e.body)}</p>` : ''}
     ${e.link ? `<a class="btn block" href="${esc(e.link)}" target="_blank" rel="noopener">${ic('play', 18)}Entra nella videochiamata</a>` : ''}
     <div class="seg evrsvp">${RSVP.map(([k, l]) => `<button class="${my === k ? 'on' : ''}" data-a="rsvp" data-v="${k}">${l}</button>`).join('')}</div>
     <p class="note">${going.length ? `<span>Partecipano:</span> <span translate="no">${going.map(r => esc(r.nick)).join(', ')}</span>` : '<span>Ancora nessuno ha confermato.</span>'}${maybe.length ? `<br><span>Forse:</span> <span translate="no">${maybe.map(r => esc(r.nick)).join(', ')}</span>` : ''}</p>
@@ -3554,9 +3619,10 @@ async function commDeleteGo() {
 function postSheet() {
   const ctx = commCtx(); if (!ctx) return;
   S.postCtx = ctx;
+  setTimeout(() => { S.postPrefill = ''; });
   openSheet(`<h2>Nuovo articolo</h2><div class="pickcard">${coverMini(ctx)}<div><b translate="no">${esc(ctx.titolo)}</b><span translate="no">${esc(ctx.autore || '')}</span></div></div>
     <label class="field"><span>Titolo</span><input id="postTitle" maxlength="150" placeholder="es. La stampa giapponese del 1978"></label>
-    <label class="field"><span>Testo</span><textarea id="postBody" rows="8" maxlength="8000" placeholder="Storia, ricordi, edizioni, curiosità…"></textarea></label>
+    <label class="field"><span>Testo</span><textarea id="postBody" rows="8" maxlength="8000" placeholder="Storia, ricordi, edizioni, curiosità…">${esc(S.postPrefill || '')}</textarea></label>
     <div class="stack"><button class="btn primary block" data-a="postSend">Pubblica</button></div>`);
 }
 async function postSend() {
@@ -3570,11 +3636,11 @@ async function postOpen(id) {
   const p = d.post; S.postOpenId = id;
   const admin = (commMe() || {}).admin;
   openSheet(`<article class="post"><span class="ctag">📝 <span translate="no">${esc(p.titolo)}</span></span><h2 translate="no">${esc(p.title)}</h2>
-      <div class="chead"><b translate="no">${esc(p.nick)}</b><small>${esc(commAgo(p.at))}</small></div>
-      <div class="prose" translate="no">${esc(p.body)}</div>
-      <div class="cacts">${p.mine || admin ? `<button data-a="postDel" data-id="${esc(p.id)}">Elimina</button>` : `<button data-a="commReport" data-kind="post" data-id="${esc(p.id)}">Segnala</button>`}</div></article>
+      <div class="chead"><b translate="no">${esc(p.nick)}</b><small>${esc(commAgo(p.at))}${editedTag(p)}</small></div>
+      <div class="prose" translate="no">${lk(p.body)}</div>
+      <div class="cacts">${p.mine ? editBtn('post', p.id, { body: p.body, title: p.title }, 'post') : ''}${p.mine || admin ? `<button data-a="postDel" data-id="${esc(p.id)}">Elimina</button>` : `<button data-a="commReport" data-kind="post" data-id="${esc(p.id)}">Segnala</button>`}</div></article>
     <h4 class="csub">Commenti</h4>
-    ${d.comments.map(c => `<div class="ccom"><b translate="no">${esc(c.nick)}</b> <span translate="no">${esc(c.body)}</span><span class="cacts">${c.mine || admin ? `<button data-a="commDel" data-kind="comment" data-id="${esc(c.id)}">Elimina</button>` : `<button data-a="commReport" data-kind="comment" data-id="${esc(c.id)}">Segnala</button>`}</span></div>`).join('') || '<p class="note">Nessun commento.</p>'}
+    ${d.comments.map(c => `<div class="ccom"><b translate="no">${esc(c.nick)}</b> <span translate="no">${lk(c.body)}</span>${editedTag(c)}<span class="cacts">${c.mine ? editBtn('comment', c.id, c.body, 'post') : ''}${c.mine || admin ? `<button data-a="commDel" data-kind="comment" data-id="${esc(c.id)}">Elimina</button>` : `<button data-a="commReport" data-kind="comment" data-id="${esc(c.id)}">Segnala</button>`}</span></div>`).join('') || '<p class="note">Nessun commento.</p>'}
     <form class="composer" id="postCForm"><textarea rows="1" maxlength="1000" placeholder="Commenta…"></textarea><button type="submit">Invia</button></form>`);
   $('#postCForm').addEventListener('submit', async e => {
     e.preventDefault(); const ta = e.target.querySelector('textarea'); const body = ta.value.trim(); if (!body) return;
@@ -4036,6 +4102,13 @@ Object.assign(actions, {
   commReport: el => commReport(el.dataset.kind, el.dataset.id),
   commInvite: () => commInvite(),
   welcomeStep: el => welcomeOpen(el.dataset.v),
+  sharedChat: async () => { await newChat(); const t = $('#chatText'); if (t) t.value = S.sharedMsg || ''; },
+  sharedPost: () => { newPost(); S.postPrefill = S.sharedMsg || ''; },
+  sharedSearch: () => { const s = S.shared || {}; const w = String(s.title || s.text || '').replace(/https?:\/\/\S+/g, '').trim(); S.intoDraft = false; S.pickWish = false; S.coverMode = null; sheetSearch(S.addTipo || 'libro', w.slice(0, 120)); },
+  editOpen: el => editOpen(el),
+  editSave: () => editSave(),
+  editCancel: () => { const e = S.edit; S.edit = null; if (e) editBack(e.ctx); else closeSheet(); },
+  msgDel: el => msgDel(el),
   inviteSend: () => shareText(($('#invText') || {}).value || S.inviteMsg || '', 'Spinyl'),
   inviteCopy: async () => { try { await navigator.clipboard.writeText(($('#invText') || {}).value || ''); toast('Copiato'); } catch (e) { const t = $('#invText'); if (t) { t.select(); document.execCommand('copy'); toast('Copiato'); } } },
   profileOpen: el => profileOpen(el.dataset.id),
@@ -4108,6 +4181,7 @@ Object.assign(actions, {
 actions.dupAnyway = () => { const p = S.pendingCode; closeSheet(); handleCode(p.code, p.tipo, 'force'); };
 
 document.addEventListener('click', e => {
+  if (e.target.closest('a.ulink')) return; // link scritto da un utente: si apre e basta
   const a = e.target.closest('[data-a]'); if (!a) return;
   const fn = actions[a.dataset.a]; if (!fn) return;
   e.preventDefault(); fn(a, e);
@@ -4177,6 +4251,8 @@ document.addEventListener('visibilitychange', () => {
   await DB.open();
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   try { const g = new URLSearchParams(location.search).get('go'); if (g) { S.pushGo = g; history.replaceState(null, '', location.pathname + location.hash); } } catch (e) {}
+  // condivisione da un'altra app (Android: Condividi › Spinyl)
+  try { const q = new URLSearchParams(location.search); if (q.has('url') || q.has('text') || q.has('title')) { S.shared = { title: q.get('title') || '', text: q.get('text') || '', url: q.get('url') || '' }; history.replaceState(null, '', location.pathname + location.hash); } } catch (e) {}
   try { const inv = new URLSearchParams(location.search).get('invito'); if (inv) { localStorage.setItem('invito', inv.toUpperCase().slice(0, 12)); history.replaceState(null, '', location.pathname + location.hash); S.openJoin = true; } } catch (e) {}
   const justLogged = Drive.handleRedirect();
   await loadItems();
@@ -4192,6 +4268,7 @@ document.addEventListener('visibilitychange', () => {
     if (S.pushGo) { const g = S.pushGo; S.pushGo = null; pushGo(g); }
     pushRefresh(); // a ogni avvio: questo telefono riceve le notifiche di chi lo sta usando ora
   }, 1500);
+  if (S.shared) setTimeout(sharedOpen, 700);
   if (S.openJoin && !commMe() && COMM_URL) setTimeout(() => Drive.token() && !(isIOS() && !isStandalone()) ? commJoinSheet() : inviteLanding(), 900);
   if (localStorage.getItem('gtoken')) localStorage.setItem('gEverLogged', '1'); // chi ha già fatto l'accesso in passato
   if (cfg('clientId')) {
