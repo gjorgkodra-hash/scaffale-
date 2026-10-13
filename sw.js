@@ -1,5 +1,5 @@
 // Scaffale — service worker: l'app funziona anche offline
-const VERSION = 'scaffale-v2.17.0';
+const VERSION = 'scaffale-v2.18.0';
 const SHELL = ['./', './index.html', './app.css', './app.js', './i18n.js', './legal.js', './config.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 const LIBS = /(unpkg\.com|cdn\.jsdelivr\.net|fastly\.jsdelivr\.net)\/(npm\/)?(@zxing|barcode-detector|zxing-wasm|tesseract)|tessdata\.projectnaptha\.com|fonts\.(googleapis|gstatic)\.com/;
@@ -40,6 +40,8 @@ self.addEventListener('push', e => {
     }),
     // se l'app è aperta, aggiorna subito i pallini delle notifiche
     self.clients.matchAll({ type: 'window' }).then(list => list.forEach(c => c.postMessage({ type: 'push' }))),
+    // numero rosso sull'icona dell'app
+    typeof d.badge === 'number' && self.navigator.setAppBadge ? (d.badge > 0 ? self.navigator.setAppBadge(d.badge) : self.navigator.clearAppBadge()).catch(() => {}) : Promise.resolve(),
   ]));
 });
 self.addEventListener('notificationclick', e => {

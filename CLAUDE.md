@@ -24,3 +24,4 @@ dati in IndexedDB sul telefono, copia su Google Drive dell'utente, pubblicata co
 - Segnalazioni: funzione Supabase `feedback` (verify_jwt true, basta la anon key: funziona anche senza community).
   Tabelle `feedback` (problemi/idee, trigger → notifica + push agli admin) e `client_errors` (errori raggruppati per hash, RPC `log_client_error`).
   L'admin le legge in Impostazioni › Segnalazioni ricevute (azioni `feedbackList`/`feedbackStatus` della funzione community). Nessun IP salvato: solo `ip_hash` giornaliero.
+- Numero sull'icona dell'app: `navigator.setAppBadge` in app.js (`appBadge`, = commTotal) e in sw.js sul push; il numero arriva nel payload (`badge`) calcolato dalla funzione SQL `unread_total(uuid)`.

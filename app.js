@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.17.0';
+const VERSION = '2.18.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -2361,6 +2361,10 @@ function showUpdateBar() {
   document.body.appendChild(b);
 }
 const NEWS = {
+  '2.18': [
+    ["Numero sull'icona", "Con le notifiche attive, l'icona di Spinyl nella schermata Home mostra quante novità ti aspettano (su iPhone serve iOS 16.4 o più recente)."],
+    ['Inviti più semplici', "Invita un amico prepara un messaggio con il codice e i tre passi per installare l'app ed entrare. Chi apre il link trova una guida passo passo."],
+  ],
   '2.17': [
     ['Profili', 'Tocca il nome di un membro per vedere il suo profilo: città, due righe su di sé, valutazioni e pezzi disponibili. Il tuo lo modifichi toccando il tuo nome in Community.'],
     ['Nella mia città', 'Negli Scambi e negli Eventi puoi vedere solo chi è nella tua città.'],
@@ -2732,12 +2736,59 @@ function commSettingsHTML() {
         <button class="btn danger block" data-a="commDelete">Elimina il mio account</button></div>`
     : `<p class="note">Recensioni e commenti tra amici. Si entra con un codice invito.</p><div class="stack"><button class="btn block" data-a="commJoin">Entra nella community</button></div>`}</div>`;
 }
+// Messaggio d'invito: già pronto, con il codice e i 3 passi per entrare
+function inviteText(code, link) {
+  const me = (commMe() || {}).nick || '';
+  return {
+    it: `Ciao! Ti invito a provare Spinyl${me ? ` (sono ${me})` : ''}: un'app per catalogare libri, vinili, CD e film, con una piccola community di amici per recensioni, scambi e prestiti. È in prova, solo su invito.
+
+1. Apri il link dal telefono: ${link}
+   Su iPhone: Condividi › Aggiungi alla schermata Home, poi aprila dall'icona.
+2. Tocca la nuvola e accedi con Google (i tuoi dati restano sul tuo Drive).
+3. Community › Entra nella community, codice: ${code}
+
+Se qualcosa non va: Impostazioni › Segnala un problema. Grazie! 🙏`,
+    en: `Hi! I'm inviting you to try Spinyl${me ? ` (it's ${me})` : ''}: an app to catalogue books, vinyl, CDs and films, with a small community of friends for reviews, swaps and loans. It's in testing, invite only.
+
+1. Open the link on your phone: ${link}
+   On iPhone: Share › Add to Home Screen, then open it from the icon.
+2. Tap the cloud and sign in with Google (your data stays on your Drive).
+3. Community › Join the community, code: ${code}
+
+If something doesn't work: Settings › Report a problem. Thanks! 🙏`,
+    es: `¡Hola! Te invito a probar Spinyl${me ? ` (soy ${me})` : ''}: una app para catalogar libros, vinilos, CD y películas, con una pequeña comunidad de amigos para reseñas, intercambios y préstamos. Está en pruebas, solo por invitación.
+
+1. Abre el enlace en el móvil: ${link}
+   En iPhone: Compartir › Añadir a pantalla de inicio, y ábrela desde el icono.
+2. Toca la nube e inicia sesión con Google (tus datos se quedan en tu Drive).
+3. Comunidad › Entrar en la comunidad, código: ${code}
+
+Si algo no funciona: Ajustes › Informar de un problema. ¡Gracias! 🙏`,
+  }[LNG()] || '';
+}
 async function commInvite() {
-  try {
-    const { code } = await comm('invite');
-    const link = location.origin + location.pathname.replace(/index\.html$/, '') + '?invito=' + code;
-    shareText(tr('Ti invito nella community di Spinyl, l\'app per catalogare libri, dischi e film. Apri il link e usa il codice') + ' ' + code + ': ' + link, 'Spinyl');
-  } catch (e) { toast(commErrMsg(e)); }
+  let code; try { code = (await comm('invite')).code; } catch (e) { return toast(commErrMsg(e)); }
+  const link = location.origin + location.pathname.replace(/index\.html$/, '') + '?invito=' + code;
+  S.inviteMsg = inviteText(code, link);
+  openSheet(`<h2>Invita un amico</h2>
+    <div class="invcode"><span>Codice invito</span><b translate="no">${esc(code)}</b><small>Vale per 5 persone</small></div>
+    <label class="field"><span>Messaggio (puoi modificarlo)</span><textarea id="invText" rows="12" translate="no">${esc(S.inviteMsg)}</textarea></label>
+    <div class="stack"><button class="btn primary block" data-a="inviteSend">${ic('share', 18)}Invia</button><button class="btn block" data-a="inviteCopy">Copia il messaggio</button></div>
+    <p class="note">Invita poche persone fidate: è una prova. Il messaggio spiega già come installare l'app ed entrare.</p>`);
+}
+// Chi apre un link d'invito: spiega i passi (su iPhone l'app installata non vede il link, quindi il codice va riscritto)
+function inviteLanding() {
+  const code = (() => { try { return localStorage.getItem('invito') || ''; } catch (e) { return ''; } })();
+  const ios = isIOS() && !isStandalone(); const logged = !!Drive.token();
+  openSheet(`<h2>Sei stato invitato!</h2>
+    <p class="note">Spinyl è in prova solo su invito: benvenuto. Bastano tre passi.</p>
+    ${code ? `<div class="invcode"><span>Il tuo codice</span><b translate="no">${esc(code)}</b><small>Segnalo: ti servirà al passo 3</small></div>` : ''}
+    <ol class="steps">
+      <li class="${ios ? '' : 'done'}"><b>Installa l'app</b><span>${ios ? 'Tocca Condividi (il quadrato con la freccia) › Aggiungi alla schermata Home, poi apri Spinyl dalla nuova icona.' : 'Fatto, oppure aggiungila alla schermata Home dal menu del browser.'}</span></li>
+      <li class="${logged ? 'done' : ''}"><b>Accedi con Google</b><span>La collezione si salva sul tuo Google Drive: solo tu la vedi.</span>${!ios && !logged && cfg('clientId') ? '<button class="btn sm" data-a="login">Accedi con Google</button>' : ''}</li>
+      <li><b>Entra nella community</b><span>Scegli un nome e scrivi il codice.</span>${!ios && logged ? '<button class="btn sm primary" data-a="commJoin">Entra nella community</button>' : ''}</li>
+    </ol>
+    <div class="stack"><button class="more" data-a="closeSheet">Più tardi</button></div>`);
 }
 // ── Condivisione: quali pezzi vanno in community ──
 const sharePref = d => { try { return d.desiderio ? localStorage.getItem('shareWish') === '1' : localStorage.getItem('shareNew') === '1'; } catch (e) { return false; } };
@@ -3248,6 +3299,14 @@ function commBadges() {
   const seg = $('.cseg [data-v=messaggi]'); if (seg) seg.innerHTML = tr('Messaggi') + (S.commUnread ? `<i class="badge">${S.commUnread}</i>` : '');
   if (S.commPrevTotal != null && n > S.commPrevTotal) commDing();
   S.commPrevTotal = n;
+  appBadge(n);
+}
+// Numero rosso sull'icona dell'app nella schermata Home (iPhone con iOS 16.4+ e app aggiunta alla Home, Android, computer)
+function appBadge(n) {
+  try {
+    if (!('setAppBadge' in navigator)) return;
+    if (n > 0) navigator.setAppBadge(n).catch(() => {}); else navigator.clearAppBadge().catch(() => {});
+  } catch (e) {}
 }
 const soundOn = () => { try { return localStorage.getItem('commSound') !== '0'; } catch (e) { return true; } };
 let audioCtx = null;
@@ -3965,6 +4024,8 @@ Object.assign(actions, {
   commReport: el => commReport(el.dataset.kind, el.dataset.id),
   commInvite: () => commInvite(),
   welcomeStep: el => welcomeOpen(el.dataset.v),
+  inviteSend: () => shareText(($('#invText') || {}).value || S.inviteMsg || '', 'Spinyl'),
+  inviteCopy: async () => { try { await navigator.clipboard.writeText(($('#invText') || {}).value || ''); toast('Copiato'); } catch (e) { const t = $('#invText'); if (t) { t.select(); document.execCommand('copy'); toast('Copiato'); } } },
   profileOpen: el => profileOpen(el.dataset.id),
   profileEdit: () => profileEdit(),
   profileSave: () => profileSave(),
@@ -4119,7 +4180,7 @@ document.addEventListener('visibilitychange', () => {
     let at = 0; try { at = +localStorage.getItem('pushAt') || 0; } catch (e) {}
     if (pushOn() && Date.now() - at > 864e5) pushEnable(true); // tiene aggiornata l'iscrizione
   }, 1500);
-  if (S.openJoin && !commMe() && COMM_URL) setTimeout(() => Drive.token() ? commJoinSheet() : toast('Collega Google Drive (icona nuvola), poi entra nella community dalle Impostazioni', 6000), 900);
+  if (S.openJoin && !commMe() && COMM_URL) setTimeout(() => Drive.token() && !(isIOS() && !isStandalone()) ? commJoinSheet() : inviteLanding(), 900);
   if (localStorage.getItem('gtoken')) localStorage.setItem('gEverLogged', '1'); // chi ha già fatto l'accesso in passato
   if (cfg('clientId')) {
     if (Drive.token()) { sync(); if (justLogged === true) toast('Collegato a Google Drive'); }

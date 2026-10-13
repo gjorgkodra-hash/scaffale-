@@ -655,3 +655,15 @@ label.check { display: flex; gap: 10px; align-items: center; margin: 6px 0 12px;
 .raterow { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; background: var(--card); border-radius: 14px; padding: 10px 12px; margin: 0 0 10px; font-size: 14px; }
 .loanbox small.due { color: var(--ink); font-weight: 600; }
 .loanbox.late small.due { color: var(--err); }
+
+/* Inviti */
+.invcode { background: var(--card); border-radius: var(--r); padding: 14px 16px; margin: 6px 0 14px; display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; }
+.invcode span, .invcode small { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+.invcode small { text-transform: none; letter-spacing: 0; }
+.invcode b { font-family: var(--mono); font-size: 30px; letter-spacing: .12em; color: var(--accent); user-select: all; -webkit-user-select: all; }
+#invText { font-size: 14px; line-height: 1.45; }
+ol.steps { list-style: none; counter-reset: st; padding: 0; margin: 0 0 12px; display: flex; flex-direction: column; gap: 10px; }
+ol.steps li { counter-increment: st; position: relative; padding: 12px 14px 12px 52px; background: var(--card); border-radius: 14px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+ol.steps li::before { content: counter(st); position: absolute; left: 14px; top: 12px; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: var(--accent); color: var(--accent-ink); }
+ol.steps li.done::before { content: '✓'; background: var(--ok); }
+ol.steps li span { color: var(--muted); font-size: 14px; line-height: 1.4; }

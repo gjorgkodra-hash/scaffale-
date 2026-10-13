@@ -76,10 +76,12 @@ Deno.serve(async (req) => {
     if (req.headers.get("x-push-secret") !== cfg.secret) return new Response("no", { status: 403 });
     const p = await req.json();
     const { data: subs } = await db.from("push_subs").select("endpoint,p256dh,auth,lang").eq("member_id", p.to);
+    // numero da mostrare sull'icona dell'app (non letti in tutto)
+    const { data: badge } = subs && subs.length ? await db.rpc("unread_total", { p: p.to }) : { data: null };
     let sent = 0;
     for (const s of subs || []) {
       try {
-        const r = await sendPush(s, text(s.lang, p), { jwk: cfg.jwk, pub: VAPID_PUB, subject: "mailto:spinyl@users.noreply.github.com" });
+        const r = await sendPush(s, { ...text(s.lang, p), badge: typeof badge === "number" ? badge : null }, { jwk: cfg.jwk, pub: VAPID_PUB, subject: "mailto:spinyl@users.noreply.github.com" });
         if (r.status === 404 || r.status === 410) await db.from("push_subs").delete().eq("endpoint", s.endpoint); // abbonamento scaduto
         else if (r.ok) sent++;
         else console.error("push", r.status, await r.text());
