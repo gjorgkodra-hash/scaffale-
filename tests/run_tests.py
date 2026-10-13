@@ -679,7 +679,7 @@ async def t_welcome(b, base):
     check('utente con collezione: niente benvenuto', await p2.evaluate("!document.querySelector('.welcome')"))
     # controllo novità community: ogni 3 minuti, ogni 10 con le notifiche push
     gaps = await p2.evaluate("(()=>{ const a = COMM_GAP(); localStorage.setItem('pushOn','1'); const pn = window.Notification; window.Notification = {permission:'granted'}; const b = COMM_GAP(); window.Notification = pn; localStorage.removeItem('pushOn'); return [a, b]; })()")
-    check('controllo in background: 3 min, 10 con il push', gaps == [180000, 600000], gaps)
+    check('controllo in background: 3 min, 5 con il push', gaps == [180000, 300000], gaps)
     check('nessun errore JavaScript', not (errs + e2), errs + e2)
 
 async def t_feedback(b, base):

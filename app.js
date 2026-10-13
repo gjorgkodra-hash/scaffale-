@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.18.0';
+const VERSION = '2.18.1';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -2361,6 +2361,9 @@ function showUpdateBar() {
   document.body.appendChild(b);
 }
 const NEWS = {
+  '2.18.1': [
+    ['Notifiche più affidabili', "A ogni apertura Spinyl rinnova l'iscrizione alle notifiche: se sullo stesso telefono si cambia account, arrivano alla persona giusta."],
+  ],
   '2.18': [
     ["Numero sull'icona", "Con le notifiche attive, l'icona di Spinyl nella schermata Home mostra quante novità ti aspettano (su iPhone serve iOS 16.4 o più recente)."],
     ['Inviti più semplici', "Invita un amico prepara un messaggio con il codice e i tre passi per installare l'app ed entrare. Chi apre il link trova una guida passo passo."],
@@ -3082,7 +3085,7 @@ async function threadBlock() {
 }
 // Controllo leggero di messaggi, inviti e notifiche. Con le notifiche push attive basta raramente:
 // le novità arrivano col push (e il service worker avvisa l'app aperta).
-const COMM_GAP = () => (pushOn() ? 10 : 3) * 60e3;
+const COMM_GAP = () => (pushOn() ? 5 : 3) * 60e3;
 async function commUnreadCheck(minGap) {
   if (!commMe() || !Drive.token() || Date.now() - (S.commUnreadAt || 0) < (minGap ?? COMM_GAP() - 5e3)) return;
   S.commUnreadAt = Date.now();
@@ -3475,6 +3478,14 @@ async function pushEnable(quiet) {
     try { localStorage.setItem('pushOn', '1'); localStorage.setItem('pushAt', String(Date.now())); } catch (e) {}
     if (!quiet) { toast('Notifiche attive'); if (S.view === 'community' || S.view === 'settings') render(); }
   } catch (e) { console.warn('push', e); if (!quiet) toast(e.code === 401 ? COMM_ERR.login : 'Non riesco ad attivare le notifiche'); }
+}
+// Iscrizione alle notifiche rinnovata a ogni avvio (e al ritorno nell'app dopo 6 ore): se sullo stesso telefono
+// si cambia account, o l'iscrizione è scaduta, le notifiche tornano ad arrivare alla persona giusta.
+function pushRefresh() {
+  let off = false, at = 0; try { off = localStorage.getItem('pushOn') === '0'; at = +localStorage.getItem('pushAt') || 0; } catch (e) {}
+  if (!commMe() || off || !pushSupported() || Notification.permission !== 'granted') return;
+  if (S.pushRefreshed && Date.now() - at < 6 * 3600e3) return;
+  S.pushRefreshed = true; pushEnable(true);
 }
 async function pushDisable() {
   try {
@@ -4157,6 +4168,7 @@ document.addEventListener('visibilitychange', () => {
   scheduleSync(800);
   if (S.swReg) S.swReg.update().catch(() => {}); // controlla se è uscita una nuova versione
   commUnreadCheck(60e3); // tornando nell'app: aggiorna se è passato almeno un minuto
+  pushRefresh();
 });
 
 /* ── Avvio ─────────────────────────────────────────────────── */
@@ -4177,8 +4189,7 @@ document.addEventListener('visibilitychange', () => {
   if (commMe()) setTimeout(() => {
     commUnreadCheck(); commSharesSoon(100);
     if (S.pushGo) { const g = S.pushGo; S.pushGo = null; pushGo(g); }
-    let at = 0; try { at = +localStorage.getItem('pushAt') || 0; } catch (e) {}
-    if (pushOn() && Date.now() - at > 864e5) pushEnable(true); // tiene aggiornata l'iscrizione
+    pushRefresh(); // a ogni avvio: questo telefono riceve le notifiche di chi lo sta usando ora
   }, 1500);
   if (S.openJoin && !commMe() && COMM_URL) setTimeout(() => Drive.token() && !(isIOS() && !isStandalone()) ? commJoinSheet() : inviteLanding(), 900);
   if (localStorage.getItem('gtoken')) localStorage.setItem('gEverLogged', '1'); // chi ha già fatto l'accesso in passato

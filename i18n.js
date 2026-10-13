@@ -260,6 +260,8 @@
     ['Ho letto e accetto regole, termini e informativa privacy', 'I have read and accept the rules, terms and privacy policy', 'He leído y acepto las normas, los términos y la política de privacidad'],
     ['Scarica i miei dati', 'Download my data', 'Descargar mis datos'],
     ['Privacy e termini', 'Privacy and terms', 'Privacidad y términos'],
+    ['Notifiche più affidabili', 'More reliable notifications', 'Notificaciones más fiables'],
+    ["A ogni apertura Spinyl rinnova l'iscrizione alle notifiche: se sullo stesso telefono si cambia account, arrivano alla persona giusta.", 'Every time it opens, Spinyl renews its notification subscription: if you switch accounts on the same phone, they reach the right person.', 'Cada vez que se abre, Spinyl renueva la suscripción a las notificaciones: si cambias de cuenta en el mismo teléfono, llegan a la persona correcta.'],
     // 2.18: inviti e numero sull'icona
     ['Più tardi', 'Later', 'Más tarde'], ['Vale per 5 persone', 'Valid for 5 people', 'Vale para 5 personas'], ['Messaggio (puoi modificarlo)', 'Message (you can edit it)', 'Mensaje (puedes editarlo)'],
     ['Copia il messaggio', 'Copy the message', 'Copiar el mensaje'],
