@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.20.0';
+const VERSION = '2.21.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -236,6 +236,76 @@ async function compressImage(file, max = 1400, q = 0.8) {
     c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
     return await new Promise(r => c.toBlob(r, 'image/jpeg', q));
   } finally { URL.revokeObjectURL(url); }
+}
+// ── Ritaglio foto: riquadro da trascinare (angoli e centro), rotazione, proporzioni rapide ──
+// cropImage(blob) → Promise<Blob|null> (null = annullato, si tiene la foto com'è)
+async function loadImg(blob) {
+  const url = URL.createObjectURL(blob);
+  try { return await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; }); } finally { setTimeout(() => URL.revokeObjectURL(url), 2000); }
+}
+function cropImage(blob, opts = {}) {
+  return new Promise(async resolve => {
+    let src; try { src = await loadImg(blob); } catch (e) { return resolve(null); }
+    let canvas = document.createElement('canvas'); canvas.width = src.naturalWidth; canvas.height = src.naturalHeight; canvas.getContext('2d').drawImage(src, 0, 0);
+    const ov = document.createElement('div'); ov.className = 'cropov';
+    ov.innerHTML = `<div class="croptop"><b>${tr(opts.title || 'Ritaglia la foto')}</b><span>${tr('Trascina gli angoli o il riquadro')}</span></div>
+      <div class="cropstage"><div class="cropwrap"><img alt=""><div class="cropbox"><i data-h="nw"></i><i data-h="ne"></i><i data-h="sw"></i><i data-h="se"></i></div></div></div>
+      <div class="cropratio">${[['free', 'Libero'], ['1', 'Quadrato'], ['0.6667', 'Libro / film']].map(([k, l], i) => `<button type="button" data-r="${k}" class="${i ? '' : 'on'}">${tr(l)}</button>`).join('')}<button type="button" data-rot="1">⟳ ${tr('Ruota')}</button></div>
+      <div class="cropbtns"><button type="button" class="btn" data-c="skip">${tr(opts.skipLabel || 'Annulla')}</button><button type="button" class="btn primary" data-c="ok">✂ ${tr('Ritaglia')}</button></div>`;
+    document.body.appendChild(ov);
+    const img = ov.querySelector('img'), box = ov.querySelector('.cropbox'), wrap = ov.querySelector('.cropwrap');
+    let r = { x: 0, y: 0, w: 1, h: 1 }, ratio = 0; // in frazioni dell'immagine mostrata
+    const show = () => new Promise(res => { img.onload = res; img.src = canvas.toDataURL('image/jpeg', 0.85); });
+    const W = () => img.clientWidth, H = () => img.clientHeight;
+    const draw = () => { box.style.left = r.x * W() + 'px'; box.style.top = r.y * H() + 'px'; box.style.width = r.w * W() + 'px'; box.style.height = r.h * H() + 'px'; };
+    const fitRatio = () => { // riquadro più grande con la proporzione scelta, al centro
+      if (!ratio) { r = { x: 0.04, y: 0.04, w: 0.92, h: 0.92 }; return draw(); }
+      const ar = ratio * H() / W(); // larghezza/altezza in frazioni
+      let w = 0.92, h = w / ar; if (h > 0.92) { h = 0.92; w = h * ar; }
+      r = { x: (1 - w) / 2, y: (1 - h) / 2, w, h }; draw();
+    };
+    await show(); fitRatio();
+    const clamp = () => { r.w = Math.min(Math.max(r.w, 0.08), 1); r.h = Math.min(Math.max(r.h, 0.08), 1); r.x = Math.min(Math.max(r.x, 0), 1 - r.w); r.y = Math.min(Math.max(r.y, 0), 1 - r.h); };
+    let drag = null;
+    const pt = e => { const b = img.getBoundingClientRect(); return { x: (e.clientX - b.left) / b.width, y: (e.clientY - b.top) / b.height }; };
+    wrap.addEventListener('pointerdown', e => {
+      const h = e.target.dataset && e.target.dataset.h; const p = pt(e);
+      if (!h && !box.contains(e.target)) return;
+      drag = { h, p, r0: { ...r } }; wrap.setPointerCapture(e.pointerId); e.preventDefault();
+    });
+    wrap.addEventListener('pointermove', e => {
+      if (!drag) return; const p = pt(e), dx = p.x - drag.p.x, dy = p.y - drag.p.y, o = drag.r0;
+      if (!drag.h) { r = { ...o, x: o.x + dx, y: o.y + dy }; clamp(); return draw(); }
+      let x1 = o.x, y1 = o.y, x2 = o.x + o.w, y2 = o.y + o.h;
+      if (drag.h.includes('w')) x1 = Math.min(x2 - 0.08, Math.max(0, x1 + dx)); else x2 = Math.max(x1 + 0.08, Math.min(1, x2 + dx));
+      if (drag.h.includes('n')) y1 = Math.min(y2 - 0.08, Math.max(0, y1 + dy)); else y2 = Math.max(y1 + 0.08, Math.min(1, y2 + dy));
+      if (ratio) { const ar = ratio * H() / W(); const w = x2 - x1, h = w / ar; if (drag.h.includes('n')) y1 = y2 - h; else y2 = y1 + h; if (y1 < 0 || y2 > 1) return; }
+      r = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 }; draw();
+    });
+    const end = () => { drag = null; }; wrap.addEventListener('pointerup', end); wrap.addEventListener('pointercancel', end);
+    const done = out => { ov.remove(); window.removeEventListener('resize', draw); resolve(out); };
+    window.addEventListener('resize', draw);
+    ov.addEventListener('click', async e => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.r) { ratio = b.dataset.r === 'free' ? 0 : +b.dataset.r; ov.querySelectorAll('[data-r]').forEach(x => x.classList.toggle('on', x === b)); return fitRatio(); }
+      if (b.dataset.rot) { const c2 = document.createElement('canvas'); c2.width = canvas.height; c2.height = canvas.width; const g = c2.getContext('2d'); g.translate(c2.width, 0); g.rotate(Math.PI / 2); g.drawImage(canvas, 0, 0); canvas = c2; await show(); return fitRatio(); }
+      if (b.dataset.c === 'skip') return done(null);
+      if (b.dataset.c === 'ok') {
+        const sx = Math.round(r.x * canvas.width), sy = Math.round(r.y * canvas.height), sw = Math.round(r.w * canvas.width), sh = Math.round(r.h * canvas.height);
+        const k = Math.min(1, (opts.max || 1400) / Math.max(sw, sh));
+        const out = document.createElement('canvas'); out.width = Math.round(sw * k); out.height = Math.round(sh * k);
+        out.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, out.width, out.height);
+        out.toBlob(bl => done(bl), 'image/jpeg', opts.quality || 0.85);
+      }
+    });
+  });
+}
+// ritaglia una foto già salvata: crea una foto nuova (così anche la copia su Drive si aggiorna) e sostituisce la vecchia
+async function cropStoredPhoto(id) {
+  const p = await DB.get('photos', id); if (!p || !p.blob || !S.draft) return;
+  const out = await cropImage(p.blob); if (!out) return;
+  const nid = uid(); await DB.put('photos', { id: nid, blob: out }); S.newPhotos.push(nid);
+  S.draft.foto = S.draft.foto.map(x => x === id ? nid : x); render(); toast('Foto ritagliata');
 }
 async function photoURL(id) {
   if (photoURLs.has(id)) return photoURLs.get(id);
@@ -616,7 +686,7 @@ function viewEdit() {
       <h3>Foto</h3>
       <div class="photos">
         ${d.coverUrl ? `<div class="photo"><img src="${esc(d.coverUrl)}" alt="" referrerpolicy="no-referrer" onerror="this.style.opacity=0"><span class="badge">Copertina</span><button type="button" class="x" data-a="rmCover" aria-label="Rimuovi copertina">✕</button></div>` : ''}
-        ${d.foto.map(p => `<div class="photo"><img data-photo="${esc(p)}" alt="" hidden><button type="button" class="x" data-a="rmPhoto" data-v="${esc(p)}" aria-label="Rimuovi foto">✕</button></div>`).join('')}
+        ${d.foto.map(p => `<div class="photo"><img data-photo="${esc(p)}" alt="" hidden><button type="button" class="x" data-a="rmPhoto" data-v="${esc(p)}" aria-label="Rimuovi foto">✕</button><button type="button" class="crop" data-a="cropPhoto" data-v="${esc(p)}" aria-label="Ritaglia">✂</button></div>`).join('')}
         <button type="button" class="addphoto" data-a="addPhoto">${ic('camera')}Aggiungi</button>
       </div>
     </div>
@@ -2361,6 +2431,9 @@ function showUpdateBar() {
   document.body.appendChild(b);
 }
 const NEWS = {
+  '2.21': [
+    ['Ritaglia le foto', "Dopo la foto della copertina, o quando aggiungi una foto a un pezzo, puoi ritagliarla: trascina gli angoli, scegli quadrato o formato libro e ruotala. Le foto già salvate si ritagliano dal pulsante ✂ in Modifica."],
+  ],
   '2.20': [
     ['Link cliccabili', 'I link scritti nei messaggi, nei commenti e negli articoli ora si aprono con un tocco.'],
     ['Condividi con Spinyl', "Su Android, da Chrome, YouTube o qualsiasi app: Condividi › Spinyl, e lo mandi a un membro, ci scrivi un articolo o lo cerchi per la collezione (serve reinstallare l'app una volta)."],
@@ -2574,6 +2647,8 @@ async function recognizeCover(file) {
   const tipo = S.coverTipo || S.addTipo || 'libro';
   let blob;
   try { blob = await compressImage(file, 1600, 0.9); } catch (e) { return toast('Formato foto non supportato'); }
+  // ritaglio prima della lettura: la copertina sola si legge meglio ed è più bella come foto del pezzo
+  try { const c = await cropImage(blob, { title: 'Ritaglia la copertina', skipLabel: 'Usa così', max: 1600, quality: 0.9 }); if (c) blob = c; } catch (e) {}
   if (S.coverShotUrl) URL.revokeObjectURL(S.coverShotUrl);
   S.coverShot = blob; S.coverShotUrl = URL.createObjectURL(blob); S.coverMode = mode;
   const overLimit = !!cfg('visionKey') && visionUsed() >= VISION_MONTHLY;
@@ -3994,6 +4069,7 @@ const actions = {
   draftTipo: el => { S.draft.tipo = el.dataset.v; render(); },
   rateDraft: el => { const v = +el.dataset.v; S.draft.valutazione = S.draft.valutazione === v ? 0 : v; el.parentElement.outerHTML = starsHTML(S.draft.valutazione, 'rateDraft'); },
   addPhoto: () => $('#photoInput').click(),
+  cropPhoto: el => cropStoredPhoto(el.dataset.v),
   rmPhoto: el => { S.draft.foto = S.draft.foto.filter(p => p !== el.dataset.v); render(); },
   rmCover: () => { S.draft.coverUrl = ''; render(); },
   tapeTemplate: () => { S.draft.tracklist = TAPE_TEMPLATE; render(); const t = $('[data-f=tracklist]'); if (t) { t.focus(); t.setSelectionRange(10, 10); } },
@@ -4226,7 +4302,11 @@ $('#photoInput').addEventListener('change', async e => {
   const files = [...e.target.files]; e.target.value = ''; if (!files.length || !S.draft) return;
   toast('Elaboro le foto…', 1500);
   for (const f of files) {
-    try { const blob = await compressImage(f); const id = uid(); await DB.put('photos', { id, blob }); S.draft.foto.push(id); S.newPhotos.push(id); }
+    try {
+      let blob;
+      if (files.length === 1) { const big = await compressImage(f, 2000, 0.9); blob = await cropImage(big, { skipLabel: 'Usa così' }) || await compressImage(big); } // una foto: si può ritagliare subito
+      else blob = await compressImage(f);
+      const id = uid(); await DB.put('photos', { id, blob }); S.draft.foto.push(id); S.newPhotos.push(id); }
     catch (err) { toast('Formato foto non supportato'); }
   }
   render();
