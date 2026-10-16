@@ -21,7 +21,7 @@
 </head>
 <body>
 <div id="splash" class="splash" translate="no" aria-hidden="true">
-  <div class="splash-disc">
+  <div class="splash-disc"><div class="splash-rot">
   <svg class="splash-logo" viewBox="30 30 140 140" aria-hidden="true">
     <path d="M100 30 A70 70 0 0 0 100 170 Z" fill="#0B0B0E"/>
     <path d="M100 42 A58 58 0 0 0 100 158" fill="none" stroke="#3A3842" stroke-width="2"/>
@@ -36,16 +36,18 @@
     <line x1="100" y1="30" x2="100" y2="170" stroke="#E8483A" stroke-width="4"/>
     <circle cx="100" cy="100" r="5" fill="#1C1B22"/>
   </svg>
-  </div>
+  </div></div>
   <div class="splash-name">Spinyl</div>
 </div>
 <script>
-  // Schermata di apertura: il logo gira per 3 secondi, poi sfuma. Un tocco la salta.
+  // Schermata di apertura: il disco gira finché l'app si prepara (almeno ~2,5 secondi da quando si vede), poi sfuma. Un tocco la salta.
+  // Il tempo parte dal primo disegno sullo schermo: su iPhone la pagina può comparire in ritardo e il disco si vedrebbe già fermo.
   (function () {
     var s = document.getElementById('splash'), done = false;
     function hide() { if (done) return; done = true; s.classList.add('out'); setTimeout(function () { s.remove(); }, 450); }
-    var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    setTimeout(hide, reduce ? 1200 : 3000);
+    var raf = window.requestAnimationFrame || function (f) { setTimeout(f, 16); };
+    raf(function () { raf(function () { setTimeout(hide, 2500); }); });
+    setTimeout(hide, 8000); // in ogni caso
     s.addEventListener('click', hide);
   })();
 </script>
