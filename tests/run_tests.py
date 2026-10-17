@@ -31,11 +31,14 @@ def serve():
 
 # ── Google Drive finto (in memoria) ─────────────────────────────
 FILES = {}; _ids = itertools.count(1)
+DRIVE_FULL = [False]
 def nid(): return 'f%d' % next(_ids)
 async def drive(r):
     u = r.request.url; p = urlparse(u); qs = parse_qs(p.query); m = r.request.method
     J = lambda o, st=200: r.fulfill(status=st, content_type='application/json', body=json.dumps(o), headers={'Access-Control-Allow-Origin': '*'})
-    if p.path == '/drive/v3/about': return await J({'user': {'emailAddress': 'test@example.com'}})
+    if p.path == '/drive/v3/about': return await J({'user': {'emailAddress': 'test@example.com'}, 'storageQuota': {'limit': str(15 * 1024**3), 'usage': str(15 * 1024**3)}})
+    if DRIVE_FULL[0] and m in ('POST', 'PATCH'):
+        return await J({'error': {'code': 403, 'message': "The user's Drive storage quota has been exceeded.", 'errors': [{'reason': 'storageQuotaExceeded'}]}}, 403)
     if p.path == '/drive/v3/files' and m == 'GET':
         q = qs.get('q', [''])[0]
         name = re.search(r"name='([^']+)'", q); parent = re.search(r"'([^']+)' in parents", q)
@@ -694,6 +697,19 @@ async def t_sync(b, base):
     check('cancellazione di massa bloccata', await B.evaluate("S.syncState") == 'error' and live() == 25, live())
     await B.evaluate("S.allowMass=true"); await sync(B)
     check('dopo la conferma viene applicata', live() == 5, live())
+    # Drive pieno: messaggio chiaro, spazio usato, niente tentativi continui
+    DRIVE_FULL[0] = True
+    await A.evaluate("(async()=>{ const it=byId('x1'); it.note='nota pieno'; await saveItem(it); })()"); await sync(A)
+    msg = await A.evaluate("S.syncError")
+    check('Drive pieno: messaggio comprensibile', 'pieno' in msg and '{' not in msg, msg)
+    await A.wait_for_function("!!S.driveQuota", timeout=5000)
+    await A.evaluate("go('settings')")
+    t = await A.evaluate("document.querySelector('.form').textContent")
+    check('Drive pieno: spazio usato e link per gestirlo', '15 GB' in t and await A.evaluate("!!document.querySelector('a[href*=\"one.google.com\"]')"), t[:160])
+    check('Drive pieno: non riprova da solo', await A.evaluate("(async()=>{ S.syncState='error'; await sync(); return S.syncState })()") == 'error')
+    DRIVE_FULL[0] = False
+    await A.evaluate("sync(true)"); await A.wait_for_function("!Sync.running && S.syncState === 'ok'", timeout=10000)
+    check('spazio liberato: «Sincronizza ora» riparte', True)
     check('nessun errore JavaScript', not (ea + eb), ea + eb)
 
 async def t_silent_login(b, base):

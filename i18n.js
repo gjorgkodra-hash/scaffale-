@@ -261,6 +261,11 @@
     ['Scarica i miei dati', 'Download my data', 'Descargar mis datos'],
     ['Privacy e termini', 'Privacy and terms', 'Privacidad y términos'],
     ["Su Android, se le notifiche arrivano solo quando apri Spinyl, il telefono sta mettendo Chrome a riposo: Impostazioni del telefono › App › Chrome › Batteria › Senza restrizioni. Per il pallino sull'icona: Impostazioni › Notifiche › Pallino di notifica sull'icona.", "On Android, if notifications only arrive when you open Spinyl, the phone is putting Chrome to sleep: phone Settings › Apps › Chrome › Battery › Unrestricted. For the dot on the icon: Settings › Notifications › Notification dot on app icon.", 'En Android, si las notificaciones solo llegan al abrir Spinyl, el teléfono está dejando Chrome en reposo: Ajustes del teléfono › Aplicaciones › Chrome › Batería › Sin restricciones. Para el punto en el icono: Ajustes › Notificaciones › Punto de notificación en el icono.'],
+    // 2.21.2: Drive pieno
+    ['Il tuo Google Drive è pieno: Spinyl non riesce a salvarci la copia. La collezione è al sicuro sul telefono.', "Your Google Drive is full: Spinyl can't save its copy there. Your collection is safe on the phone.", 'Tu Google Drive está lleno: Spinyl no puede guardar la copia. La colección está segura en el teléfono.'],
+    ['Spazio Google usato:', 'Google storage used:', 'Espacio de Google usado:'],
+    ["Lo spazio è condiviso tra Gmail, Google Foto e Drive. Liberane un po' (o aumentalo), poi tocca «Sincronizza ora». Spinyl occupa pochissimo.", 'Storage is shared between Gmail, Google Photos and Drive. Free some up (or add more), then tap «Sync now». Spinyl takes very little.', 'El espacio se comparte entre Gmail, Google Fotos y Drive. Libera algo (o amplíalo) y toca «Sincronizar ahora». Spinyl ocupa muy poco.'],
+    ['Gestisci lo spazio di Google', 'Manage Google storage', 'Gestionar el espacio de Google'],
     // 2.21: ritaglio
     ['Ritaglia la foto', 'Crop the photo', 'Recorta la foto'], ['Ritaglia la copertina', 'Crop the cover', 'Recorta la portada'], ['Trascina gli angoli o il riquadro', 'Drag the corners or the frame', 'Arrastra las esquinas o el recuadro'],
     ['Libero', 'Free', 'Libre'], ['Quadrato', 'Square', 'Cuadrado'], ['Libro / film', 'Book / film', 'Libro / película'], ['Ruota', 'Rotate', 'Girar'], ['Ritaglia', 'Crop', 'Recortar'],

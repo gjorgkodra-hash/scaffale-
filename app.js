@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.21.1';
+const VERSION = '2.21.2';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -741,6 +741,8 @@ function viewSettings() {
       <div class="status"><i class="${st[0]}"></i><div>${esc(st[1])}<small>${esc(st[2])}</small></div></div>
       <div class="stack">
         ${has && !tok ? `<button class="btn primary block" data-a="login">${ic('cloud', 18)}Accedi con Google</button>` : ''}
+        ${S.driveFullAt ? `<p class="note">${S.driveQuota ? `<span>Spazio Google usato:</span> <b>${esc(S.driveQuota)}</b>. ` : ''}<span>Lo spazio è condiviso tra Gmail, Google Foto e Drive. Liberane un po' (o aumentalo), poi tocca «Sincronizza ora». Spinyl occupa pochissimo.</span></p>
+          <a class="btn block" href="https://one.google.com/storage" target="_blank" rel="noopener">Gestisci lo spazio di Google</a>` : ''}
         ${S.syncState === 'error' && /pezzi da Drive/.test(S.syncError) ? `<button class="btn primary block" data-a="allowMass">Sì, elimina anche da Drive</button>` : ''}
         ${has && tok ? `<button class="btn dark block" data-a="syncNow">Sincronizza ora</button><button class="btn block" data-a="showCopies">Copie di sicurezza su Drive</button><button class="btn block" data-a="logout">Esci da Google</button>` : ''}
         <p class="note">I dati sono salvati nel telefono e copiati nella cartella <b>Scaffale</b> del tuo Google Drive (file <i>scaffale.json</i> e cartella <i>foto</i>). Puoi usare l'app anche offline: si sincronizza appena possibile.</p>
@@ -1594,8 +1596,19 @@ function mergeItems(localList, remoteList) {
   return { all: [...map.values()], changed, remoteBehind };
 }
 
-async function sync() {
+// quanto spazio Google è usato (per spiegare l'errore "Drive pieno")
+async function driveQuota() {
+  try {
+    const q = (await (await Drive.api('https://www.googleapis.com/drive/v3/about?fields=storageQuota')).json()).storageQuota || {};
+    const gb = n => (n / 1073741824).toLocaleString(LOC(), { maximumFractionDigits: 1 }) + ' GB';
+    S.driveQuota = q.limit ? `${gb(+q.usage)} / ${gb(+q.limit)}` : gb(+q.usage || 0);
+    if (S.view === 'settings') render();
+  } catch (e) {}
+}
+async function sync(manual) {
   if (!cfg('clientId')) { setSync('off'); return; }
+  // Drive pieno: non riprovo di continuo, solo ogni 30 minuti o quando lo chiede l'utente
+  if (!manual && S.driveFullAt && Date.now() - S.driveFullAt < 30 * 60e3) return;
   if (Sync.running) { Sync.again = true; return; }
   if (!Drive.token()) { setSync('login'); return; }
   if (!navigator.onLine) { setSync('off'); return; }
@@ -1646,11 +1659,12 @@ async function sync() {
     S.dirty = false; S.allowMass = false; await setMeta('dirty', false);
     S.lastSync = Date.now(); await setMeta('lastSync', S.lastSync);
     if (changed.length) { await loadItems(); if (S.view !== 'edit') render(); }
-    setSync('ok');
+    S.driveFullAt = 0; setSync('ok');
   } catch (e) {
     if (e instanceof NeedLogin) setSync('login');
     else if (e.mass) setSync('error', `Questo telefono sta per eliminare ${e.mass} pezzi da Drive: conferma nelle Impostazioni`);
     else if (e.status === 404 && /folder|File not found/i.test(e.detail || '')) { await setMeta('drive', {}); setSync('error', 'Cartella su Drive non trovata, riprova'); }
+    else if (e.status === 403 && /storageQuotaExceeded|quota has been exceeded/i.test(e.detail || '')) { S.driveFullAt = Date.now(); setSync('error', 'Il tuo Google Drive è pieno: Spinyl non riesce a salvarci la copia. La collezione è al sicuro sul telefono.'); driveQuota(); }
     else { console.error(e); setSync('error', (e.message || 'Errore') + (e.detail ? ' — ' + String(e.detail).slice(0, 120) : '')); }
   } finally {
     Sync.running = false;
@@ -4103,7 +4117,7 @@ const actions = {
 
   syncTap: () => { if (!cfg('clientId')) go('settings'); else if (!Drive.token()) Drive.login(); else { sync(); toast('Sincronizzazione…', 1200); } },
   login: () => Drive.login(),
-  syncNow: () => sync(),
+  syncNow: () => sync(true),
   logout: () => { Drive.logout(); setSync('login'); render(); },
   export: () => exportBackup(),
   import: () => $('#importInput').click(),
