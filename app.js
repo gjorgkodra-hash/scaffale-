@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.22.0';
+const VERSION = '2.23.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -140,6 +140,7 @@ const ICON = {
   hand: '<path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11V4.5a1.5 1.5 0 0 1 3 0V12M14 11V6.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-2.7L3 14.5a1.5 1.5 0 0 1 2.5-1.6L8 15"/>',
   book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5"/>',
   check: '<path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2"/><path d="m8 12.5 2.8 2.8L16.5 9"/>',
+  note: '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
   chart: '<path d="M3 20h18"/><path d="M6 16v-4M11 16V6M16 16V9M21 16v-2"/>',
   dice: '<rect x="4" y="4" width="16" height="16" rx="3.5"/><circle cx="9" cy="9" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="9" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="15" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="15" r="1.3" fill="currentColor" stroke="none"/>',
   share: '<path d="M12 3v12M7.5 7.5 12 3l4.5 4.5"/><path d="M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/>',
@@ -369,6 +370,7 @@ function mainHeader(active) {
   return `<header class="top">
     <div class="grow"><h1>Spinyl</h1></div>
     <button class="iconbtn" data-a="check" aria-label="Ce l'ho già?">${ic('check')}</button>
+    ${ID_URL ? `<button class="iconbtn" data-a="listen" aria-label="Che canzone è?">${ic('note')}</button>` : ''}
     <button class="iconbtn" data-a="stats" aria-label="Statistiche">${ic('chart')}</button>
     ${syncBtn()}
     <button class="iconbtn" data-a="settings" aria-label="Impostazioni">${ic('gear')}</button>
@@ -798,7 +800,7 @@ function openSheet(html) {
   $('#sheet').innerHTML = html; $('#sheetWrap').classList.remove('hidden');
   hydratePhotos($('#sheet'));
 }
-function closeSheet() { $('#sheetWrap').classList.add('hidden'); $('#sheet').innerHTML = ''; }
+function closeSheet() { if (S.listenStop) S.listenStop(true); $('#sheetWrap').classList.add('hidden'); $('#sheet').innerHTML = ''; }
 
 function sheetAdd() {
   S.pickWish = false; S.coverMode = null;
@@ -812,6 +814,26 @@ function sheetAdd() {
 }
 
 const searchPlaceholder = tipo => isMusic(tipo) ? 'Artista e titolo' : tipo === 'libro' ? 'Titolo o autore' : 'Titolo del film';
+// Paese di stampa (dischi): nome usato da Discogs, codice usato da MusicBrainz, parole che si leggono sul retro
+const COUNTRIES = [['Italia', 'Italy', 'IT', /^ital(y|ia|ie)/], ['Regno Unito', 'UK', 'GB', /^(uk|england|great britain|united kingdom)/], ['Stati Uniti', 'US', 'US', /^(usa?|united states)/],
+  ['Germania', 'Germany', 'DE', /^(w ?germany|west germany|germany|deutschland)/], ['Francia', 'France', 'FR', /^france/], ['Europa', 'Europe', 'XE', /^(eu|eec|europe)/],
+  ['Paesi Bassi', 'Netherlands', 'NL', /^(holland|the netherlands|netherlands)/], ['Spagna', 'Spain', 'ES', /^(spain|españa|espana)/], ['Giappone', 'Japan', 'JP', /^japan/],
+  ['Canada', 'Canada', 'CA', /^canada/], ['Belgio', 'Belgium', 'BE', /^belgi(um|que)/], ['Svezia', 'Sweden', 'SE', /^sweden/], ['Grecia', 'Greece', 'GR', /^greece/],
+  ['Portogallo', 'Portugal', 'PT', /^portugal/], ['Australia', 'Australia', 'AU', /^australia/], ['Brasile', 'Brazil', 'BR', /^bra[sz]il/], ['Argentina', 'Argentina', 'AR', /^argentina/],
+  ['Jugoslavia', 'Yugoslavia', 'YU', /^(yugoslavia|jugoslavija)/], ['URSS', 'USSR', 'SU', /^(ussr|cccp)/]];
+const countryOf = name => COUNTRIES.find(c => c[1] === name);
+// "Made in Italy", "Printed in U.K.", "Manufactured in Germany"… sul retro o sull'etichetta
+function detectCountry(text) {
+  const m = String(text || '').match(/\b(made|printed|manufactured|pressed|fabriqu[ée]|hergestellt|stampato|fabbricato|prodotto)\s+(in|en)\s+([a-zñ .]{2,20})/i);
+  if (!m) return '';
+  const w = m[3].toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ').trim();
+  const c = COUNTRIES.find(c => c[3].test(w)); return c ? c[1] : '';
+}
+const pressCountry = () => { try { return localStorage.getItem('pressCountry') || ''; } catch (e) { return ''; } };
+function countryRowHTML(tipo, sel) {
+  return `<label class="field countryrow ${isMusic(tipo) ? '' : 'hidden'}" id="countryRow"><span>Paese di stampa</span><select id="titleCountry">
+    <option value="">Qualsiasi paese</option>${COUNTRIES.map(c => `<option value="${c[1]}" ${sel === c[1] ? 'selected' : ''}>${c[0]}</option>`).join('')}</select></label>`;
+}
 function sheetSearch(tipo, prefill = '', code = '', opts = {}) {
   S.searchCtx = { tipo, code, cover: !!opts.cover };
   const title = opts.cover ? 'Dalla copertina' : `Cerca ${tipo === 'cd' ? 'CD' : TIPI[tipo].label.toLowerCase()}`;
@@ -820,10 +842,12 @@ function sheetSearch(tipo, prefill = '', code = '', opts = {}) {
       <div class="seg seg5" style="margin-bottom:4px">${Object.entries(TIPI).map(([k, v]) => `<button type="button" class="${tipo === k ? 'on' : ''}" data-a="searchTipo" data-v="${k}">${v.label}</button>`).join('')}</div>` : ''}
     ${code ? `<p class="lead">Codice ${esc(code)} non trovato. Prova con il titolo${isMusic(tipo) ? ' e l’artista' : ''}.</p>` : ''}
     <form class="searchform" id="titleSearch"><input id="titleQ" type="search" placeholder="${searchPlaceholder(tipo)}" value="${esc(prefill)}" autocomplete="off" translate="no"><button class="btn primary" type="submit">Cerca</button></form>
+    ${countryRowHTML(tipo, opts.country || (opts.cover ? '' : pressCountry()))}
+    ${opts.cover && isMusic(tipo) ? `<p class="note" id="countryHint" style="margin:-4px 2px 10px">${opts.country ? 'Ho letto il paese sul disco: controlla e tocca Cerca.' : 'Scegli il paese di stampa (sul retro o sull’etichetta: «Made in…»), poi tocca Cerca: trovo prima l’edizione giusta.'}</p>` : ''}
     ${opts.cover && !cfg('visionKey') ? '<p class="note" style="margin:-4px 2px 10px">Suggerimento iPhone: tocca il campo, poi “Scansiona testo” per copiare le scritte con la fotocamera.</p>' : ''}
     <div id="results" class="results"></div>
     ${code ? `<button class="btn block" style="margin-top:12px" data-a="manualWithCode">Inserisci a mano</button>` : ''}`);
-  if (opts.auto && prefill) setTimeout(() => { const f = $('#titleSearch'); if (f) f.requestSubmit ? f.requestSubmit() : f.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); }, 50);
+  if (opts.auto && prefill && !(opts.cover && isMusic(tipo))) setTimeout(() => { const f = $('#titleSearch'); if (f) f.requestSubmit ? f.requestSubmit() : f.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); }, 50);
   else setTimeout(() => $('#titleQ')?.focus(), 250);
 }
 
@@ -1038,7 +1062,7 @@ function fitMusic(list, tipo) {
   return out;
 }
 
-async function searchByTitle(tipo, q) {
+async function searchByTitle(tipo, q, country = '') {
   if (tipo === 'libro') {
     const [gb, ol] = await Promise.all([settled([googleBooks(q)]), settled([openLibrarySearch('q=' + encodeURIComponent(q))])]);
     const out = gb.slice(); const idx = new Map(out.map((c, i) => [bookKey(c), i]));
@@ -1051,14 +1075,19 @@ async function searchByTitle(tipo, q) {
     // Sembra un numero di catalogo (es. DGCC-24425, PCS 7088)? Cercalo come tale: identifica l'edizione esatta
     const looksCat = /\d/.test(q) && /^[a-z0-9][a-z0-9 .\-\/]{2,22}$/i.test(q.trim()) && q.trim().split(/\s+/).length <= 3;
     const catQ = q.trim().replace(/"/g, '');
-    const [cat, dc, mb, it] = await Promise.all([
+    const C = countryOf(country);
+    const [cat, dcC, dc, mb, it] = await Promise.all([
       looksCat ? settled([discogs('catno=' + encodeURIComponent(catQ)), musicBrainz(`catno:"${catQ}"`)]) : Promise.resolve([]),
+      C ? settled([discogs('q=' + encodeURIComponent(q) + '&format=' + fmt + '&country=' + encodeURIComponent(C[1])), musicBrainz(`${q} AND country:${C[2]}`)]) : Promise.resolve([]),
       settled([discogs('q=' + encodeURIComponent(q) + '&format=' + fmt)]),
       settled([musicBrainz(`${q} AND format:${mbFmt}`)]).then(r => r.length ? r : settled([musicBrainz(q)])),
       settled([itunes(q, 'album')]),
     ]);
     cat.forEach(c => { c.sub = ['N. catalogo ' + (c.catalogo || catQ), c.sub].filter(Boolean).join(' · '); });
-    const seen = new Set(); const all = [...cat, ...dc.slice(0, 6), ...mb.slice(0, 6), ...it.slice(0, 4)].filter(c => { const k = (c._discogsId || c._mbid || '') + ''; if (k && seen.has(k)) return false; if (k) seen.add(k); return true; });
+    // prima le edizioni del paese scelto
+    const inC = c => C && (c.paese === C[1] || c.paese === C[2]);
+    const rest = [...dc.slice(0, 6), ...mb.slice(0, 6)];
+    const seen = new Set(); const all = [...cat, ...dcC.slice(0, 8), ...rest.filter(inC), ...rest.filter(c => !inC(c)), ...it.slice(0, 4)].filter(c => { const k = (c._discogsId || c._mbid || '') + ''; if (k && seen.has(k)) return false; if (k) seen.add(k); return true; });
     return fitMusic(all, tipo);
   }
   const [t, it, wd] = await Promise.all([settled([tmdb(q)]), settled([itunes(q, 'movie')]), settled([wikidataFilms(q)])]);
@@ -2445,6 +2474,10 @@ function showUpdateBar() {
   document.body.appendChild(b);
 }
 const NEWS = {
+  '2.23': [
+    ['Che canzone è?', "Il tasto con la nota in alto ascolta la musica che sta suonando (come Shazam), riconosce la canzone e ti dice se è in uno dei tuoi dischi, con la traccia. Puoi anche scrivere il titolo."],
+    ['Paese di stampa', "Dopo la foto della copertina di un disco scegli il paese di stampa (es. Italia, Regno Unito): la ricerca mostra prima l'edizione giusta. Se sulla foto c'è «Made in…», lo riconosco da solo."],
+  ],
   '2.22': [
     ['Chat di gruppo', "In Community › Nuovo › Nuovo gruppo: una chat con più membri (fino a 50). Si aggiungono persone, si rinomina, si esce quando si vuole; con le notifiche anche ad app chiusa."],
   ],
@@ -2532,6 +2565,7 @@ const NEWS = {
   ],
   '2.0': [
     ['Ce l’ho già?', 'Il tasto con la spunta in alto: scansioni un codice in negozio e scopri subito se ce l’hai.'],
+    ['Che canzone è?', 'Il tasto con la nota in alto: ascolta la musica che suona e ti dice in quale tuo disco c’è quella canzone.'],
     ['Scansione a raffica', 'Da “Aggiungi”: leggi tanti codici di fila e li controlli alla fine.'],
     ['Valore di mercato', 'Per vinili, CD e cassette: il prezzo minimo in vendita su Discogs.'],
     ['Statistiche e pesca a caso', 'Il tasto con il grafico: i numeri della collezione e cosa ascoltare stasera.'],
@@ -2696,7 +2730,7 @@ async function recognizeCover(file) {
   }
   if (S.coverToken !== token || $('#sheetWrap').classList.contains('hidden')) return; // annullato
   S.coverMode = mode;
-  sheetSearch(tipo, q, '', { cover: true, auto: !!q, how });
+  sheetSearch(tipo, q, '', { cover: true, auto: !!q, how, country: isMusic(tipo) ? detectCountry(ctx) : '' });
 }
 function startCover(mode, tipo) {
   S.coverMode = mode; S.coverTipo = tipo;
@@ -3601,6 +3635,110 @@ async function fbCall(body, withName) {
   if (!r.ok) throw new CommErr(r.status, (await r.json().catch(() => ({}))).error || 'errore');
   return r.json();
 }
+/* ── Che canzone è? Ascolta la musica, la riconosce (AudD, come Shazam) e controlla se è nei tuoi dischi ── */
+const ID_URL = BASE.IDENTIFY_URL || (FEEDBACK_URL ? FEEDBACK_URL.replace(/\/feedback$/, '/identify') : '');
+const LISTEN_SECS = 10;
+// "B2. Titolo (3:45)" → "Titolo"
+function trackName(line) {
+  const t = String(line || '').trim();
+  const x = t.replace(/^(?:[A-Z]{0,2}\d{1,3}[a-z]?\s*[.)\-–:]?|[A-Z]{1,2}\s*[.)\-–:])\s+/, '').replace(/\s*\(\d{1,2}:\d{2}(:\d{2})?\)\s*$/, '').trim();
+  return x || t;
+}
+const trackPos = line => (String(line || '').trim().match(/^([A-Z]{0,2}\d{1,3}[a-z]?|[A-Z]{1,2})\s*[.)\-–:]?\s+/) || ['', ''])[1];
+const songKey = s => norm(String(s || '').replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/\s+[-–]\s+.*\b(remaster(ed)?|live|mono|stereo|single|version|edit|mix)\b.*$/i, ''));
+const sameSong = (a, b) => !!a && !!b && (a === b || (Math.min(a.length, b.length) >= 6 && (a.startsWith(b) || b.startsWith(a))));
+const COMPILATION = /\b(various|vari|aa\.?\s?vv\.?|v\/a|compilation|artistes divers|varios)\b/i;
+function sameArtist(itemAutore, artist) {
+  const I = norm(itemAutore); if (!I || !artist) return false;
+  return String(artist).split(/,|&|\bfeat\.?|\bft\.?|\bwith\b|\be\b|\band\b|\by\b/i).map(norm).filter(a => a.length >= 3).some(a => I.includes(a) || (I.length >= 3 && a.includes(I)));
+}
+// Cerca la canzone nei dischi: nelle tracce, oppure (senza elenco tracce) come titolo dell'album
+function findSong(title, artist, album) {
+  const T = songKey(title), A = songKey(album);
+  const order = { vinile: 0, cd: 1, cassetta: 2 };
+  const music = live().filter(i => isMusic(i.tipo)).sort((a, b) => order[a.tipo] - order[b.tipo]);
+  const hits = [], hit = new Set();
+  for (const i of music) {
+    const am = !artist || sameArtist(i.autore, artist) || COMPILATION.test(i.autore || '');
+    const line = String(i.tracklist || '').split('\n').find(l => sameSong(songKey(trackName(l)), T));
+    if (line && am) { hits.push({ i, pos: trackPos(line), how: 'track' }); hit.add(i.id); continue; }
+    if (artist && A && sameArtist(i.autore, artist) && sameSong(songKey(i.titolo), A)) { hits.push({ i, how: 'album' }); hit.add(i.id); }
+  }
+  const byArtist = artist ? music.filter(i => !hit.has(i.id) && !i.desiderio && sameArtist(i.autore, artist)) : [];
+  return { own: hits.filter(h => !h.i.desiderio), wish: hits.filter(h => h.i.desiderio), byArtist, noTracks: byArtist.filter(i => !String(i.tracklist || '').trim()).length };
+}
+function listenSheet() {
+  if (!ID_URL) return toast('Riconoscimento non disponibile');
+  openSheet(`<h2>Che canzone è?</h2>
+    <p class="lead">Avvicina il telefono alla musica: ascolto per 10 secondi, riconosco la canzone e ti dico se è in uno dei tuoi dischi.</p>
+    <div class="listen"><button class="listenbtn" data-a="listenGo" aria-label="Ascolta">${ic('note', 40)}</button><p class="note" id="listenMsg">Tocca per ascoltare</p></div>
+    <form class="searchform" id="songForm"><input id="songQ" type="search" placeholder="Oppure scrivi il titolo della canzone" autocomplete="off" translate="no"><button class="btn" type="submit">Cerca</button></form>
+    <div id="listenRes"></div>`);
+}
+const LISTEN_ERR = { limite: 'Hai fatto molti riconoscimenti oggi: riprova domani', 'servizio-limite': 'Il servizio di riconoscimento ha raggiunto il limite: riprova più tardi',
+  audio: 'Audio non valido: riprova più vicino alla musica', grande: 'Registrazione troppo grande' };
+async function listenGo() {
+  if (S.listening) return S.listenStop && S.listenStop(); // secondo tocco: smette prima e riconosce subito
+  const msg = () => $('#listenMsg');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) { const m = msg(); if (m) m.textContent = tr('Questo browser non permette di registrare l’audio'); return; }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); }
+  catch (e) { const m = msg(); if (m) m.textContent = tr('Serve il permesso del microfono: consentilo nelle impostazioni del browser e riprova'); return; }
+  const type = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm', 'audio/ogg'].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
+  let rec;
+  try { rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined); } catch (e) { rec = new MediaRecorder(stream); }
+  const parts = []; rec.ondataavailable = e => { if (e.data && e.data.size) parts.push(e.data); };
+  const stopped = new Promise(r => { rec.onstop = r; });
+  const token = S.listenToken = uid(); let cancel = false, left = LISTEN_SECS;
+  S.listening = true; rec.start(1000);
+  $('.listenbtn')?.classList.add('on'); $('#listenRes') && ($('#listenRes').innerHTML = '');
+  const show = () => { const m = msg(); if (m) m.innerHTML = `<span>Ascolto…</span> <b translate="no">${left}</b>`; };
+  show();
+  const tick = setInterval(() => { left--; show(); if (left <= 0) S.listenStop(); }, 1000);
+  S.listenStop = c => { cancel = cancel || !!c; clearInterval(tick); if (rec.state !== 'inactive') rec.stop(); };
+  await stopped;
+  stream.getTracks().forEach(t => t.stop()); S.listening = false; S.listenStop = null;
+  $('.listenbtn')?.classList.remove('on');
+  if (cancel || S.listenToken !== token || $('#sheetWrap').classList.contains('hidden')) return;
+  const blob = new Blob(parts, { type: rec.mimeType || type || 'audio/webm' });
+  const m = msg(); if (m) m.innerHTML = `<span>Riconosco la canzone…</span>`;
+  try {
+    const fd = new FormData();
+    fd.append('file', blob, 'clip.' + (/mp4|aac/.test(blob.type) ? 'm4a' : /ogg/.test(blob.type) ? 'ogg' : 'webm'));
+    fd.append('market', { en: 'gb', es: 'es' }[LNG()] || 'it');
+    const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 30000);
+    const r = await fetch(ID_URL, { method: 'POST', headers: { Authorization: 'Bearer ' + COMM_KEY, apikey: COMM_KEY }, body: fd, signal: ctrl.signal }).finally(() => clearTimeout(t));
+    const j = await r.json().catch(() => ({}));
+    if (S.listenToken !== token || !$('#listenRes')) return;
+    if (!r.ok) throw new Error(j.error || 'errore');
+    const mm = msg(); if (mm) mm.textContent = tr('Tocca per ascoltare un’altra canzone');
+    if (!j.found) { $('#listenRes').innerHTML = `<p class="note pnote">Non ho riconosciuto la canzone. Avvicinati alla musica e riprova, oppure scrivi il titolo qui sopra.</p>`; return; }
+    S.song = j; songResult(j);
+  } catch (e) {
+    const mm = msg(); if (mm) mm.textContent = tr(LISTEN_ERR[e.message] || (navigator.onLine ? 'Il riconoscimento non risponde: riprova' : 'Sei offline: il riconoscimento ha bisogno di internet'));
+  }
+}
+function songRow(h) {
+  const i = h.i || h; const T = TIPI[i.tipo];
+  const what = h.how === 'track' ? `<span class="trk"><i>Traccia</i>${h.pos ? ` <b translate="no">${esc(h.pos)}</b>` : ''}</span>` : h.how === 'album' ? `<span>È l’album (senza elenco delle tracce)</span>` : '';
+  return `<button class="result" data-a="open" data-id="${esc(i.id)}"><div class="th">${/^https:/.test(i.coverUrl || '') ? `<img src="${esc(i.coverUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}</div>
+    <div><b translate="no">${esc(i.titolo || tr('Senza titolo'))}</b><span translate="no">${esc([i.autore, i.anno].filter(Boolean).join(' · '))}</span><span>${esc([T && T.label, i.formato, i.posizione].filter(Boolean).join(' · '))}</span>${what}</div></button>`;
+}
+function songResult(song, typed) {
+  const box = $('#listenRes'); if (!box) return;
+  const f = findSong(song.title, song.artist, song.album);
+  const card = typed ? '' : `<div class="songcard">${song.cover ? `<img src="${esc(song.cover)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}
+    <div><b translate="no">${esc(song.title)}</b><span translate="no">${esc(song.artist)}</span>${song.album ? `<span translate="no">${esc([song.album, song.year].filter(Boolean).join(' · '))}</span>` : ''}
+    ${song.link ? `<a class="ulink" href="${esc(song.link)}" target="_blank" rel="noopener">Ascoltala</a>` : ''}</div></div>`;
+  let h = card;
+  if (f.own.length) h += `<h3 class="songok">✓ <span>Ce l’hai</span></h3><div class="results">${f.own.map(songRow).join('')}</div>`;
+  else h += `<h3 class="songno">${typed ? 'Non l’ho trovata nelle tracce dei tuoi dischi' : 'Non è in nessuno dei tuoi dischi'}</h3>`;
+  if (f.wish.length) h += `<p class="note pnote">È nei tuoi desideri:</p><div class="results">${f.wish.map(songRow).join('')}</div>`;
+  if (f.byArtist.length) h += `<p class="note pnote">${f.own.length ? 'Altri dischi dello stesso artista:' : 'Dello stesso artista hai:'}</p><div class="results">${f.byArtist.slice(0, 8).map(songRow).join('')}</div>`;
+  if (!f.own.length && f.noTracks) h += `<p class="note pnote">${f.noTracks === 1 ? 'Un disco di questo artista non ha l’elenco delle tracce: aggiungile in Modifica per controllarlo.' : 'Alcuni dischi di questo artista non hanno l’elenco delle tracce: aggiungile in Modifica per controllarli.'}</p>`;
+  if (!f.own.length && !typed && song.album) h += `<div class="stack"><button class="btn block" data-a="songSearch">${ic('search', 18)}Cerca l’album per aggiungerlo</button></div>`;
+  box.innerHTML = h;
+}
 const errOn = () => { try { return localStorage.getItem('errReport') !== '0'; } catch (e) { return true; } };
 const ERRQ = []; let errSent = 0;
 // rumore che non dipende dall'app: estensioni, rete assente, script di altri siti
@@ -4203,6 +4341,9 @@ const actions = {
 };
 Object.assign(actions, {
   check: () => startCheck(),
+  listen: () => { listenSheet(); listenGo(); },
+  listenGo: () => listenGo(),
+  songSearch: () => { const x = S.song; if (!x) return; S.coverMode = null; S.pickWish = false; sheetSearch('vinile', [x.artist, x.album].filter(Boolean).join(' '), '', { auto: true }); },
   checkAdd,
   gotIt,
   stats: () => go('stats'),
@@ -4249,6 +4390,8 @@ Object.assign(actions, {
   searchTipo: el => {
     const t = el.dataset.v; S.searchCtx.tipo = t; S.coverTipo = t; try { localStorage.setItem('coverTipo', t); } catch (e) {}
     document.querySelectorAll('[data-a=searchTipo]').forEach(b => b.classList.toggle('on', b === el));
+    const cr = $('#countryRow'); if (cr) cr.classList.toggle('hidden', !isMusic(t));
+    const ch = $('#countryHint'); if (ch) ch.classList.toggle('hidden', !isMusic(t));
     const q = $('#titleQ'); if (q) { q.placeholder = tr(searchPlaceholder(t)); if (q.value.trim()) $('#titleSearch').requestSubmit(); }
   },
   batchForce: el => { const r = S.batch.find(x => x.id === el.dataset.v); if (r) { r.force = !r.force; saveBatch(); render(); } },
@@ -4388,9 +4531,16 @@ document.addEventListener('submit', async e => {
   if (e.target.id === 'titleSearch') {
     const q = $('#titleQ').value.trim(); if (!q) return; $('#titleQ').blur();
     const box = $('#results'); box.innerHTML = loadingHTML('Cerco…');
-    const list = await searchByTitle(S.searchCtx.tipo, q).catch(() => []);
+    const country = isMusic(S.searchCtx.tipo) ? (($('#titleCountry') || {}).value || '') : '';
+    if (isMusic(S.searchCtx.tipo)) try { localStorage.setItem('pressCountry', country); } catch (er) {}
+    const list = await searchByTitle(S.searchCtx.tipo, q, country).catch(() => []);
     if (S.searchCtx.code) list.forEach(c => { c.codice = S.searchCtx.code; });
     box.innerHTML = list.length ? resultsHTML(list) : `<p class="note" style="padding:12px 4px">Nessun risultato. Prova con parole diverse${navigator.onLine ? '' : ' (sei offline)'}.</p>`;
+  }
+  if (e.target.id === 'songForm') {
+    const q = $('#songQ').value.trim(); if (!q) return; $('#songQ').blur();
+    if (S.listenStop) S.listenStop(true);
+    songResult({ title: q, artist: '', album: '' }, true);
   }
   if (e.target.id === 'commentForm') {
     const txt = $('#commentText').value.trim(); if (!txt) return;

@@ -2,14 +2,14 @@
 // {contatto} e {gestore} vengono sostituiti dall'app con i valori di config.js.
 window.SPINYL_LEGAL = {
   it: {
-    updated: 'Ultimo aggiornamento: 13 ottobre 2026',
+    updated: 'Ultimo aggiornamento: 18 ottobre 2026',
     privacy: `
 <h3>Chi è responsabile dei dati</h3>
 <p>Spinyl è gestita da {gestore}. Per qualsiasi domanda sui tuoi dati scrivi a <b>{contatto}</b>.</p>
 <h3>La tua collezione resta tua</h3>
 <p>Libri, dischi, film, foto, note e prestiti sono salvati <b>sul tuo telefono</b> e, se colleghi Google Drive, in una cartella del <b>tuo Google Drive</b> (Scaffale). Spinyl chiede a Google solo il permesso di gestire i file che crea lei stessa: non vede il resto del tuo Drive. Il gestore non ha accesso alla tua collezione.</p>
 <h3>Ricerche su servizi esterni</h3>
-<p>Per trovare dati, copertine e prezzi il telefono interroga direttamente servizi pubblici: Google Libri, Open Library, MusicBrainz, Cover Art Archive, Discogs, Apple (iTunes), Deezer, TMDB, Wikipedia, UPCitemdb e, per gli articoli, rss2json. A questi servizi arrivano solo il codice a barre o le parole cercate, oltre ai dati tecnici di ogni collegamento internet (come l'indirizzo IP). Se usi il riconoscimento dalla copertina con Google Vision, la foto viene inviata a Google per l'analisi. Il token Discogs, se lo inserisci, resta sul tuo telefono.</p>
+<p>Per trovare dati, copertine e prezzi il telefono interroga direttamente servizi pubblici: Google Libri, Open Library, MusicBrainz, Cover Art Archive, Discogs, Apple (iTunes), Deezer, TMDB, Wikipedia, UPCitemdb e, per gli articoli, rss2json. A questi servizi arrivano solo il codice a barre o le parole cercate, oltre ai dati tecnici di ogni collegamento internet (come l'indirizzo IP). Se usi il riconoscimento dalla copertina con Google Vision, la foto viene inviata a Google per l'analisi. Se usi «Che canzone è?», i 10 secondi di audio registrati passano dal nostro server Supabase (UE) al servizio AudD per riconoscere la canzone: l'audio non viene salvato, e il confronto con la tua collezione avviene sul telefono. Il token Discogs, se lo inserisci, resta sul tuo telefono.</p>
 <h3>Community (solo se ci entri)</h3>
 <p>Se entri nella community salviamo su un server Supabase in Unione Europea (Francoforte): il tuo indirizzo email e l'identificativo Google (servono solo a riconoscerti e non sono mostrati agli altri), il nome che scegli, la città e la presentazione se le inserisci, le recensioni, le valutazioni dopo gli scambi, i commenti, gli articoli, i pezzi e i desideri che decidi di condividere, i messaggi, gli eventi e le risposte, le segnalazioni, i blocchi e le notifiche. Gli altri membri vedono il tuo nome e ciò che pubblichi; i messaggi privati li vedono solo i partecipanti alla conversazione.</p>
 <p>Per suggerirti scambi, il telefono invia al server l'elenco delle opere che possiedi e desideri (autore e titolo semplificati), solo per il confronto: non viene salvato né mostrato a nessuno, a meno che tu non scelga di condividere.</p>
@@ -46,14 +46,14 @@ window.SPINYL_LEGAL = {
 </ul>`,
   },
   en: {
-    updated: 'Last updated: 13 October 2026',
+    updated: 'Last updated: 18 October 2026',
     privacy: `
 <h3>Who is responsible for your data</h3>
 <p>Spinyl is run by {gestore}. For any question about your data write to <b>{contatto}</b>.</p>
 <h3>Your collection stays yours</h3>
 <p>Books, records, films, photos, notes and loans are stored <b>on your phone</b> and, if you connect Google Drive, in a folder in <b>your own Google Drive</b> (Scaffale). Spinyl only asks Google for access to the files it creates itself: it cannot see the rest of your Drive. The operator has no access to your collection.</p>
 <h3>Searches on external services</h3>
-<p>To find details, covers and prices your phone queries public services directly: Google Books, Open Library, MusicBrainz, Cover Art Archive, Discogs, Apple (iTunes), Deezer, TMDB, Wikipedia, UPCitemdb and, for articles, rss2json. They receive only the barcode or the words you search, plus the technical data of any internet connection (such as your IP address). If you use cover recognition with Google Vision, the photo is sent to Google for analysis. Your Discogs token, if you enter it, stays on your phone.</p>
+<p>To find details, covers and prices your phone queries public services directly: Google Books, Open Library, MusicBrainz, Cover Art Archive, Discogs, Apple (iTunes), Deezer, TMDB, Wikipedia, UPCitemdb and, for articles, rss2json. They receive only the barcode or the words you search, plus the technical data of any internet connection (such as your IP address). If you use cover recognition with Google Vision, the photo is sent to Google for analysis. If you use «What song is this?», the 10 seconds of recorded audio go through our Supabase server (EU) to the AudD service to recognise the song: the audio is not stored, and the comparison with your collection happens on the phone. Your Discogs token, if you enter it, stays on your phone.</p>
 <h3>Community (only if you join)</h3>
 <p>If you join the community we store on a Supabase server in the European Union (Frankfurt): your email address and Google identifier (used only to recognise you, never shown to others), the name you choose, your city and bio if you add them, your reviews, ratings after swaps, comments, articles, the items and wishes you choose to share, messages, events and replies, reports, blocks and notifications. Other members see your name and what you publish; private messages are seen only by the people in the conversation.</p>
 <p>To suggest swaps, your phone sends the server the list of works you own and want (simplified author and title), only for matching: it is not stored or shown to anyone unless you choose to share.</p>
@@ -90,14 +90,14 @@ window.SPINYL_LEGAL = {
 </ul>`,
   },
   es: {
-    updated: 'Última actualización: 13 de octubre de 2026',
+    updated: 'Última actualización: 18 de octubre de 2026',
     privacy: `
 <h3>Quién es responsable de los datos</h3>
 <p>Spinyl está gestionada por {gestore}. Para cualquier pregunta sobre tus datos escribe a <b>{contatto}</b>.</p>
 <h3>Tu colección sigue siendo tuya</h3>
 <p>Libros, discos, películas, fotos, notas y préstamos se guardan <b>en tu teléfono</b> y, si conectas Google Drive, en una carpeta de <b>tu Google Drive</b> (Scaffale). Spinyl solo pide a Google acceso a los archivos que ella misma crea: no ve el resto de tu Drive. El gestor no tiene acceso a tu colección.</p>
 <h3>Búsquedas en servicios externos</h3>
-<p>Para encontrar datos, portadas y precios el teléfono consulta directamente servicios públicos: Google Libros, Open Library, MusicBrainz, Cover Art Archive, Discogs, Apple (iTunes), Deezer, TMDB, Wikipedia, UPCitemdb y, para los artículos, rss2json. Solo reciben el código de barras o las palabras buscadas, además de los datos técnicos de cualquier conexión a internet (como la dirección IP). Si usas el reconocimiento de portada con Google Vision, la foto se envía a Google para analizarla. El token de Discogs, si lo introduces, se queda en tu teléfono.</p>
+<p>Para encontrar datos, portadas y precios el teléfono consulta directamente servicios públicos: Google Libros, Open Library, MusicBrainz, Cover Art Archive, Discogs, Apple (iTunes), Deezer, TMDB, Wikipedia, UPCitemdb y, para los artículos, rss2json. Solo reciben el código de barras o las palabras buscadas, además de los datos técnicos de cualquier conexión a internet (como la dirección IP). Si usas el reconocimiento de portada con Google Vision, la foto se envía a Google para analizarla. Si usas «¿Qué canción es?», los 10 segundos de audio grabado pasan por nuestro servidor Supabase (UE) al servicio AudD para reconocer la canción: el audio no se guarda y la comparación con tu colección se hace en el teléfono. El token de Discogs, si lo introduces, se queda en tu teléfono.</p>
 <h3>Comunidad (solo si entras)</h3>
 <p>Si entras en la comunidad guardamos en un servidor de Supabase en la Unión Europea (Fráncfort): tu correo y el identificador de Google (sirven solo para reconocerte y no se muestran a los demás), el nombre que elijas, tu ciudad y presentación si las añades, tus reseñas, las valoraciones tras los intercambios, comentarios, artículos, lo que decidas compartir de tu colección y tus deseos, mensajes, eventos y respuestas, denuncias, bloqueos y notificaciones. Los demás miembros ven tu nombre y lo que publicas; los mensajes privados solo los ven quienes participan en la conversación.</p>
 <p>Para sugerirte intercambios, el teléfono envía al servidor la lista de obras que tienes y deseas (autor y título simplificados), solo para compararlas: no se guarda ni se muestra a nadie salvo que decidas compartir.</p>

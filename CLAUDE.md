@@ -25,3 +25,6 @@ dati in IndexedDB sul telefono, copia su Google Drive dell'utente, pubblicata co
   Tabelle `feedback` (problemi/idee, trigger → notifica + push agli admin) e `client_errors` (errori raggruppati per hash, RPC `log_client_error`).
   L'admin le legge in Impostazioni › Segnalazioni ricevute (azioni `feedbackList`/`feedbackStatus` della funzione community). Nessun IP salvato: solo `ip_hash` giornaliero.
 - Numero sull'icona dell'app: `navigator.setAppBadge` in app.js (`appBadge`, = commTotal) e in sw.js sul push; il numero arriva nel payload (`badge`) calcolato dalla funzione SQL `unread_total(uuid)`.
+- "Che canzone è?": funzione Supabase `identify` (verify_jwt true, basta la anon key). Inoltra 10 s di audio ad AudD (api.audd.io);
+  la chiave è il segreto `AUDD_TOKEN` della funzione (senza: token pubblico `test`, pochi riconoscimenti al giorno), MAI nel repository.
+  Limite per telefono: `IDENTIFY_DAILY` (default 40) contato nella tabella `identify_log` (RPC `identify_hit`, solo impronta giornaliera). Il confronto con la collezione (tracce) è in app.js (`findSong`).

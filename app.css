@@ -709,3 +709,28 @@ a.ulink { color: var(--accent); text-decoration: underline; text-underline-offse
 .msg .gnick { display: block; font-size: 13px; margin-bottom: 2px; }
 .msg .gnick .nick { font-size: 13px; color: var(--accent); text-decoration: none; }
 .msgnew { flex-direction: row; gap: 8px; flex-wrap: wrap; margin: 0 0 6px; }
+
+/* Paese di stampa nella ricerca dei dischi */
+.countryrow { margin: -2px 0 10px; }
+.countryrow select { width: 100%; }
+
+/* Che canzone è? */
+.listen { display: flex; flex-direction: column; align-items: center; gap: 10px; margin: 6px 0 16px; }
+.listenbtn { width: 96px; height: 96px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+.listenbtn .i { stroke-width: 2; }
+.listenbtn.on { animation: listenPulse 1.2s ease-out infinite; }
+@keyframes listenPulse { 0% { box-shadow: 0 0 0 0 rgba(245,154,44,.55); } 100% { box-shadow: 0 0 0 26px rgba(245,154,44,0); } }
+@media (prefers-reduced-motion: reduce) { .listenbtn.on { animation: none; outline: 3px solid var(--accent); outline-offset: 6px; } }
+#listenMsg { margin: 0; text-align: center; min-height: 1.4em; }
+#listenMsg b { font-variant-numeric: tabular-nums; }
+.songcard { display: flex; gap: 14px; align-items: center; padding: 12px; border-radius: var(--r); background: var(--card); margin: 4px 0 14px; }
+.songcard img { width: 76px; height: 76px; border-radius: 10px; object-fit: cover; flex: none; background: var(--soft); }
+.songcard > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.songcard b { font-size: 1.05rem; }
+.songcard span { color: var(--muted); font-size: .9rem; }
+.songcard a { margin-top: 4px; font-size: .9rem; }
+.songok { color: var(--ok); margin: 6px 0 8px; }
+.songno { margin: 6px 0 8px; }
+.result i { font-style: normal; }
+.result .trk { color: var(--ok); font-weight: 600; }
+.result .trk b { display: inline; font-size: inherit; color: inherit; }

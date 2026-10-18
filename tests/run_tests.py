@@ -79,6 +79,8 @@ OAUTH = {'mode': 'ok', 'hits': []}
 # Community finta: stessa logica essenziale della funzione Supabase
 COMM = {'members': {}, 'invites': {'AMICO1': 0}, 'reviews': [], 'comments': [], 'n': 0}
 FEEDBACK = {'sent': [], 'errors': [], 'tokens': []}
+DISCOGS_URLS = []
+IDENTIFY = {'calls': [], 'next': None}
 def comm_handle(tok, b):
     import itertools
     if not tok: return 401, {'error': 'login'}
@@ -273,6 +275,7 @@ def make_route(no_vision=False):
             return await J({'responses': [{'webDetection': {'bestGuessLabels': [{'label': 'nirvana nevermind vinyl'}], 'webEntities': [{'description': 'Nevermind', 'score': 0.9}]}}]})
         if h == 'img.test': return await r.fulfill(status=200, content_type='image/png', body=IMG.get(p.path.strip('/')[0], IMG['a']))
         if h == 'api.discogs.com':
+            DISCOGS_URLS.append(u)
             if p.path.startswith('/marketplace/price_suggestions/'):
                 return await J({g: {'currency': 'EUR', 'value': round(30 * f, 2)} for g, f in zip(GRADES, [1, .8, .6, .42, .3, .22, .14, .08])})
             if p.path.startswith('/marketplace/stats/'): return await J({'lowest_price': {'value': 18.5, 'currency': 'EUR'}, 'num_for_sale': 23})
@@ -318,6 +321,11 @@ def make_route(no_vision=False):
             cb = q.get('callback', [''])[0]; return await r.fulfill(status=200, content_type='text/javascript', body=f'{cb}({{"results":[]}});')
         if h.endswith('.supabase.co'):
             if r.request.method == 'OPTIONS': return await r.fulfill(status=200, headers={'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': 'POST'})
+            if p.path.endswith('/identify'):
+                IDENTIFY['calls'].append({'ct': r.request.headers.get('content-type', ''), 'size': len(r.request.post_data_buffer or b'')})
+                nx = IDENTIFY['next'] or {'found': True, 'title': 'Everybody Wants To Rule The World', 'artist': 'Tears For Fears', 'album': 'Songs From The Big Chair', 'year': '1985', 'cover': 'https://img.test/a.png', 'link': 'https://lis.tn/x'}
+                IDENTIFY['next'] = None
+                return await J(nx)
             if p.path.endswith('/feedback'):
                 fb = json.loads(r.request.post_data or '{}')
                 if fb.get('action') == 'error': FEEDBACK['errors'].extend(fb.get('errors', [])); return await J({'ok': True})
@@ -696,6 +704,17 @@ async def t_cover(b, base):
     await page.wait_for_function("document.querySelector('#titleQ')", timeout=10000)
     q = await page.evaluate("$('#titleQ').value")
     check('lettura del testo: solo le scritte grandi', q == 'PINK FLOYD THE DARK SIDE OF THE MOON', q)
+    await page.wait_for_timeout(500)
+    check('disco dalla copertina: prima il paese, niente ricerca automatica', await page.evaluate("!!$('#titleCountry') && !$('#results').innerHTML.trim()"))
+    DISCOGS_URLS.clear()
+    await page.select_option('#titleCountry', 'Italy'); await page.click('#titleSearch button[type=submit]')
+    await page.wait_for_selector('#results .result', timeout=8000)
+    check('ricerca con il paese di stampa', any('country=Italy' in x for x in DISCOGS_URLS), DISCOGS_URLS)
+    check('paese ricordato', await page.evaluate("localStorage.getItem('pressCountry')") == 'Italy')
+    det = await page.evaluate("[detectCountry('Made in Italy'), detectCountry('PRINTED IN U.K.'), detectCountry('Manufactured in W. Germany'), detectCountry('nevermind')]")
+    check('paese letto dalle scritte «Made in…»', det == ['Italy', 'UK', 'Germany', ''], det)
+    await page.click('[data-a=searchTipo][data-v=libro]')
+    check('paese nascosto per i libri', await page.evaluate("$('#countryRow').classList.contains('hidden')"))
     page2, errs2 = await new_page(b, base)
     await page2.evaluate("startCover('check','cd')")
     await page2.set_input_files('#coverInput', files=[{'name': 'c.png', 'mimeType': 'image/png', 'buffer': IMG['b']}])
@@ -723,6 +742,57 @@ async def t_cover(b, base):
     await page2.wait_for_function("window._crop !== undefined", timeout=5000)
     check('annulla: foto com\'era', await page2.evaluate("window._crop === null && !document.querySelector('.cropov')"))
     check('nessun errore JavaScript', not (errs + errs2), errs + errs2)
+
+MIC = """navigator.mediaDevices = navigator.mediaDevices || {};
+navigator.mediaDevices.getUserMedia = async () => ({ getTracks: () => [{ stop() { window._micStop = (window._micStop || 0) + 1; } }] });
+window.MediaRecorder = class { constructor() { this.state = 'inactive'; this.mimeType = 'audio/webm'; } static isTypeSupported(t) { return t === 'audio/webm'; }
+  start() { this.state = 'recording'; window._recording = true; }
+  stop() { if (this.state === 'inactive') return; this.state = 'inactive'; window._recording = false; setTimeout(() => { this.ondataavailable && this.ondataavailable({ data: new Blob([new Uint8Array(6000)], { type: 'audio/webm' }) }); this.onstop && this.onstop(); }, 20); } };"""
+SONGS = [
+    {'id': 's1', 'tipo': 'vinile', 'titolo': 'Songs From The Big Chair', 'autore': 'Tears For Fears', 'anno': '1985', 'tracklist': 'A1. Shout (6:33)\nA2. The Working Hour (6:31)\nA3. Everybody Wants To Rule The World (4:11)'},
+    {'id': 's2', 'tipo': 'cd', 'titolo': 'The Hurting', 'autore': 'Tears For Fears', 'anno': '1983'},
+    {'id': 's3', 'tipo': 'vinile', 'titolo': 'Hits 85', 'autore': 'Various', 'tracklist': '1. Shout - Remastered\n2. Take On Me'},
+    {'id': 's4', 'tipo': 'vinile', 'titolo': 'Brothers in Arms', 'autore': 'Dire Straits', 'desiderio': True, 'tracklist': 'A1. So Far Away'},
+]
+async def t_listen(b, base):
+    print('\nChe canzone è?')
+    page, errs = await new_page(b, base, init=MIC)
+    await page.evaluate(SEED, SONGS)
+    check('tasto «Che canzone è?» in alto', await page.evaluate("!!document.querySelector('.top [data-a=listen]')"))
+    IDENTIFY['calls'].clear()
+    await page.click('.top [data-a=listen]')
+    await page.wait_for_function("window._recording === true", timeout=5000)
+    check('ascolto con il conto alla rovescia', 'Ascolto' in await page.evaluate("$('#listenMsg').textContent"))
+    await page.click('.listenbtn')  # secondo tocco: smette prima
+    await page.wait_for_selector('.songcard', timeout=8000)
+    check('audio inviato al riconoscimento', IDENTIFY['calls'] and 'multipart/form-data' in IDENTIFY['calls'][-1]['ct'] and IDENTIFY['calls'][-1]['size'] > 5000, IDENTIFY['calls'])
+    check('microfono spento dopo l\'ascolto', await page.evaluate("window._micStop") == 1)
+    res = await page.evaluate("$('#listenRes').textContent")
+    check('canzone riconosciuta', 'Everybody Wants To Rule The World' in res and 'Tears For Fears' in res, res)
+    check('trovata nel disco con la traccia', 'Ce l’hai' in res and 'Songs From The Big Chair' in res and 'A3' in res, res)
+    check('altri dischi dello stesso artista', 'The Hurting' in res and 'non ha l’elenco delle tracce' not in res, res)
+    await page.fill('#songQ', 'Shout'); await page.evaluate("$('#songForm').requestSubmit()"); await page.wait_for_timeout(200)
+    res = await page.evaluate("$('#listenRes').textContent")
+    check('titolo scritto: anche nelle compilation e nelle versioni rimasterizzate', 'Songs From The Big Chair' in res and 'Hits 85' in res and 'A1' in res, res)
+    await page.fill('#songQ', 'So Far Away'); await page.evaluate("$('#songForm').requestSubmit()"); await page.wait_for_timeout(200)
+    res = await page.evaluate("$('#listenRes').textContent")
+    check('nei desideri, non nella collezione', 'nei tuoi desideri' in res and 'Ce l’hai' not in res, res)
+    IDENTIFY['next'] = {'found': True, 'title': 'Money for Nothing', 'artist': 'Dire Straits', 'album': 'Brothers in Arms', 'year': '1985'}
+    await page.click('.listenbtn'); await page.wait_for_function("window._recording === true", timeout=5000); await page.click('.listenbtn')
+    await page.wait_for_function("$('#listenRes').textContent.includes('Money for Nothing')", timeout=8000)
+    res = await page.evaluate("$('#listenRes').textContent")
+    check('non nel catalogo: proposta di cercare l\'album', 'Non è in nessuno dei tuoi dischi' in res and await page.evaluate("!!document.querySelector('[data-a=songSearch]')"), res)
+    await page.click('[data-a=songSearch]'); await page.wait_for_selector('#titleQ', timeout=5000)
+    check('ricerca dell\'album', await page.evaluate("$('#titleQ').value") == 'Dire Straits Brothers in Arms')
+    IDENTIFY['next'] = {'found': False}
+    await page.evaluate("setTimeout(() => { listenSheet(); listenGo() })"); await page.wait_for_function("window._recording === true", timeout=5000); await page.click('.listenbtn')
+    await page.wait_for_function("$('#listenRes').textContent.includes('Non ho riconosciuto')", timeout=8000)
+    check('canzone non riconosciuta', True)
+    n = len(IDENTIFY['calls'])
+    await page.evaluate("setTimeout(() => { listenSheet(); listenGo() })"); await page.wait_for_function("window._recording === true", timeout=5000)
+    await page.evaluate("closeSheet()"); await page.wait_for_timeout(300)
+    check('chiudendo si spegne il microfono e non invia nulla', await page.evaluate("window._recording") is False and len(IDENTIFY['calls']) == n)
+    check('nessun errore JavaScript', not errs, errs)
 
 TOKEN = "localStorage.setItem('gtoken', JSON.stringify({t:'TOK', exp: Date.now()+3600e3}));"
 async def t_sync(b, base):
@@ -901,7 +971,7 @@ async def main():
     base = serve()
     async with async_playwright() as pw:
         b = await pw.chromium.launch()
-        for t in (t_basics, t_check_and_value, t_auto_online, t_book_rating, t_community, t_exchange, t_events, t_batch_import, t_cover, t_sync, t_silent_login, t_welcome, t_feedback, t_loans, t_home):
+        for t in (t_basics, t_check_and_value, t_auto_online, t_book_rating, t_community, t_exchange, t_events, t_batch_import, t_cover, t_listen, t_sync, t_silent_login, t_welcome, t_feedback, t_loans, t_home):
             try: await t(b, base)
             except Exception as e: check(t.__name__ + ' (eccezione)', False, repr(e)[:300])
         await b.close()
