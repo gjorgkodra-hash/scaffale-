@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.23.0';
+const VERSION = '2.24.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -2474,6 +2474,10 @@ function showUpdateBar() {
   document.body.appendChild(b);
 }
 const NEWS = {
+  '2.24': [
+    ['Rispondi a un messaggio', "Nelle chat di gruppo, private e degli eventi tocca «Rispondi» sotto un messaggio: la tua risposta lo cita, e toccando la citazione si torna al messaggio. Nei gruppi chi riceve la risposta ha una notifica dedicata."],
+    ['Novità più affidabili', "Se una fonte non risponde, la Home tiene le novità di prima e riprova da sola dopo poco."],
+  ],
   '2.23': [
     ['Che canzone è?', "Il tasto con la nota in alto ascolta la musica che sta suonando (come Shazam), riconosce la canzone e ti dice se è in uno dei tuoi dischi, con la traccia. Puoi anche scrivere il titolo."],
     ['Paese di stampa', "Dopo la foto della copertina di un disco scegli il paese di stampa (es. Italia, Regno Unito): la ricerca mostra prima l'edizione giusta. Se sulla foto c'è «Made in…», lo riconosco da solo."],
@@ -3183,6 +3187,27 @@ const EDIT = new Map(); // id → testo attuale (per riempire il modulo di modif
 const editedTag = x => x && x.edited ? ' · <i class="edited">modificato</i>' : '';
 const editBtn = (kind, id, body, ctx, mini) => { EDIT.set(id, body); return `<button class="${mini ? 'mini' : ''}" data-a="editOpen" data-kind="${kind}" data-id="${esc(id)}" data-ctx="${ctx}">Modifica</button>`; };
 const delBtn = (kind, id, ctx) => `<button class="mini" data-a="msgDel" data-kind="${kind}" data-id="${esc(id)}" data-ctx="${ctx}">Elimina</button>`;
+// ── Rispondere a un messaggio preciso (chat private, di gruppo e degli eventi) ──
+const REPLY = new Map(); // id → { nick, body } del messaggio a cui si può rispondere
+const short = (t, n = 90) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+const replyBtn = (ctx, m, nick) => { REPLY.set(m.id, { nick: m.mine ? tr('Tu') : nick, body: m.body || offerTxt(m.offer, m.price) || '' }); return `<button class="mini" data-a="replyTo" data-ctx="${ctx}" data-id="${esc(m.id)}">Rispondi</button>`; };
+const quoteHTML = m => !m.reply ? '' : m.reply.gone ? `<span class="quote gone">Messaggio eliminato</span>`
+  : `<button class="quote" data-a="quoteJump" data-id="${esc(m.reply.id)}"><b translate="no">${m.reply.mine ? '<span>Tu</span>' : esc(m.reply.nick)}</b><span translate="no">${esc(short(m.reply.body))}</span></button>`;
+function replyTo(el) {
+  const { ctx, id } = el.dataset; const r = REPLY.get(id); if (!r) return;
+  S.reply = { ctx, id };
+  const bar = $('#replyBar'); if (!bar) return;
+  bar.innerHTML = `<div><b>↩ <span>Rispondi a</span> <span translate="no">${esc(r.nick)}</span></b><span translate="no">${esc(short(r.body, 70))}</span></div><button type="button" data-a="replyCancel" aria-label="Annulla">✕</button>`;
+  bar.classList.remove('hidden');
+  const ta = bar.nextElementSibling && bar.nextElementSibling.querySelector('textarea'); if (ta) ta.focus();
+}
+function replyCancel() { S.reply = null; const bar = $('#replyBar'); if (bar) { bar.classList.add('hidden'); bar.innerHTML = ''; } }
+const replyFor = ctx => (S.reply && S.reply.ctx === ctx ? S.reply.id : undefined);
+function quoteJump(el) {
+  const t = document.querySelector(`[data-mid="${CSS.escape(el.dataset.id)}"]`);
+  if (!t) return toast('Messaggio non più visibile');
+  t.scrollIntoView({ behavior: 'smooth', block: 'center' }); t.classList.remove('flash'); void t.offsetWidth; t.classList.add('flash');
+}
 // dopo la modifica si torna dov'eri
 function editBack(ctx) {
   if (ctx === 'thread' && S.thread) { S.threadOpenId = null; return threadOpen(S.thread.id); }
@@ -3250,23 +3275,25 @@ let threadPoll = null;
 async function threadOpen(id, quiet) {
   let d; try { d = await comm('thread', { id }); } catch (e) { if (!quiet) toast(commErrMsg(e)); return; }
   S.thread = d.thread;
-  const msgs = d.messages.map(m => `<div class="msg ${m.mine ? 'mine' : ''}">${m.offer ? `<b class="moffer">${esc(offerTxt(m.offer, m.price))}</b>` : ''}${m.body ? `<p translate="no">${lk(m.body)}</p>` : ''}<small>${esc(fmtDateTime(Date.parse(m.at)))}${editedTag(m)}${m.mine ? ' · ' + editBtn('message', m.id, m.body, 'thread', true) + ' · ' + delBtn('message', m.id, 'thread') : ''}</small></div>`).join('');
+  const canWrite = !d.thread.blocked;
+  const msgs = d.messages.map(m => `<div class="msg ${m.mine ? 'mine' : ''}" data-mid="${esc(m.id)}">${quoteHTML(m)}${m.offer ? `<b class="moffer">${esc(offerTxt(m.offer, m.price))}</b>` : ''}${m.body ? `<p translate="no">${lk(m.body)}</p>` : ''}<small>${esc(fmtDateTime(Date.parse(m.at)))}${editedTag(m)}${canWrite ? ' · ' + replyBtn('thread', m, d.thread.nick) : ''}${m.mine ? ' · ' + editBtn('message', m.id, m.body, 'thread', true) + ' · ' + delBtn('message', m.id, 'thread') : ''}</small></div>`).join('');
   const rateBox = d.thread.canRate && !d.thread.blocked ? `<div class="raterow">${d.thread.myRating ? `<span><span>La tua valutazione:</span> <span class="cstars">${'★'.repeat(d.thread.myRating.stars)}<i>${'★'.repeat(5 - d.thread.myRating.stars)}</i></span></span><button class="more" data-a="rateSheet">Modifica</button>`
       : `<span>Vi siete accordati? Com'è andata?</span><button class="btn sm" data-a="rateSheet">⭐ <span>Valuta lo scambio</span></button>`}</div>` : '';
   const html = `<div class="thead2"><div><h2><button class="nick big" data-a="profileOpen" data-id="${esc(d.thread.other)}" translate="no">${esc(d.thread.nick)}</button></h2>${d.thread.titolo ? `<span translate="no">${esc(d.thread.titolo)}</span>` : ''}</div>
       <button class="more" data-a="threadBlock">${d.thread.blocked ? 'Sblocca' : 'Blocca'}</button></div>
     <div id="rateBox">${rateBox}</div>
     <div class="msgs" id="msgs">${msgs}</div>
-    ${d.thread.blocked ? '<p class="note">Hai bloccato questa persona: non può scriverti.</p>' : `<form class="composer" id="msgForm"><textarea id="msgText" rows="1" maxlength="2000" placeholder="Scrivi…"></textarea><button type="submit">Invia</button></form>`}
+    ${d.thread.blocked ? '<p class="note">Hai bloccato questa persona: non può scriverti.</p>' : `<div class="replybar hidden" id="replyBar"></div><form class="composer" id="msgForm"><textarea id="msgText" rows="1" maxlength="2000" placeholder="Scrivi…"></textarea><button type="submit">Invia</button></form>`}
     <p class="note">Spinyl non gestisce pagamenti né spedizioni: mettetevi d'accordo tra voi e, se vi vedete, scegliete un luogo pubblico.</p>`;
   const open = $('#msgs') && S.threadOpenId === id;
   if (open) { const m = $('#msgs'); const atEnd = m.scrollTop + m.clientHeight >= m.scrollHeight - 30; m.innerHTML = msgs; if (atEnd) m.scrollTop = m.scrollHeight; const rb = $('#rateBox'); if (rb && rb.innerHTML !== rateBox) rb.innerHTML = rateBox; }
   else {
-    S.threadOpenId = id; openSheet(html);
+    S.threadOpenId = id; S.reply = null; openSheet(html);
     const m = $('#msgs'); if (m) m.scrollTop = m.scrollHeight;
     const f = $('#msgForm'); if (f) f.addEventListener('submit', async e => {
       e.preventDefault(); const ta = $('#msgText'); const body = ta.value.trim(); if (!body) return;
-      ta.value = ''; try { await comm('send', { thread: id, body }); threadOpen(id, true); } catch (er) { ta.value = body; toast(er.message === 'bloccato' ? 'Non puoi scrivere a questa persona' : commErrMsg(er)); }
+      const reply = replyFor('thread');
+      ta.value = ''; try { await comm('send', { thread: id, body, reply }); replyCancel(); threadOpen(id, true); } catch (er) { ta.value = body; toast(er.message === 'bloccato' ? 'Non puoi scrivere a questa persona' : commErrMsg(er)); }
     });
     clearInterval(threadPoll);
     threadPoll = setInterval(() => { if ($('#sheetWrap').classList.contains('hidden') || S.threadOpenId !== id || !$('#msgs')) { clearInterval(threadPoll); S.threadOpenId = null; return; } if (document.visibilityState === 'visible') threadOpen(id, true); }, 20000);
@@ -3296,19 +3323,20 @@ async function groupCreate() {
 async function groupOpen(id, quiet) {
   let d; try { d = await comm('group', { id }); } catch (e) { if (!quiet) toast(e.message === 'gruppo' ? 'Non fai più parte di questo gruppo' : commErrMsg(e)); return; }
   S.group = d.group;
-  const msgs = d.messages.map(m => `<div class="msg ${m.mine ? 'mine' : ''}">${m.mine ? '' : `<b class="gnick">${nickBtn(m.member, m.nick)}</b>`}<p translate="no">${lk(m.body)}</p><small>${esc(fmtDateTime(Date.parse(m.at)))}${editedTag(m)}${m.mine ? ' · ' + editBtn('gmessage', m.id, m.body, 'group', true) + ' · ' + delBtn('gmessage', m.id, 'group') : ''}</small></div>`).join('')
+  const msgs = d.messages.map(m => `<div class="msg ${m.mine ? 'mine' : ''}" data-mid="${esc(m.id)}">${m.mine ? '' : `<b class="gnick">${nickBtn(m.member, m.nick)}</b>`}${quoteHTML(m)}<p translate="no">${lk(m.body)}</p><small>${esc(fmtDateTime(Date.parse(m.at)))}${editedTag(m)} · ${replyBtn('group', m, m.nick)}${m.mine ? ' · ' + editBtn('gmessage', m.id, m.body, 'group', true) + ' · ' + delBtn('gmessage', m.id, 'group') : ''}</small></div>`).join('')
     || '<p class="note" style="text-align:center">Scrivi il primo messaggio del gruppo.</p>';
   const names = d.group.members.filter(x => !x.me).map(x => x.nick);
   const html = `<div class="thead2"><div><h2 translate="no">👥 ${esc(d.group.name)}</h2><button class="more" data-a="groupInfo"><span translate="no">${esc(names.slice(0, 4).join(', '))}${names.length > 4 ? '…' : ''}</span> · <span>${d.group.members.length} membri</span> ›</button></div></div>
     <div class="msgs" id="gmsgs">${msgs}</div>
-    <form class="composer" id="gmsgForm"><textarea id="gmsgText" rows="1" maxlength="2000" placeholder="Scrivi al gruppo…"></textarea><button type="submit">Invia</button></form>`;
+    <div class="replybar hidden" id="replyBar"></div><form class="composer" id="gmsgForm"><textarea id="gmsgText" rows="1" maxlength="2000" placeholder="Scrivi al gruppo…"></textarea><button type="submit">Invia</button></form>`;
   if ($('#gmsgs') && S.groupOpenId === id) { const m = $('#gmsgs'); const atEnd = m.scrollTop + m.clientHeight >= m.scrollHeight - 30; m.innerHTML = msgs; if (atEnd) m.scrollTop = m.scrollHeight; }
   else {
-    S.groupOpenId = id; openSheet(html);
+    S.groupOpenId = id; S.reply = null; openSheet(html);
     const m = $('#gmsgs'); if (m) m.scrollTop = m.scrollHeight;
     $('#gmsgForm').addEventListener('submit', async e => {
       e.preventDefault(); const ta = $('#gmsgText'); const body = ta.value.trim(); if (!body) return;
-      ta.value = ''; try { await comm('groupSend', { id, body }); groupOpen(id, true); } catch (er) { ta.value = body; toast(commErrMsg(er)); }
+      const reply = replyFor('group');
+      ta.value = ''; try { await comm('groupSend', { id, body, reply }); replyCancel(); groupOpen(id, true); } catch (er) { ta.value = body; toast(commErrMsg(er)); }
     });
     clearInterval(groupPoll);
     groupPoll = setInterval(() => { if ($('#sheetWrap').classList.contains('hidden') || S.groupOpenId !== id || !$('#gmsgs')) { clearInterval(groupPoll); S.groupOpenId = null; return; } if (document.visibilityState === 'visible') groupOpen(id, true); }, 15000);
@@ -3432,7 +3460,7 @@ async function eventOpen(id, quiet) {
   const mineItem = e.work && live && liveItemsByWork(e.work);
   const tracks = mineItem && mineItem.tracklist ? String(mineItem.tracklist).split('\n').map(t => t.trim()).filter(Boolean).slice(0, 60) : [];
   const admin = (commMe() || {}).admin;
-  const msgs = d.messages.map(m => `<div class="emsg ${m.mine ? 'mine' : ''}"><b translate="no">${esc(m.nick)}</b> <span translate="no">${lk(m.body)}</span><small>${esc(new Date(m.at).toLocaleTimeString(LOC(), { hour: '2-digit', minute: '2-digit' }))}${editedTag(m)}${m.mine ? ' · ' + editBtn('eventmsg', m.id, m.body, 'event', true) : ''}${m.mine || admin ? ' · ' + delBtn('eventmsg', m.id, 'event') : ''}</small></div>`).join('');
+  const msgs = d.messages.map(m => `<div class="emsg ${m.mine ? 'mine' : ''}" data-mid="${esc(m.id)}">${quoteHTML(m)}<b translate="no">${esc(m.nick)}</b> <span translate="no">${lk(m.body)}</span><small>${esc(new Date(m.at).toLocaleTimeString(LOC(), { hour: '2-digit', minute: '2-digit' }))}${editedTag(m)} · ${replyBtn('event', m, m.nick)}${m.mine ? ' · ' + editBtn('eventmsg', m.id, m.body, 'event', true) : ''}${m.mine || admin ? ' · ' + delBtn('eventmsg', m.id, 'event') : ''}</small></div>`).join('');
   if (quiet && $('#emsgs') && S.eventOpenId === id) { const m = $('#emsgs'); const end = m.scrollTop + m.clientHeight >= m.scrollHeight - 30; m.innerHTML = msgs || ''; if (end) m.scrollTop = m.scrollHeight; return; }
   S.eventOpenId = id;
   openSheet(`<div class="evhead">${e.cover ? coverMini(e) : ''}<div><span class="ctag">${ico} <span>${kl}</span>${live ? ' · <i class="evchip live">● <span>In corso</span></i>' : ''}</span><h2 translate="no">${esc(e.title)}</h2>
@@ -3447,12 +3475,14 @@ async function eventOpen(id, quiet) {
     <h4 class="csub">${live && e.kind === 'ascolto' ? '🎧 <span>Commenti in diretta</span>' : 'Chat dell\'evento'}</h4>
     <div class="emsgs" id="emsgs">${msgs || ''}</div>
     ${tracks.length ? `<select id="evTrack" class="evtrack"><option value="">Traccia…</option>${tracks.map(t => `<option translate="no">${esc(t.replace(/\s*\(\d+:\d+\)$/, ''))}</option>`).join('')}</select>` : ''}
-    <form class="composer" id="evForm"><textarea id="evText" rows="1" maxlength="1000" placeholder="${live && e.kind === 'ascolto' ? tr('Cosa ti dice questo pezzo?') : tr('Scrivi…')}"></textarea><button type="submit">Invia</button></form>`);
+    <div class="replybar hidden" id="replyBar"></div><form class="composer" id="evForm"><textarea id="evText" rows="1" maxlength="1000" placeholder="${live && e.kind === 'ascolto' ? tr('Cosa ti dice questo pezzo?') : tr('Scrivi…')}"></textarea><button type="submit">Invia</button></form>`);
+  S.reply = null;
   const m = $('#emsgs'); if (m) m.scrollTop = m.scrollHeight;
   $('#evForm').addEventListener('submit', async ev => {
     ev.preventDefault(); const ta = $('#evText'); let body = ta.value.trim(); if (!body) return;
     const tr_ = $('#evTrack'); if (tr_ && tr_.value) body = '[' + tr_.value + '] ' + body;
-    ta.value = ''; try { await comm('eventMsg', { id, body }); eventOpen(id, true); } catch (er) { ta.value = body; toast(commErrMsg(er)); }
+    const reply = replyFor('event');
+    ta.value = ''; try { await comm('eventMsg', { id, body, reply }); replyCancel(); eventOpen(id, true); } catch (er) { ta.value = body; toast(commErrMsg(er)); }
   });
   clearInterval(evPoll);
   evPoll = setInterval(() => { if ($('#sheetWrap').classList.contains('hidden') || S.eventOpenId !== id || !$('#emsgs')) { clearInterval(evPoll); S.eventOpenId = null; return; } if (document.visibilityState === 'visible') eventOpen(id, true); }, live ? 5000 : 60000);
@@ -4174,14 +4204,24 @@ async function loadFeed(force) {
   const rows = FEED_ROWS.filter(r => !r.local && r.need());
   rows.forEach(r => { S.feed.loading[r.key] = true; });
   renderFeed();
+  // se il telefono mette l'app in pausa durante il caricamento, le richieste scadono tutte insieme: lo annoto per riprovare al ritorno
+  let paused = document.visibilityState !== 'visible';
+  const onVis = () => { if (document.visibilityState !== 'visible') paused = true; };
+  document.addEventListener('visibilitychange', onVis);
   // TMDB e Google Libri in parallelo; MusicBrainz e Discogs vanno piano per i loro limiti
   await Promise.all(rows.map(async r => {
-    try { S.feed.rows[r.key] = await FEED_FETCH[r.key](); } catch (e) { console.warn('feed', r.key, e); }
+    try {
+      const L = await FEED_FETCH[r.key]();
+      // fonte che non risponde: tengo le novità di prima invece di svuotare la riga
+      if ((L && L.length) || !(prev[r.key] || []).length) S.feed.rows[r.key] = L;
+    } catch (e) { console.warn('feed', r.key, e); }
     delete S.feed.loading[r.key]; renderFeed(r.key);
   }));
+  document.removeEventListener('visibilitychange', onVis);
   feedLoading = false;
-  // se una riga generale è rimasta vuota (rete o servizio giù), riprova tra mezz'ora invece che tra 12 ore
-  S.feed.retryAt = rows.some(r => !(S.feed.rows[r.key] || []).length && ['album', 'libri', 'cinema'].includes(r.key)) ? Date.now() + 30 * 60e3 : 0;
+  const failed = Object.keys(S.feedErr).length > 0;
+  // fonti che non hanno risposto: riprovo presto (dopo un minuto se l'app era in pausa, altrimenti dopo 10) invece che tra 12 ore
+  S.feed.retryAt = failed && paused ? Date.now() + 60e3 : failed || rows.some(r => !(S.feed.rows[r.key] || []).length && ['album', 'libri', 'cinema'].includes(r.key)) ? Date.now() + 10 * 60e3 : 0;
   S.feed.err = { ...S.feedErr };
   const { loading, ...save } = S.feed; await setMeta('feed', save).catch(() => {});
   renderFeed();
@@ -4229,7 +4269,7 @@ function renderFeed(onlyKey) {
   } else box.innerHTML = FEED_ROWS.map(rowHTML).join('');
   hydratePhotos(box);
   const foot = $('#feedFoot');
-  if (foot) foot.innerHTML = S.feed && S.feed.at && !feedLoading ? `<span>Aggiornato il ${esc(fmtDateTime(S.feed.at))}</span> · <button class="more" data-a="feedRefresh">Aggiorna</button>${Object.keys(S.feed.err || {}).length ? `<br><small class="feederr" translate="no">${esc(Object.entries(S.feed.err).map(([k, v]) => k + ' → ' + v).join(' | '))}</small>` : ''}` : feedLoading ? '' : (!navigator.onLine ? '<span>Sei offline: le novità arrivano appena torna la connessione.</span>' : '');
+  if (foot) foot.innerHTML = S.feed && S.feed.at && !feedLoading ? `<span>Aggiornato il ${esc(fmtDateTime(S.feed.at))}</span> · <button class="more" data-a="feedRefresh">Aggiorna</button>${Object.keys(S.feed.err || {}).length ? ((commMe() || {}).admin ? `<br><small class="feederr" translate="no">${esc(Object.entries(S.feed.err).map(([k, v]) => k + ' → ' + v).join(' | '))}</small>` : `<br><small class="feederr">Alcune fonti non hanno risposto: riprovo tra poco.</small>`) : ''}` : feedLoading ? '' : (!navigator.onLine ? '<span>Sei offline: le novità arrivano appena torna la connessione.</span>' : '');
   if (!box.innerHTML.trim() && !feedLoading) box.innerHTML = `<p class="note" style="padding:20px 4px">Ancora nessuna novità: aggiungi qualche pezzo alla collezione e torna qui.</p>`;
 }
 async function feedOpen(el) {
@@ -4343,6 +4383,9 @@ Object.assign(actions, {
   check: () => startCheck(),
   listen: () => { listenSheet(); listenGo(); },
   listenGo: () => listenGo(),
+  replyTo: el => replyTo(el),
+  replyCancel: () => replyCancel(),
+  quoteJump: el => quoteJump(el),
   songSearch: () => { const x = S.song; if (!x) return; S.coverMode = null; S.pickWish = false; sheetSearch('vinile', [x.artist, x.album].filter(Boolean).join(' '), '', { auto: true }); },
   checkAdd,
   gotIt,
@@ -4575,6 +4618,7 @@ document.addEventListener('visibilitychange', () => {
   if (S.swReg) S.swReg.update().catch(() => {}); // controlla se è uscita una nuova versione
   commUnreadCheck(60e3); // tornando nell'app: aggiorna se è passato almeno un minuto
   pushRefresh();
+  if (S.view === 'home' && S.feed && S.feed.retryAt && Date.now() > S.feed.retryAt) setTimeout(() => loadFeed(), 1500); // novità non caricate: riprova
 });
 
 /* ── Avvio ─────────────────────────────────────────────────── */

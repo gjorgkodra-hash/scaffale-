@@ -8,11 +8,11 @@ let cfg: { jwk: JsonWebKey; secret: string } | null = null;
 
 const T: Record<string, Record<string, string>> = {
   it: { comment: "{n} ha commentato {w}", reply: "{n} ha commentato anche lui su {w}", invite: "{n} ti ha invitato a {e}", rsvp: "{n} partecipa al tuo evento {e}",
-    offer_vendo: "{n} vende {w}, che cerchi", offer_presto: "{n} presta {w}, che cerchi", offer_regalo: "{n} regala {w}, che cerchi", post: "{n} ha scritto un articolo su {w}", message: "Messaggio da {n}", gmessage: "{n} in {g}", rating: "{n} ha valutato lo scambio con te" },
+    offer_vendo: "{n} vende {w}, che cerchi", offer_presto: "{n} presta {w}, che cerchi", offer_regalo: "{n} regala {w}, che cerchi", post: "{n} ha scritto un articolo su {w}", message: "Messaggio da {n}", gmessage: "{n} in {g}", greply: "{n} ti ha risposto in {g}", rating: "{n} ha valutato lo scambio con te" },
   en: { comment: "{n} commented on {w}", reply: "{n} also commented on {w}", invite: "{n} invited you to {e}", rsvp: "{n} is going to your event {e}",
-    offer_vendo: "{n} is selling {w}, which you want", offer_presto: "{n} can lend {w}, which you want", offer_regalo: "{n} is giving away {w}, which you want", post: "{n} wrote an article about {w}", message: "Message from {n}", gmessage: "{n} in {g}", rating: "{n} rated your swap" },
+    offer_vendo: "{n} is selling {w}, which you want", offer_presto: "{n} can lend {w}, which you want", offer_regalo: "{n} is giving away {w}, which you want", post: "{n} wrote an article about {w}", message: "Message from {n}", gmessage: "{n} in {g}", greply: "{n} replied to you in {g}", rating: "{n} rated your swap" },
   es: { comment: "{n} comentó {w}", reply: "{n} también comentó en {w}", invite: "{n} te invitó a {e}", rsvp: "{n} va a tu evento {e}",
-    offer_vendo: "{n} vende {w}, que buscas", offer_presto: "{n} presta {w}, que buscas", offer_regalo: "{n} regala {w}, que buscas", post: "{n} escribió un artículo sobre {w}", message: "Mensaje de {n}", gmessage: "{n} en {g}", rating: "{n} valoró el intercambio contigo" },
+    offer_vendo: "{n} vende {w}, que buscas", offer_presto: "{n} presta {w}, que buscas", offer_regalo: "{n} regala {w}, que buscas", post: "{n} escribió un artículo sobre {w}", message: "Mensaje de {n}", gmessage: "{n} en {g}", greply: "{n} te respondió en {g}", rating: "{n} valoró el intercambio contigo" },
 };
 const OFFER: Record<string, Record<string, string>> = { it: { vendo: "In vendita", presto: "In prestito", regalo: "In regalo", compro: "Vuole comprarlo", prestito: "Chiede in prestito" },
   en: { vendo: "For sale", presto: "Can lend", regalo: "Free", compro: "Wants to buy", prestito: "Asks to borrow" }, es: { vendo: "En venta", presto: "En préstamo", regalo: "Lo regala", compro: "Quiere comprarlo", prestito: "Pide prestado" } };
@@ -27,7 +27,7 @@ function text(lang: string, p: any) {
   if (p.kind === "message" && d.offer) body = (OFFER[lang] || OFFER.it)[d.offer] + (d.price != null ? ` · ${d.price} €` : "") + (body ? " — " + body : "");
   if (p.kind === "message" && d.titolo) body = body ? `${body}` : `«${d.titolo}»`;
   if (p.kind === "rating") body = "★".repeat(d.stars || 0) + "☆".repeat(5 - (d.stars || 0)) + (d.body ? " — " + d.body : "");
-  const go = p.kind === "invite" || p.kind === "rsvp" ? "event:" + d.id : p.kind === "message" ? "thread:" + d.thread : p.kind === "gmessage" ? "group:" + d.group : d.type === "post" || p.kind === "post" ? "post:" + d.id
+  const go = p.kind === "invite" || p.kind === "rsvp" ? "event:" + d.id : p.kind === "message" ? "thread:" + d.thread : p.kind === "gmessage" || p.kind === "greply" ? "group:" + d.group : d.type === "post" || p.kind === "post" ? "post:" + d.id
     : d.type === "review" ? "review:" + d.id : "notifs";
   return { title, body: body.slice(0, 160), go, tag: p.kind + ":" + (d.id || d.thread || d.group || d.work || "") };
 }

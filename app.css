@@ -734,3 +734,24 @@ a.ulink { color: var(--accent); text-decoration: underline; text-underline-offse
 .result i { font-style: normal; }
 .result .trk { color: var(--ok); font-weight: 600; }
 .result .trk b { display: inline; font-size: inherit; color: inherit; }
+
+/* Risposta a un messaggio preciso */
+.quote { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; text-align: left; margin: 2px 0 6px; padding: 5px 9px;
+  border-left: 3px solid var(--accent); border-radius: 6px; background: rgba(127,127,127,.14); font-size: 12px; line-height: 1.3; }
+.quote b { font-size: 12px; color: var(--accent); }
+.quote span { color: var(--muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
+.quote.gone { font-style: italic; color: var(--muted); border-left-color: var(--line); }
+.emsg .quote { max-width: 92%; }
+.replybar { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 6px 8px 6px 12px; border-left: 3px solid var(--accent); border-radius: 8px; background: var(--soft); }
+.replybar > div { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 13px; }
+.replybar > div b { color: var(--accent); font-size: 12px; }
+.replybar > div > span { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.replybar button { width: 32px; height: 32px; border-radius: 50%; flex: none; color: var(--muted); }
+.replybar + .composer { padding-top: 6px; }
+.flash { animation: msgFlash 1.4s ease-out; }
+@keyframes msgFlash { 0%, 30% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: 0 0 0 3px transparent; } }
+.msg.mine .quote { background: rgba(0,0,0,.08); border-left-color: rgba(0,0,0,.45); }
+.msg.mine .quote b, .msg.mine .quote span { color: #1b1b1f; }
+.msg.mine .quote span { opacity: .75; }
+/* i pulsantini sotto i messaggi stanno su una riga (non prendono lo stile .mini degli elenchi) */
+small button.mini, .cacts button.mini { display: inline; padding: 0; border: 0; gap: 0; font-size: inherit; }

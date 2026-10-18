@@ -80,7 +80,13 @@ OAUTH = {'mode': 'ok', 'hits': []}
 COMM = {'members': {}, 'invites': {'AMICO1': 0}, 'reviews': [], 'comments': [], 'n': 0}
 FEEDBACK = {'sent': [], 'errors': [], 'tokens': []}
 DISCOGS_URLS = []
+DOWN = set()  # servizi finti "giù"
 IDENTIFY = {'calls': [], 'next': None}
+def quote_of(msgs, rid, me, nick):
+    if not rid: return None
+    q = next((m for m in msgs if m['id'] == rid), None)
+    return {'id': rid, 'gone': True} if not q else {'id': rid, 'nick': nick(q['from']), 'mine': q['from'] == me['id'], 'body': q['body'][:140]}
+
 def comm_handle(tok, b):
     import itertools
     if not tok: return 401, {'error': 'login'}
@@ -160,7 +166,7 @@ def comm_handle(tok, b):
     ths = list(COMM.get('threads', {}).values())
     nick = lambda mid: next((m['nick'] for m in COMM['members'].values() if m['id'] == mid), '?')
     if a == 'send':
-        th = next(x for x in ths if x['id'] == b['thread']); th['msgs'].append({'id': nid_(), 'from': me['id'], 'body': b['body'], 'offer': '', 'price': None, 'at': '2026-10-11T12:05:00Z'}); return 200, {'ok': True}
+        th = next(x for x in ths if x['id'] == b['thread']); th['msgs'].append({'id': nid_(), 'from': me['id'], 'body': b['body'], 'offer': '', 'price': None, 'at': '2026-10-11T12:05:00Z', 'reply': b.get('reply') if any(m['id'] == b.get('reply') for m in th['msgs']) else None}); return 200, {'ok': True}
     if a in ('threads', 'unread'):
         mine = [x for x in ths if me['id'] in x['members']]
         out = [{'id': x['id'], 'other': [m for m in x['members'] if m != me['id']][0], 'nick': nick([m for m in x['members'] if m != me['id']][0]), 'titolo': x['titolo'], 'cover': x['cover'], 'at': x['msgs'][-1]['at'],
@@ -184,14 +190,14 @@ def comm_handle(tok, b):
     if a in ('group', 'groupSend', 'groupAdd', 'groupLeave', 'groupRename', 'groupRemove'):
         g = G.get(b.get('id'))
         if not g or me['id'] not in g['members']: return 404, {'error': 'gruppo'}
-        if a == 'groupSend': g['msgs'].append({'id': nid_(), 'from': me['id'], 'body': b['body'], 'at': '2026-10-18T10:%02d:00Z' % len(g['msgs'])}); g['read'][me['id']] = len(g['msgs']); return 200, {'ok': True}
+        if a == 'groupSend': g['msgs'].append({'id': nid_(), 'from': me['id'], 'body': b['body'], 'at': '2026-10-18T10:%02d:00Z' % len(g['msgs']), 'reply': b.get('reply') if any(m['id'] == b.get('reply') for m in g['msgs']) else None}); g['read'][me['id']] = len(g['msgs']); return 200, {'ok': True}
         if a == 'groupAdd': new = [m for m in b.get('members', []) if m not in g['members']]; g['members'] += new; return 200, {'added': len(new)}
         if a == 'groupLeave': g['members'].remove(me['id']); return 200, {'ok': True}
         if a == 'groupRename': g['name'] = b['name']; return 200, {'ok': True}
         if a == 'groupRemove': g['members'].remove(b['member']); return 200, {'ok': True}
         g['read'][me['id']] = len(g['msgs'])
         return 200, {'group': {'id': g['id'], 'name': g['name'], 'admin': g['admin'] == me['id'], 'members': [{'id': m, 'nick': nick(m), 'admin': m == g['admin'], 'me': m == me['id']} for m in g['members']]},
-                     'messages': [{'id': x['id'], 'member': x['from'], 'nick': nick(x['from']), 'mine': x['from'] == me['id'], 'body': x['body'], 'at': x['at'], 'edited': x.get('edited', False)} for x in g['msgs']]}
+                     'messages': [{'id': x['id'], 'member': x['from'], 'nick': nick(x['from']), 'mine': x['from'] == me['id'], 'body': x['body'], 'at': x['at'], 'edited': x.get('edited', False), 'reply': quote_of(g['msgs'], x.get('reply'), me, nick)} for x in g['msgs']]}
     if a == 'edit':
         for g in G.values():
             for x in g['msgs']:
@@ -213,7 +219,7 @@ def comm_handle(tok, b):
         th = next(x for x in ths if x['id'] == b['id']); other = [m for m in th['members'] if m != me['id']][0]
         both = any(m['from'] == me['id'] for m in th['msgs']) and any(m['from'] == other for m in th['msgs'])
         myR = next(({'stars': r['stars'], 'body': r['body']} for r in COMM.get('ratings', []) if r['thread'] == th['id'] and r['rater'] == me['id']), None)
-        return 200, {'thread': {'id': th['id'], 'other': other, 'nick': nick(other), 'titolo': th['titolo'], 'cover': th['cover'], 'blocked': False, 'canRate': both, 'myRating': myR}, 'messages': [{'id': m['id'], 'mine': m['from'] == me['id'], 'body': m['body'], 'offer': m['offer'], 'price': m['price'], 'at': m['at'], 'edited': m.get('edited', False)} for m in th['msgs']]}
+        return 200, {'thread': {'id': th['id'], 'other': other, 'nick': nick(other), 'titolo': th['titolo'], 'cover': th['cover'], 'blocked': False, 'canRate': both, 'myRating': myR}, 'messages': [{'id': m['id'], 'mine': m['from'] == me['id'], 'body': m['body'], 'offer': m['offer'], 'price': m['price'], 'at': m['at'], 'edited': m.get('edited', False), 'reply': quote_of(th['msgs'], m.get('reply'), me, nick)} for m in th['msgs']]}
     if a == 'post':
         pid = nid_(); COMM.setdefault('posts', []).insert(0, dict(b, id=pid, nick=me['nick'], mid=me['id'], at='2026-10-11T13:00:00Z')); return 200, {'id': pid}
     if a == 'postGet':
@@ -258,6 +264,8 @@ def make_route(no_vision=False):
     async def route(r):
         u = r.request.url; p = urlparse(u); q = parse_qs(p.query); h = p.netloc
         J = lambda o, st=200: r.fulfill(status=st, content_type='application/json', body=json.dumps(o), headers={'Access-Control-Allow-Origin': '*'})
+        if 'mb-rg' in DOWN and h == 'musicbrainz.org' and '/release-group/' in p.path: return await r.fulfill(status=503, body='busy')
+        if h in DOWN: return await r.fulfill(status=503, body='busy') if h != 'api.deezer.com' else await r.abort()
         if h.startswith('127.0.0.1'):
             if no_vision and p.path.endswith('/config.js'):
                 body = open(os.path.join(ROOT, 'config.js')).read()
@@ -575,6 +583,20 @@ async def t_exchange(b, base):
     check('nel gruppo si vede chi scrive', 'Carla' in await dario.evaluate("document.querySelector('#gmsgs .msg .gnick').textContent"))
     await dario.fill('#gmsgText', 'Ciao Carla'); await dario.evaluate("document.querySelector('#gmsgForm').requestSubmit()")
     await dario.wait_for_function("document.querySelector('#gmsgs').textContent.includes('Ciao Carla')", timeout=5000)
+    # risposta a un messaggio preciso
+    await dario.click('#gmsgs .msg:not(.mine) [data-a=replyTo]')
+    check('rispondi: barra con il messaggio citato', await dario.evaluate("!$('#replyBar').classList.contains('hidden') && $('#replyBar').textContent.includes('Carla') && $('#replyBar').textContent.includes('Ciao a tutti')"))
+    await dario.fill('#gmsgText', 'Anche a te!'); await dario.evaluate("document.querySelector('#gmsgForm').requestSubmit()")
+    await dario.wait_for_function("document.querySelector('#gmsgs').textContent.includes('Anche a te')", timeout=5000)
+    q = await dario.evaluate("(() => { const m = [...document.querySelectorAll('#gmsgs .msg')].find(x => x.textContent.includes('Anche a te')); const qq = m && m.querySelector('.quote'); return qq ? qq.textContent : ''; })()")
+    check('risposta con la citazione del messaggio', 'Carla' in q and 'Ciao a tutti' in q, q)
+    check('dopo l\'invio la barra sparisce', await dario.evaluate("$('#replyBar').classList.contains('hidden') && !S.reply"))
+    await dario.click('#gmsgs .msg .quote'); await dario.wait_for_timeout(200)
+    check('tocco sulla citazione: va al messaggio', await dario.evaluate("!!document.querySelector('#gmsgs .msg.flash')"))
+    await dario.click('#gmsgs .msg:not(.mine) [data-a=replyTo]'); await dario.click('[data-a=replyCancel]')
+    await dario.fill('#gmsgText', 'Senza citazione'); await dario.evaluate("document.querySelector('#gmsgForm').requestSubmit()")
+    await dario.wait_for_function("document.querySelector('#gmsgs').textContent.includes('Senza citazione')", timeout=5000)
+    check('annulla la risposta', await dario.evaluate("![...document.querySelectorAll('#gmsgs .msg')].find(x => x.textContent.includes('Senza citazione')).querySelector('.quote')"))
     await dario.click('[data-a=groupInfo]'); await dario.wait_for_selector('[data-a=groupLeave]', timeout=5000)
     check('membri del gruppo', 'Carla' in await dario.evaluate("document.querySelector('#sheet').textContent"))
     dario.once('dialog', lambda d: asyncio.ensure_future(d.accept()))
@@ -957,6 +979,13 @@ async def t_home(b, base):
     check('nuovi libri', await page.evaluate("S.feed.rows.libri.map(f=>f.titolo).join()") == 'Romanzo appena uscito')
     check('autori: solo libri recenti', await page.evaluate("S.feed.rows.autori.map(f=>f.titolo).join()") == 'Il nuovo libro')
     await page.screenshot(path=os.path.join(os.path.dirname(__file__), 'home.png'), full_page=True)
+    # fonti giù: la riga resta con le novità di prima, messaggio semplice (i dettagli solo all'amministratore)
+    DOWN.update({'api.deezer.com', 'rss.applemarketingtools.com', 'mb-rg'})
+    await page.evaluate("loadFeed(true)"); await page.wait_for_function("!feedLoading && S.feed.err && S.feed.err.album", timeout=40000)
+    DOWN.clear()
+    check('fonte giù: tengo i nuovi album di prima', await page.evaluate("S.feed.rows.album.map(f=>f.titolo).join()") == 'Album della settimana')
+    foot = await page.evaluate("$('#feedFoot').textContent")
+    check('fonte giù: messaggio semplice, riprova presto', 'riprovo tra poco' in foot and 'Deezer' not in foot and await page.evaluate("S.feed.retryAt > 0 && S.feed.retryAt < Date.now() + 11*60e3"), foot)
     n0 = await page.evaluate("live().filter(i=>i.desiderio).length")
     await page.click('.feedrow[data-row=cinema] .fcard'); await page.wait_for_timeout(200)
     await page.click('[data-a=feedWish]'); await page.wait_for_timeout(800)

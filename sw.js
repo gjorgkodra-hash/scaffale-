@@ -1,5 +1,5 @@
 // Scaffale — service worker: l'app funziona anche offline
-const VERSION = 'scaffale-v2.23.0';
+const VERSION = 'scaffale-v2.24.0';
 const SHELL = ['./', './index.html', './app.css', './app.js', './i18n.js', './legal.js', './config.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './badge-96.png', './apple-touch-icon.png'];
 const LIBS = /(unpkg\.com|cdn\.jsdelivr\.net|fastly\.jsdelivr\.net)\/(npm\/)?(@zxing|barcode-detector|zxing-wasm|tesseract)|tessdata\.projectnaptha\.com|fonts\.(googleapis|gstatic)\.com/;

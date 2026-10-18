@@ -63,8 +63,29 @@ async function addMessage(th: any, mid: string, body: any) {
   const text = clean(body.body, 2000);
   if (!text && !offer) throw new E(400, "vuoto");
   const now = new Date().toISOString();
-  await db.from("messages").insert({ thread_id: th.id, member_id: mid, body: text, offer, price });
+  const reply_to = body.reply ? await replyOk("messages", "thread_id", th.id, body.reply) : null;
+  await db.from("messages").insert({ thread_id: th.id, member_id: mid, body: text, offer, price, reply_to });
   await db.from("threads").update(th.a === mid ? { updated_at: now, a_read: now } : { updated_at: now, b_read: now }).eq("id", th.id);
+}
+// Risposta a un messaggio: il messaggio citato deve stare nella stessa conversazione
+const UUID = /^[0-9a-f-]{36}$/;
+async function replyOk(table: string, col: string, owner: string, reply: unknown) {
+  const id = clean(reply, 40); if (!UUID.test(id)) return null;
+  const { data } = await db.from(table).select("id").eq("id", id).eq(col, owner).maybeSingle();
+  return data ? id : null;
+}
+// Per ogni messaggio con reply_to: chi aveva scritto e l'inizio del testo (anche se il messaggio citato non è tra quelli caricati)
+async function quotes(table: string, msgs: any[], nickOf: (mid: string) => Promise<string> | string, me: string, hide: Set<string> = new Set()) {
+  const byId = new Map(msgs.map((m: any) => [m.id, m]));
+  const miss = [...new Set(msgs.map((m: any) => m.reply_to).filter((x: any) => x && !byId.has(x)))];
+  if (miss.length) { const { data } = await db.from(table).select("id,member_id,body").in("id", miss.slice(0, 200)); (data || []).forEach((m: any) => byId.set(m.id, m)); }
+  const out = new Map<string, any>();
+  for (const m of msgs) {
+    if (!m.reply_to) continue;
+    const q: any = byId.get(m.reply_to);
+    out.set(m.id, q && !hide.has(q.member_id) ? { id: q.id, nick: await nickOf(q.member_id), mine: q.member_id === me, body: String(q.body || "").slice(0, 140) } : { id: m.reply_to, gone: true });
+  }
+  return out;
 }
 const inviteCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (x) => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[x % 32]).join("");
 
@@ -276,15 +297,16 @@ async function handle(body: any, who: { gid: string; email: string }) {
   }
   if (a === "thread") {
     const th = await myThread(clean(body.id, 40), me.id);
-    const { data: msgs } = await db.from("messages").select("id,member_id,body,offer,price,created_at,edited_at").eq("thread_id", th.id).order("created_at").limit(500);
+    const { data: msgs } = await db.from("messages").select("id,member_id,body,offer,price,created_at,edited_at,reply_to").eq("thread_id", th.id).order("created_at").limit(500);
     await db.from("threads").update(th.a === me.id ? { a_read: new Date().toISOString() } : { b_read: new Date().toISOString() }).eq("id", th.id);
     const other = th.a === me.id ? th.b : th.a;
     const { data: o } = await db.from("members").select("nick").eq("id", other).maybeSingle();
     const { data: bl } = await db.from("blocks").select("member_id").eq("member_id", me.id).eq("blocked_id", other).maybeSingle();
     const both = (msgs || []).some((m: any) => m.member_id === me.id) && (msgs || []).some((m: any) => m.member_id === other);
     const { data: myR } = await db.from("ratings").select("stars,body").eq("thread_id", th.id).eq("rater_id", me.id).maybeSingle();
+    const qt = await quotes("messages", msgs || [], (x) => (x === me.id ? me.nick : o?.nick || "?"), me.id);
     return { thread: { id: th.id, other, nick: o?.nick || "?", titolo: th.titolo, cover: th.cover_url, work: th.work_key, blocked: !!bl, canRate: both, myRating: myR || null },
-      messages: (msgs || []).map((m: any) => ({ id: m.id, mine: m.member_id === me.id, body: m.body, offer: m.offer, price: m.price, at: m.created_at, edited: !!m.edited_at })) };
+      messages: (msgs || []).map((m: any) => ({ id: m.id, mine: m.member_id === me.id, body: m.body, offer: m.offer, price: m.price, at: m.created_at, edited: !!m.edited_at, reply: qt.get(m.id) || null })) };
   }
   if (a === "unread") {
     const { data } = await db.from("threads").select("id,a,a_read,b_read,updated_at").or(`a.eq.${me.id},b.eq.${me.id}`).order("updated_at", { ascending: false }).limit(100);
@@ -389,14 +411,16 @@ async function handle(body: any, who: { gid: string; email: string }) {
     const blocked = await blockedSet(me.id);
     const [{ data: rs }, { data: ms }, { data: iv }] = await Promise.all([
       db.from("event_rsvps").select("member_id,status,members!inner(nick)").eq("event_id", e.id),
-      db.from("event_msgs").select("id,member_id,body,created_at,edited_at,members!inner(nick,banned)").eq("event_id", e.id).order("created_at").limit(500),
+      db.from("event_msgs").select("id,member_id,body,created_at,edited_at,reply_to,members!inner(nick,banned)").eq("event_id", e.id).order("created_at").limit(500),
       db.from("event_invites").select("member_id,members!inner(nick)").eq("event_id", e.id),
     ]);
+    const enick = new Map((ms || []).map((m: any) => [m.member_id, m.members.nick]));
+    const eq = await quotes("event_msgs", ms || [], async (x) => enick.get(x) || (await db.from("members").select("nick").eq("id", x).maybeSingle()).data?.nick || "?", me.id, blocked);
     return { event: { id: e.id, title: e.title, body: e.body, kind: e.kind, starts: e.starts_at, place: e.place, link: e.link, work: e.work_key, tipo: e.tipo, titolo: e.titolo, autore: e.autore, cover: e.cover_url,
         visibility: e.visibility, nick: e.members.nick, member: e.member_id, mine: e.member_id === me.id },
       rsvps: (rs || []).map((r: any) => ({ nick: r.members.nick, status: r.status, mine: r.member_id === me.id })),
       invited: (iv || []).map((r: any) => ({ id: r.member_id, nick: r.members.nick })),
-      messages: (ms || []).filter((m: any) => !m.members.banned && !blocked.has(m.member_id)).map((m: any) => ({ id: m.id, nick: m.members.nick, mine: m.member_id === me.id, body: m.body, at: m.created_at, edited: !!m.edited_at })) };
+      messages: (ms || []).filter((m: any) => !m.members.banned && !blocked.has(m.member_id)).map((m: any) => ({ id: m.id, nick: m.members.nick, mine: m.member_id === me.id, body: m.body, at: m.created_at, edited: !!m.edited_at, reply: eq.get(m.id) || null })) };
   }
   if (a === "rsvp") {
     const { data: e } = await db.from("events").select("id,member_id,visibility,hidden").eq("id", clean(body.id, 40)).maybeSingle();
@@ -410,7 +434,8 @@ async function handle(body: any, who: { gid: string; email: string }) {
     const { data: e } = await db.from("events").select("id,member_id,visibility,hidden").eq("id", clean(body.id, 40)).maybeSingle();
     if (!(await canSee(e))) throw new E(404, "evento");
     const text = clean(body.body, 1000); if (!text) throw new E(400, "vuoto");
-    await db.from("event_msgs").insert({ event_id: e.id, member_id: me.id, body: text });
+    const reply_to = body.reply ? await replyOk("event_msgs", "event_id", e.id, body.reply) : null;
+    await db.from("event_msgs").insert({ event_id: e.id, member_id: me.id, body: text, reply_to });
     return { ok: true };
   }
   if (a === "eventDelete") {
@@ -557,7 +582,7 @@ async function handle(body: any, who: { gid: string; email: string }) {
     const [{ data: g }, { data: gm }, { data: ms }, blocked] = await Promise.all([
       db.from("groups").select("id,name").eq("id", id).maybeSingle(),
       db.from("group_members").select("member_id,role,joined_at").eq("group_id", id).order("joined_at"),
-      db.from("group_msgs").select("id,member_id,body,created_at,edited_at").eq("group_id", id).order("created_at", { ascending: false }).limit(300),
+      db.from("group_msgs").select("id,member_id,body,created_at,edited_at,reply_to").eq("group_id", id).order("created_at", { ascending: false }).limit(300),
       blockedSet(me.id),
     ]);
     if (!g) throw new E(404, "gruppo");
@@ -565,16 +590,18 @@ async function handle(body: any, who: { gid: string; email: string }) {
     const { data: mem } = mids.length ? await db.from("members").select("id,nick,banned").in("id", mids) : { data: [] };
     const who = new Map((mem || []).map((m: any) => [m.id, m]));
     await db.from("group_members").update({ read_at: new Date().toISOString() }).eq("group_id", id).eq("member_id", me.id);
+    const gq = await quotes("group_msgs", ms || [], async (x) => (who.get(x) as any)?.nick || (await db.from("members").select("nick").eq("id", x).maybeSingle()).data?.nick || "?", me.id, blocked);
     return { group: { id: g.id, name: g.name, admin: mine.role === "admin",
         members: (gm || []).map((x: any) => ({ id: x.member_id, nick: (who.get(x.member_id) as any)?.nick || "?", admin: x.role === "admin", me: x.member_id === me.id, blocked: blocked.has(x.member_id) })) },
       messages: (ms || []).reverse().filter((m: any) => !blocked.has(m.member_id) && !(who.get(m.member_id) as any)?.banned)
-        .map((m: any) => ({ id: m.id, member: m.member_id, nick: (who.get(m.member_id) as any)?.nick || "?", mine: m.member_id === me.id, body: m.body, at: m.created_at, edited: !!m.edited_at })) };
+        .map((m: any) => ({ id: m.id, member: m.member_id, nick: (who.get(m.member_id) as any)?.nick || "?", mine: m.member_id === me.id, body: m.body, at: m.created_at, edited: !!m.edited_at, reply: gq.get(m.id) || null })) };
   }
   if (a === "groupSend") {
     await writeBudget(me.id);
     const id = clean(body.id, 40); await myGroup(id);
     const text = clean(body.body, 2000); if (!text) throw new E(400, "vuoto");
-    await db.from("group_msgs").insert({ group_id: id, member_id: me.id, body: text });
+    const reply_to = body.reply ? await replyOk("group_msgs", "group_id", id, body.reply) : null;
+    await db.from("group_msgs").insert({ group_id: id, member_id: me.id, body: text, reply_to });
     await db.from("group_members").update({ read_at: new Date().toISOString() }).eq("group_id", id).eq("member_id", me.id);
     return { ok: true };
   }
