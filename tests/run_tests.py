@@ -166,7 +166,34 @@ def comm_handle(tok, b):
         inv = sum(1 for e in COMM.get('events', {}).values() if me['id'] in e['invited'] and me['id'] not in e['rsvps'])
         nn = sum(1 for n in COMM.get('notifs', []) if n['to'] == me['id'] and not n['read'])
         return 200, ({'threads': out} if a == 'threads' else {'unread': sum(1 for o in out if o['unread']), 'invites': inv, 'notifs': nn})
+    G = COMM.setdefault('groups', {})
+    if a == 'groupCreate':
+        gid = 'g%d' % (len(G) + 1); G[gid] = {'id': gid, 'name': b['name'], 'members': [me['id']] + [m for m in b.get('members', []) if m != me['id']], 'admin': me['id'], 'msgs': [], 'read': {}}
+        return 200, {'id': gid}
+    if a == 'groups':
+        out = []
+        for g in G.values():
+            if me['id'] not in g['members']: continue
+            last = g['msgs'][-1] if g['msgs'] else None
+            out.append({'id': g['id'], 'name': g['name'], 'members': len(g['members']), 'at': last['at'] if last else '2026-10-18T09:00:00Z',
+                        'unread': bool(last and last['from'] != me['id'] and g['read'].get(me['id'], 0) < len(g['msgs'])),
+                        'last': {'body': last['body'], 'mine': last['from'] == me['id'], 'nick': nick(last['from'])} if last else None})
+        return 200, {'groups': out}
+    if a in ('group', 'groupSend', 'groupAdd', 'groupLeave', 'groupRename', 'groupRemove'):
+        g = G.get(b.get('id'))
+        if not g or me['id'] not in g['members']: return 404, {'error': 'gruppo'}
+        if a == 'groupSend': g['msgs'].append({'id': nid_(), 'from': me['id'], 'body': b['body'], 'at': '2026-10-18T10:%02d:00Z' % len(g['msgs'])}); g['read'][me['id']] = len(g['msgs']); return 200, {'ok': True}
+        if a == 'groupAdd': new = [m for m in b.get('members', []) if m not in g['members']]; g['members'] += new; return 200, {'added': len(new)}
+        if a == 'groupLeave': g['members'].remove(me['id']); return 200, {'ok': True}
+        if a == 'groupRename': g['name'] = b['name']; return 200, {'ok': True}
+        if a == 'groupRemove': g['members'].remove(b['member']); return 200, {'ok': True}
+        g['read'][me['id']] = len(g['msgs'])
+        return 200, {'group': {'id': g['id'], 'name': g['name'], 'admin': g['admin'] == me['id'], 'members': [{'id': m, 'nick': nick(m), 'admin': m == g['admin'], 'me': m == me['id']} for m in g['members']]},
+                     'messages': [{'id': x['id'], 'member': x['from'], 'nick': nick(x['from']), 'mine': x['from'] == me['id'], 'body': x['body'], 'at': x['at'], 'edited': x.get('edited', False)} for x in g['msgs']]}
     if a == 'edit':
+        for g in G.values():
+            for x in g['msgs']:
+                if x['id'] == b['id'] and x['from'] == me['id']: x['body'] = b['body']; x['edited'] = True; return 200, {'ok': True}
         for th in ths:
             for m in th['msgs']:
                 if m['id'] == b['id']:
@@ -525,6 +552,27 @@ async def t_exchange(b, base):
     await carla.fill('#msgText', 'Guarda qui https://example.com/disco?x=1&y=2 grazie'); await carla.evaluate("document.querySelector('#msgForm').requestSubmit()")
     await carla.wait_for_selector('#msgs a.ulink', timeout=5000)
     check('link cliccabile nei messaggi', await carla.evaluate("document.querySelector('#msgs a.ulink').href") == 'https://example.com/disco?x=1&y=2')
+    # chat di gruppo
+    await carla.evaluate("closeSheet(); groupNew()"); await carla.wait_for_selector('#grpName', timeout=5000)
+    await carla.fill('#grpName', 'Grunge Alessandria'); await carla.click('[data-a=groupCreate]'); await carla.wait_for_timeout(200)
+    check('gruppo: serve almeno una persona', not COMM.get('groups'))
+    did = next(m['id'] for m in COMM['members'].values() if m['nick'] == 'Dario')
+    await carla.check(f'[data-gpick="{did}"]'); await carla.click('[data-a=groupCreate]'); await carla.wait_for_selector('#gmsgForm', timeout=5000)
+    check('gruppo creato con Dario', len(COMM['groups']) == 1 and did in list(COMM['groups'].values())[0]['members'])
+    await carla.fill('#gmsgText', 'Ciao a tutti!'); await carla.evaluate("document.querySelector('#gmsgForm').requestSubmit()")
+    await carla.wait_for_function("document.querySelector('#gmsgs') && document.querySelector('#gmsgs').textContent.includes('Ciao a tutti')", timeout=5000)
+    await dario.evaluate("closeSheet(); S.commSeg='messaggi'; go('community', null, true)"); await dario.wait_for_function("!!document.querySelector('#commList [data-a=groupOpen]')", timeout=15000)
+    check('gruppo nei Messaggi con messaggio non letto', await dario.evaluate("document.querySelector('[data-a=groupOpen]').classList.contains('unread') && document.querySelector('[data-a=groupOpen]').textContent.includes('Grunge Alessandria')"))
+    await dario.click('[data-a=groupOpen]'); await dario.wait_for_selector('#gmsgs .msg', timeout=5000)
+    check('nel gruppo si vede chi scrive', 'Carla' in await dario.evaluate("document.querySelector('#gmsgs .msg .gnick').textContent"))
+    await dario.fill('#gmsgText', 'Ciao Carla'); await dario.evaluate("document.querySelector('#gmsgForm').requestSubmit()")
+    await dario.wait_for_function("document.querySelector('#gmsgs').textContent.includes('Ciao Carla')", timeout=5000)
+    await dario.click('[data-a=groupInfo]'); await dario.wait_for_selector('[data-a=groupLeave]', timeout=5000)
+    check('membri del gruppo', 'Carla' in await dario.evaluate("document.querySelector('#sheet').textContent"))
+    dario.once('dialog', lambda d: asyncio.ensure_future(d.accept()))
+    await dario.click('[data-a=groupLeave]'); await dario.wait_for_timeout(400)
+    check('uscito dal gruppo', did not in list(COMM['groups'].values())[0]['members'])
+    await dario.evaluate("closeSheet()"); await carla.evaluate("closeSheet(); S.threadOpenId = null; threadOpen(S.thread.id)"); await carla.wait_for_selector('#msgForm', timeout=5000)
     # dopo lo scambio: valutazione e profilo
     await carla.wait_for_selector('#rateBox [data-a=rateSheet]', timeout=5000)
     check('conversazione: invito a valutare lo scambio', 'Valuta' in await carla.evaluate("document.querySelector('#rateBox').textContent"))

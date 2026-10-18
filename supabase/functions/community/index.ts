@@ -42,6 +42,7 @@ async function writeBudget(mid: string) {
     db.from("posts").select("id", { count: "exact", head: true }).eq("member_id", mid).gte("created_at", since),
     db.from("messages").select("id", { count: "exact", head: true }).eq("member_id", mid).gte("created_at", since),
     db.from("event_msgs").select("id", { count: "exact", head: true }).eq("member_id", mid).gte("created_at", since),
+    db.from("group_msgs").select("id", { count: "exact", head: true }).eq("member_id", mid).gte("created_at", since),
   ]);
   // in un ascolto in diretta si commenta molto: limite più alto
   if (n.reduce((s, r) => s + (r.count || 0), 0) >= 200) throw new E(429, "troppi messaggi, riprova più tardi");
@@ -99,8 +100,8 @@ async function handle(body: any, who: { gid: string; email: string }) {
     const [profile, reviews, comments, posts, shares, messages, events, rsvps, blocks, invites] = await Promise.all([
       db.from("members").select("nick,email,role,city,bio,created_at,accepted_terms_at").eq("id", me.id).single().then((r: any) => r.data),
       q("reviews"), q("comments"), q("posts"), q("shares"), q("messages"), q("events"), q("event_rsvps"), q("blocks"), q("invites", "created_by")]);
-    const ratings = await q("ratings", "rater_id");
-    return { exportedAt: new Date().toISOString(), profile, reviews, comments, posts, shares, messages, events, rsvps, blocks, invites, ratings };
+    const [ratings, groupMessages] = await Promise.all([q("ratings", "rater_id"), q("group_msgs")]);
+    return { exportedAt: new Date().toISOString(), profile, reviews, comments, posts, shares, messages, events, rsvps, blocks, invites, ratings, groupMessages };
   }
   if (a === "deleteAccount") {
     if (clean(body.confirm, 24) !== me.nick) throw new E(400, "conferma");
@@ -297,6 +298,11 @@ async function handle(body: any, who: { gid: string; email: string }) {
     const { data: rs } = evIds.length ? await db.from("event_rsvps").select("event_id").eq("member_id", me.id).in("event_id", evIds) : { data: [] };
     const answered = new Set((rs || []).map((x: any) => x.event_id));
     const { count: nn } = await db.from("notifications").select("id", { count: "exact", head: true }).eq("member_id", me.id).eq("read", false);
+    const { data: gm } = await db.from("group_members").select("group_id,read_at").eq("member_id", me.id).limit(200);
+    for (const g of gm || []) {
+      const { data: last } = await db.from("group_msgs").select("member_id").eq("group_id", g.group_id).neq("member_id", me.id).gt("created_at", g.read_at).limit(1).maybeSingle();
+      if (last) n++;
+    }
     return { unread: n, invites: evIds.filter((x: string) => !answered.has(x)).length, notifs: nn || 0 };
   }
   // ── Notifiche (create dal database: commenti, risposte, inviti, partecipanti, offerte, articoli) ──
@@ -416,7 +422,7 @@ async function handle(body: any, who: { gid: string; email: string }) {
   // ── Modifica dei propri commenti, messaggi, messaggi degli eventi e articoli ──
   if (a === "edit") {
     await writeBudget(me.id);
-    const T: Record<string, [string, number]> = { comment: ["comments", 1000], message: ["messages", 2000], eventmsg: ["event_msgs", 1000], post: ["posts", 8000] };
+    const T: Record<string, [string, number]> = { comment: ["comments", 1000], message: ["messages", 2000], eventmsg: ["event_msgs", 1000], post: ["posts", 8000], gmessage: ["group_msgs", 2000] };
     const [t, max] = T[String(body.kind)] || [];
     if (!t) throw new E(400, "tipo");
     const id = clean(body.id, 40), text = clean(body.body, max);
@@ -430,8 +436,8 @@ async function handle(body: any, who: { gid: string; email: string }) {
   }
 
   if (a === "delete") {
-    if (body.kind === "message" || body.kind === "eventmsg") {
-      let q = db.from(body.kind === "message" ? "messages" : "event_msgs").delete().eq("id", clean(body.id, 40));
+    if (body.kind === "message" || body.kind === "eventmsg" || body.kind === "gmessage") {
+      let q = db.from(body.kind === "message" ? "messages" : body.kind === "gmessage" ? "group_msgs" : "event_msgs").delete().eq("id", clean(body.id, 40));
       if (!(admin && body.kind === "eventmsg")) q = q.eq("member_id", me.id);
       await q; return { ok: true };
     }
@@ -498,6 +504,105 @@ async function handle(body: any, who: { gid: string; email: string }) {
   if (a === "recent") {
     const { data } = await db.from("reviews").select("work_key,tipo,titolo,autore,cover_url,stars,body,updated_at,members!inner(nick,banned)").eq("hidden", false).order("updated_at", { ascending: false }).limit(40);
     return { reviews: (data || []).filter((r: any) => !r.members.banned).slice(0, 20).map((r: any) => ({ work: r.work_key, tipo: r.tipo, titolo: r.titolo, autore: r.autore, cover: r.cover_url, stars: r.stars, body: r.body.slice(0, 200), nick: r.members.nick, at: r.updated_at })) };
+  }
+
+  // ── Chat di gruppo ──
+  const myGroup = async (id: string) => {
+    const { data } = await db.from("group_members").select("role,read_at").eq("group_id", id).eq("member_id", me.id).maybeSingle();
+    if (!data) throw new E(404, "gruppo");
+    return data;
+  };
+  const addToGroup = async (gid: string, ids: unknown[]) => {
+    const blocked = await blockedSet(me.id);
+    const list = [...new Set(ids.map((x) => clean(x, 40)).filter((x) => /^[0-9a-f-]{36}$/.test(x) && x !== me.id && !blocked.has(x)))];
+    if (!list.length) return 0;
+    const { data: ok } = await db.from("members").select("id").in("id", list).eq("banned", false);
+    const { count } = await db.from("group_members").select("member_id", { count: "exact", head: true }).eq("group_id", gid);
+    const rows = (ok || []).slice(0, Math.max(0, 50 - (count || 0))).map((m: any) => ({ group_id: gid, member_id: m.id, read_at: new Date(0).toISOString() }));
+    if (rows.length) await db.from("group_members").upsert(rows, { onConflict: "group_id,member_id", ignoreDuplicates: true });
+    return rows.length;
+  };
+  if (a === "groupCreate") {
+    await writeBudget(me.id);
+    const name = clean(body.name, 60); if (name.length < 2) throw new E(400, "nome");
+    const { count } = await db.from("groups").select("id", { count: "exact", head: true }).eq("created_by", me.id).gte("created_at", new Date(Date.now() - 864e5).toISOString());
+    if ((count || 0) >= 10) throw new E(429, "troppi");
+    const { data: g, error } = await db.from("groups").insert({ name, created_by: me.id }).select("id").single();
+    if (error || !g) throw new E(500, "errore");
+    await db.from("group_members").insert({ group_id: g.id, member_id: me.id, role: "admin" });
+    await addToGroup(g.id, Array.isArray(body.members) ? body.members.slice(0, 49) : []);
+    return { id: g.id };
+  }
+  if (a === "groups") {
+    const { data: gm } = await db.from("group_members").select("group_id,read_at").eq("member_id", me.id).limit(200);
+    const ids = (gm || []).map((x: any) => x.group_id);
+    if (!ids.length) return { groups: [] };
+    const read = new Map((gm || []).map((x: any) => [x.group_id, x.read_at]));
+    const [{ data: gs }, blocked] = await Promise.all([db.from("groups").select("id,name,updated_at").in("id", ids), blockedSet(me.id)]);
+    const out = await Promise.all((gs || []).map(async (g: any) => {
+      const [{ data: last }, { count }] = await Promise.all([
+        db.from("group_msgs").select("body,member_id,created_at").eq("group_id", g.id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        db.from("group_members").select("member_id", { count: "exact", head: true }).eq("group_id", g.id),
+      ]);
+      let nick = "";
+      if (last && last.member_id !== me.id) { const { data: m } = await db.from("members").select("nick").eq("id", last.member_id).maybeSingle(); nick = m?.nick || ""; }
+      return { id: g.id, name: g.name, at: last?.created_at || g.updated_at, members: count || 0,
+        unread: !!last && last.member_id !== me.id && !blocked.has(last.member_id) && last.created_at > String(read.get(g.id) || ""),
+        last: last && !blocked.has(last.member_id) ? { body: String(last.body).slice(0, 120), mine: last.member_id === me.id, nick } : null };
+    }));
+    return { groups: out.sort((x, y) => String(y.at).localeCompare(String(x.at))) };
+  }
+  if (a === "group") {
+    const id = clean(body.id, 40); const mine = await myGroup(id);
+    const [{ data: g }, { data: gm }, { data: ms }, blocked] = await Promise.all([
+      db.from("groups").select("id,name").eq("id", id).maybeSingle(),
+      db.from("group_members").select("member_id,role,joined_at").eq("group_id", id).order("joined_at"),
+      db.from("group_msgs").select("id,member_id,body,created_at,edited_at").eq("group_id", id).order("created_at", { ascending: false }).limit(300),
+      blockedSet(me.id),
+    ]);
+    if (!g) throw new E(404, "gruppo");
+    const mids = [...new Set([...(gm || []).map((x: any) => x.member_id), ...(ms || []).map((x: any) => x.member_id)])];
+    const { data: mem } = mids.length ? await db.from("members").select("id,nick,banned").in("id", mids) : { data: [] };
+    const who = new Map((mem || []).map((m: any) => [m.id, m]));
+    await db.from("group_members").update({ read_at: new Date().toISOString() }).eq("group_id", id).eq("member_id", me.id);
+    return { group: { id: g.id, name: g.name, admin: mine.role === "admin",
+        members: (gm || []).map((x: any) => ({ id: x.member_id, nick: (who.get(x.member_id) as any)?.nick || "?", admin: x.role === "admin", me: x.member_id === me.id, blocked: blocked.has(x.member_id) })) },
+      messages: (ms || []).reverse().filter((m: any) => !blocked.has(m.member_id) && !(who.get(m.member_id) as any)?.banned)
+        .map((m: any) => ({ id: m.id, member: m.member_id, nick: (who.get(m.member_id) as any)?.nick || "?", mine: m.member_id === me.id, body: m.body, at: m.created_at, edited: !!m.edited_at })) };
+  }
+  if (a === "groupSend") {
+    await writeBudget(me.id);
+    const id = clean(body.id, 40); await myGroup(id);
+    const text = clean(body.body, 2000); if (!text) throw new E(400, "vuoto");
+    await db.from("group_msgs").insert({ group_id: id, member_id: me.id, body: text });
+    await db.from("group_members").update({ read_at: new Date().toISOString() }).eq("group_id", id).eq("member_id", me.id);
+    return { ok: true };
+  }
+  if (a === "groupAdd") {
+    const id = clean(body.id, 40); await myGroup(id);
+    return { added: await addToGroup(id, Array.isArray(body.members) ? body.members.slice(0, 49) : []) };
+  }
+  if (a === "groupRename") {
+    const id = clean(body.id, 40); const r = await myGroup(id);
+    if (r.role !== "admin" && !admin) throw new E(403, "admin");
+    const name = clean(body.name, 60); if (name.length < 2) throw new E(400, "nome");
+    await db.from("groups").update({ name }).eq("id", id);
+    return { ok: true };
+  }
+  if (a === "groupRemove") {
+    const id = clean(body.id, 40); const r = await myGroup(id);
+    if (r.role !== "admin" && !admin) throw new E(403, "admin");
+    const who2 = clean(body.member, 40); if (who2 === me.id) throw new E(400, "membro");
+    await db.from("group_members").delete().eq("group_id", id).eq("member_id", who2);
+    return { ok: true };
+  }
+  if (a === "groupLeave") {
+    const id = clean(body.id, 40); const r = await myGroup(id);
+    await db.from("group_members").delete().eq("group_id", id).eq("member_id", me.id);
+    const { data: rest } = await db.from("group_members").select("member_id,role").eq("group_id", id).order("joined_at").limit(50);
+    if (!rest || !rest.length) await db.from("groups").delete().eq("id", id); // ultimo che esce: il gruppo sparisce
+    else if (r.role === "admin" && !rest.some((x: any) => x.role === "admin")) await db.from("group_members").update({ role: "admin" }).eq("group_id", id).eq("member_id", rest[0].member_id);
+    return { ok: true };
   }
 
   // ── Profili e valutazioni ──

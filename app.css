@@ -703,3 +703,9 @@ a.ulink { color: var(--accent); text-decoration: underline; text-underline-offse
 .cropstage { overflow: hidden; }
 .croptop, .cropratio, .cropbtns { position: relative; z-index: 2; }
 .cropbtns .btn:not(.primary) { background: #27252e; color: #f3efe6; border-color: #3a3742; }
+
+/* Chat di gruppo */
+.gava { width: 64px; height: 64px; border-radius: 16px; background: var(--card); display: grid; place-items: center; font-size: 30px; }
+.msg .gnick { display: block; font-size: 13px; margin-bottom: 2px; }
+.msg .gnick .nick { font-size: 13px; color: var(--accent); text-decoration: none; }
+.msgnew { flex-direction: row; gap: 8px; flex-wrap: wrap; margin: 0 0 6px; }

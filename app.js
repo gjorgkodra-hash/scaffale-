@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.21.2';
+const VERSION = '2.22.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -2445,6 +2445,9 @@ function showUpdateBar() {
   document.body.appendChild(b);
 }
 const NEWS = {
+  '2.22': [
+    ['Chat di gruppo', "In Community › Nuovo › Nuovo gruppo: una chat con più membri (fino a 50). Si aggiungono persone, si rinomina, si esce quando si vuole; con le notifiche anche ad app chiusa."],
+  ],
   '2.21': [
     ['Ritaglia le foto', "Dopo la foto della copertina, o quando aggiungi una foto a un pezzo, puoi ritagliarla: trascina gli angoli, scegli quadrato o formato libro e ruotala. Le foto già salvate si ritagliano dal pulsante ✂ in Modifica."],
   ],
@@ -3013,12 +3016,15 @@ async function loadCommunity() {
       const nt = $('#nearToggle'); if (nt) nt.addEventListener('change', () => { try { localStorage.setItem('nearMe', nt.checked ? '1' : '0'); } catch (e) {} loadCommunity(); });
       const t = $('#shareWishToggle'); if (t) t.addEventListener('change', () => { try { localStorage.setItem('shareWish', t.checked ? '1' : '0'); } catch (e) {} commSyncShares(true).then(() => toast(t.checked ? 'Lista desideri condivisa' : 'Lista desideri non più condivisa')).catch(er => toast(commErrMsg(er))); });
     } else {
-      const d = await comm('threads'); S.commThreads = d.threads || [];
-      S.commUnread = S.commThreads.filter(t => t.unread).length;
+      const [d, gd] = await Promise.all([comm('threads'), comm('groups').catch(() => ({ groups: [] }))]); S.commThreads = d.threads || []; S.commGroups = gd.groups || [];
+      S.commUnread = S.commThreads.filter(t => t.unread).length + S.commGroups.filter(g => g.unread).length;
       if (!b() || S.commSeg !== 'messaggi') return;
-      b().innerHTML = S.commThreads.map(t => `<button class="crow thrd ${t.unread ? 'unread' : ''}" data-a="threadOpen" data-id="${esc(t.id)}">${coverMini({ tipo: 'vinile', titolo: t.titolo, cover: t.cover })}<div><b translate="no">${esc(t.nick)}</b>${t.titolo ? `<span translate="no">${esc(t.titolo)}</span>` : ''}
+      const rows = [...S.commThreads.map(t => ({ t, at: t.at })), ...S.commGroups.map(g => ({ g, at: g.at }))].sort((x, y) => String(y.at).localeCompare(String(x.at)));
+      const groupRow = g => `<button class="crow thrd grp ${g.unread ? 'unread' : ''}" data-a="groupOpen" data-id="${esc(g.id)}"><div class="gava" aria-hidden="true">👥</div><div><b translate="no">${esc(g.name)}</b><span>${g.members} membri</span>
+          <p>${g.last ? (g.last.mine ? '<span>Tu:</span> ' : g.last.nick ? `<span translate="no">${esc(g.last.nick)}:</span> ` : '') + `<span translate="no">${esc(g.last.body)}</span>` : '<span>Nessun messaggio ancora</span>'}</p></div></button>`;
+      b().innerHTML = (rows.length ? `<div class="stack msgnew"><button class="btn sm" data-a="newChat">💬 <span>Nuova conversazione</span></button><button class="btn sm" data-a="groupNew">👥 <span>Nuovo gruppo</span></button></div>` : '') + rows.map(({ t, g }) => g ? groupRow(g) : `<button class="crow thrd ${t.unread ? 'unread' : ''}" data-a="threadOpen" data-id="${esc(t.id)}">${coverMini({ tipo: 'vinile', titolo: t.titolo, cover: t.cover })}<div><b translate="no">${esc(t.nick)}</b>${t.titolo ? `<span translate="no">${esc(t.titolo)}</span>` : ''}
           <p>${t.last ? (t.last.mine ? '<span>Tu:</span> ' : '') + (t.last.offer ? esc(offerTxt(t.last.offer, t.last.price)) + (t.last.body ? ' · ' : '') : '') + `<span translate="no">${esc(t.last.body)}</span>` : ''}</p></div></button>`).join('')
-        || emptyHTML('💬', 'Nessun messaggio', 'Scrivi a un membro della community, oppure vai negli Scambi per contattare chi ha o cerca i tuoi pezzi.', [['newChat', 'Nuova conversazione', 1], ['goScambi', 'Vai agli Scambi']]);
+        || emptyHTML('💬', 'Nessun messaggio', 'Scrivi a un membro della community, crea un gruppo con più persone, oppure vai negli Scambi per contattare chi ha o cerca i tuoi pezzi.', [['newChat', 'Nuova conversazione', 1], ['groupNew', 'Nuovo gruppo'], ['goScambi', 'Vai agli Scambi']]);
       hydratePhotos(b());
       commBadges();
     }
@@ -3147,6 +3153,7 @@ const delBtn = (kind, id, ctx) => `<button class="mini" data-a="msgDel" data-kin
 function editBack(ctx) {
   if (ctx === 'thread' && S.thread) { S.threadOpenId = null; return threadOpen(S.thread.id); }
   if (ctx === 'event' && S.event) { S.eventOpenId = null; return eventOpen(S.event.event.id); }
+  if (ctx === 'group' && S.group) { S.groupOpenId = null; return groupOpen(S.group.id); }
   if (ctx === 'disc' && S.disc) return discussionOpen(S.disc.q);
   if (ctx === 'post' && S.postOpenId) return postOpen(S.postOpenId);
   closeSheet(); const it = byId(S.id); if (it) loadComm(it, true);
@@ -3155,7 +3162,7 @@ function editOpen(el) {
   const { kind, id, ctx } = el.dataset; const cur = EDIT.get(id); if (cur == null) return;
   S.edit = { kind, id, ctx };
   const post = kind === 'post'; const body = post ? cur.body : cur;
-  const max = { comment: 1000, message: 2000, eventmsg: 1000, post: 8000 }[kind] || 1000;
+  const max = { comment: 1000, message: 2000, eventmsg: 1000, post: 8000, gmessage: 2000 }[kind] || 1000;
   openSheet(`<h2>${post ? "Modifica l'articolo" : kind === 'comment' ? 'Modifica il commento' : 'Modifica il messaggio'}</h2>
     ${post ? `<label class="field"><span>Titolo</span><input id="editTitle" maxlength="150" value="${esc(cur.title)}"></label>` : ''}
     <label class="field"><span>Testo</span><textarea id="editText" rows="${post ? 10 : 4}" maxlength="${max}">${esc(body)}</textarea></label>
@@ -3231,6 +3238,72 @@ async function threadOpen(id, quiet) {
     threadPoll = setInterval(() => { if ($('#sheetWrap').classList.contains('hidden') || S.threadOpenId !== id || !$('#msgs')) { clearInterval(threadPoll); S.threadOpenId = null; return; } if (document.visibilityState === 'visible') threadOpen(id, true); }, 20000);
   }
   if (S.view === 'community' && S.commSeg === 'messaggi' && !quiet) loadCommunity();
+}
+// ── Chat di gruppo: più membri nella stessa conversazione ──
+let groupPoll = null;
+async function groupNew(preselect) {
+  let mem; try { mem = (await comm('members')).members || []; } catch (e) { return toast(commErrMsg(e)); }
+  S.groupPick = new Set(preselect ? [preselect] : []);
+  openSheet(`<h2>Nuovo gruppo</h2>
+    <label class="field"><span>Nome del gruppo</span><input id="grpName" maxlength="60" placeholder="es. Vinili jazz Alessandria"></label>
+    <h4 class="csub">Chi aggiungi</h4>
+    <div class="picklist">${mem.map(m => `<label class="check"><input type="checkbox" data-gpick="${esc(m.id)}" ${S.groupPick.has(m.id) ? 'checked' : ''}> <span translate="no">${esc(m.nick)}</span>${m.city ? ` <small translate="no">· ${esc(m.city)}</small>` : ''}</label>`).join('') || '<p class="note">Nessun altro membro, per ora: invita i tuoi amici nella community.</p>'}</div>
+    <p class="note">Fino a 50 persone. Chi è nel gruppo può aggiungere altri membri.</p>
+    <div class="stack"><button class="btn primary block" data-a="groupCreate">Crea il gruppo</button></div>`);
+  document.querySelectorAll('[data-gpick]').forEach(c => c.addEventListener('change', () => c.checked ? S.groupPick.add(c.dataset.gpick) : S.groupPick.delete(c.dataset.gpick)));
+}
+async function groupCreate() {
+  const name = ($('#grpName') || {}).value.trim();
+  if (name.length < 2) return toast('Dai un nome al gruppo');
+  if (!S.groupPick || !S.groupPick.size) return toast('Scegli almeno una persona');
+  try { const r = await comm('groupCreate', { name, members: [...S.groupPick] }); toast('Gruppo creato'); S.commSeg = 'messaggi'; if (S.view === 'community') loadCommunity(); groupOpen(r.id); }
+  catch (e) { toast(e.message === 'troppi' ? 'Hai creato molti gruppi oggi: riprova domani' : commErrMsg(e)); }
+}
+async function groupOpen(id, quiet) {
+  let d; try { d = await comm('group', { id }); } catch (e) { if (!quiet) toast(e.message === 'gruppo' ? 'Non fai più parte di questo gruppo' : commErrMsg(e)); return; }
+  S.group = d.group;
+  const msgs = d.messages.map(m => `<div class="msg ${m.mine ? 'mine' : ''}">${m.mine ? '' : `<b class="gnick">${nickBtn(m.member, m.nick)}</b>`}<p translate="no">${lk(m.body)}</p><small>${esc(fmtDateTime(Date.parse(m.at)))}${editedTag(m)}${m.mine ? ' · ' + editBtn('gmessage', m.id, m.body, 'group', true) + ' · ' + delBtn('gmessage', m.id, 'group') : ''}</small></div>`).join('')
+    || '<p class="note" style="text-align:center">Scrivi il primo messaggio del gruppo.</p>';
+  const names = d.group.members.filter(x => !x.me).map(x => x.nick);
+  const html = `<div class="thead2"><div><h2 translate="no">👥 ${esc(d.group.name)}</h2><button class="more" data-a="groupInfo"><span translate="no">${esc(names.slice(0, 4).join(', '))}${names.length > 4 ? '…' : ''}</span> · <span>${d.group.members.length} membri</span> ›</button></div></div>
+    <div class="msgs" id="gmsgs">${msgs}</div>
+    <form class="composer" id="gmsgForm"><textarea id="gmsgText" rows="1" maxlength="2000" placeholder="Scrivi al gruppo…"></textarea><button type="submit">Invia</button></form>`;
+  if ($('#gmsgs') && S.groupOpenId === id) { const m = $('#gmsgs'); const atEnd = m.scrollTop + m.clientHeight >= m.scrollHeight - 30; m.innerHTML = msgs; if (atEnd) m.scrollTop = m.scrollHeight; }
+  else {
+    S.groupOpenId = id; openSheet(html);
+    const m = $('#gmsgs'); if (m) m.scrollTop = m.scrollHeight;
+    $('#gmsgForm').addEventListener('submit', async e => {
+      e.preventDefault(); const ta = $('#gmsgText'); const body = ta.value.trim(); if (!body) return;
+      ta.value = ''; try { await comm('groupSend', { id, body }); groupOpen(id, true); } catch (er) { ta.value = body; toast(commErrMsg(er)); }
+    });
+    clearInterval(groupPoll);
+    groupPoll = setInterval(() => { if ($('#sheetWrap').classList.contains('hidden') || S.groupOpenId !== id || !$('#gmsgs')) { clearInterval(groupPoll); S.groupOpenId = null; return; } if (document.visibilityState === 'visible') groupOpen(id, true); }, 15000);
+  }
+  if (S.view === 'community' && S.commSeg === 'messaggi' && !quiet) loadCommunity();
+}
+async function groupInfo() {
+  const g = S.group; if (!g) return;
+  S.groupOpenId = null;
+  openSheet(`<h2 translate="no">👥 ${esc(g.name)}</h2>
+    ${g.admin ? '<div class="stack"><button class="btn block" data-a="groupRename">Rinomina il gruppo</button></div>' : ''}
+    <h4 class="csub"><span>Membri</span> (${g.members.length})</h4>
+    ${g.members.map(x => `<div class="prow2"><div>${x.me ? `<b translate="no">${esc(x.nick)}</b> <small>(tu)</small>` : nickBtn(x.id, x.nick)}${x.admin ? ' <small>· amministratore</small>' : ''}</div>${g.admin && !x.me ? `<button class="btn sm" data-a="groupRemove" data-id="${esc(x.id)}" data-nick="${esc(x.nick)}">Rimuovi</button>` : ''}</div>`).join('')}
+    <div class="stack"><button class="btn primary block" data-a="groupAddSheet">➕ <span>Aggiungi persone</span></button>
+      <button class="btn block" data-a="groupBack">Torna alla chat</button>
+      <button class="btn danger block" data-a="groupLeave">Esci dal gruppo</button></div>`);
+}
+async function groupAddSheet() {
+  const g = S.group; if (!g) return;
+  let mem; try { mem = (await comm('members')).members || []; } catch (e) { return toast(commErrMsg(e)); }
+  const inside = new Set(g.members.map(x => x.id)); const sel = new Set();
+  const others = mem.filter(m => !inside.has(m.id));
+  openSheet(`<h2>Aggiungi al gruppo</h2>${others.map(m => `<label class="check"><input type="checkbox" data-gadd="${esc(m.id)}"> <span translate="no">${esc(m.nick)}</span></label>`).join('') || '<p class="note">Sono già tutti nel gruppo.</p>'}
+    <div class="stack"><button class="btn primary block" id="gAddGo">Aggiungi</button><button class="more" data-a="groupInfo">Annulla</button></div>`);
+  document.querySelectorAll('[data-gadd]').forEach(c => c.addEventListener('change', () => c.checked ? sel.add(c.dataset.gadd) : sel.delete(c.dataset.gadd)));
+  $('#gAddGo').addEventListener('click', async () => {
+    if (!sel.size) return toast('Scegli almeno una persona');
+    try { const r = await comm('groupAdd', { id: g.id, members: [...sel] }); toast(r.added ? 'Aggiunti al gruppo' : 'Nessuno aggiunto'); groupOpen(g.id); } catch (e) { toast(commErrMsg(e)); }
+  });
 }
 async function threadBlock() {
   const t = S.thread; if (!t) return;
@@ -3395,6 +3468,7 @@ function eventShare() {
 function commNew() {
   openSheet(`<h2>Nuovo</h2><div class="newopts">
     <button data-a="newChat"><b>💬 <span>Nuova conversazione</span></b><span>Scrivi a un membro della community</span></button>
+    <button data-a="groupNew"><b>👥 <span>Nuovo gruppo</span></b><span>Una chat con più membri: club del libro, amici del vinile, organizzare uno scambio</span></button>
     <button data-a="newShare"><b>📀 <span>Condividi un pezzo</span></b><span>Mostra un pezzo della tua collezione con un commento, o mettilo in vendita, in prestito, in regalo</span></button>
     <button data-a="newPost"><b>📝 <span>Scrivi un articolo</span></b><span>Nel blog di un disco, libro o film</span></button>
     <button data-a="eventNew"><b>📅 <span>Crea un evento</span></b><span>Serata, club del libro, mercatino o ascolto in diretta</span></button></div>`);
@@ -3657,6 +3731,7 @@ async function pushGo(go) {
   if (S.view !== 'community') { S.main = 'community'; try { localStorage.setItem('mainTab', 'community'); } catch (e) {} go_('community'); }
   if (k === 'event') return eventOpen(id);
   if (k === 'thread') { S.commSeg = 'messaggi'; render(); return threadOpen(id); }
+  if (k === 'group') { S.commSeg = 'messaggi'; render(); return groupOpen(id); }
   if (k === 'post') return postOpen(id);
   if (k === 'review') return discussionOpen({ type: 'review', id });
   if (k === 'feedback') return feedbackAdmin();
@@ -4192,6 +4267,18 @@ Object.assign(actions, {
   commReport: el => commReport(el.dataset.kind, el.dataset.id),
   commInvite: () => commInvite(),
   welcomeStep: el => welcomeOpen(el.dataset.v),
+  groupNew: () => groupNew(),
+  groupCreate: () => groupCreate(),
+  groupOpen: el => groupOpen(el.dataset.id),
+  groupInfo: () => groupInfo(),
+  groupBack: () => { const g = S.group; if (g) groupOpen(g.id); },
+  groupAddSheet: () => groupAddSheet(),
+  groupRename: async () => { const g = S.group; if (!g) return; const n = prompt(tr('Nuovo nome del gruppo'), g.name); if (!n || n.trim().length < 2) return;
+    try { await comm('groupRename', { id: g.id, name: n.trim() }); toast('Gruppo rinominato'); groupOpen(g.id); } catch (e) { toast(commErrMsg(e)); } },
+  groupRemove: async el => { const g = S.group; if (!g || !confirm(tr('Togliere dal gruppo?') + ' ' + el.dataset.nick)) return;
+    try { await comm('groupRemove', { id: g.id, member: el.dataset.id }); g.members = g.members.filter(x => x.id !== el.dataset.id); groupInfo(); } catch (e) { toast(commErrMsg(e)); } },
+  groupLeave: async () => { const g = S.group; if (!g || !confirm(tr('Uscire dal gruppo? Non riceverai più i suoi messaggi.'))) return;
+    try { await comm('groupLeave', { id: g.id }); toast('Sei uscito dal gruppo'); closeSheet(); S.group = null; if (S.view === 'community') loadCommunity(); } catch (e) { toast(commErrMsg(e)); } },
   sharedChat: async () => { await newChat(); const t = $('#chatText'); if (t) t.value = S.sharedMsg || ''; },
   sharedPost: () => { newPost(); S.postPrefill = S.sharedMsg || ''; },
   sharedSearch: () => { const s = S.shared || {}; const w = String(s.title || s.text || '').replace(/https?:\/\/\S+/g, '').trim(); S.intoDraft = false; S.pickWish = false; S.coverMode = null; sheetSearch(S.addTipo || 'libro', w.slice(0, 120)); },
