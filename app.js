@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.25.0';
+const VERSION = '2.25.1';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -92,6 +92,9 @@ function marketValue(it) {
   return { v: 0, cur: 'EUR', src: '' };
 }
 const valueOf = it => marketValue(it).v;
+// Prezzi da riscaricare: mai presi, vecchi di 30 giorni, o senza prezzi per condizione da più di 2 ore
+// (succede finché su Discogs mancano valuta e paese: appena l'utente li imposta, i prezzi arrivano da soli)
+const priceStale = (d, days = 30) => !d || !d.at || Date.now() - d.at > days * 864e5 || (!d.sugg && (d.suggErr || d.noTok) && !!cfg('discogsToken') && Date.now() - d.at > 2 * 3600e3);
 // Fascia di prezzo sulla copertina: dal prezzo per la condizione peggiore a quello per la migliore (Discogs).
 // Senza prezzi per condizione: il valore scritto a mano, oppure il prezzo minimo in vendita ("da …")
 function priceRange(it) {
@@ -491,7 +494,7 @@ const priceMisses = () => { try { return JSON.parse(localStorage.getItem('priceM
 function priceMiss(id) { const m = priceMisses(); m[id] = Date.now(); for (const k of Object.keys(m)) if (Date.now() - m[k] > 30 * 864e5) delete m[k]; try { localStorage.setItem('priceMiss', JSON.stringify(m)); } catch (e) {} }
 async function priceFill() {
   if (priceFillOn || !cfg('discogsToken') || !navigator.onLine) return;
-  const stale = it => !it.valoreDiscogs || !it.valoreDiscogs.at || Date.now() - it.valoreDiscogs.at > 30 * 864e5;
+  const stale = it => priceStale(it.valoreDiscogs);
   priceFillOn = true;
   try {
     await sleep(1500);
@@ -2030,7 +2033,7 @@ async function discogsPrices(id) {
     for (const [k, v] of Object.entries(sg.value)) if (v && v.value != null && GRADE_ORDER.includes(k)) { sugg[k] = Math.round(+v.value * 100) / 100; scur = v.currency || scur; }
   }
   return { min: s.lowest_price && s.lowest_price.value != null ? +s.lowest_price.value : null, cur: (s.lowest_price && s.lowest_price.currency) || 'EUR', n: s.num_for_sale || 0,
-    sugg: Object.keys(sugg).length ? sugg : null, scur: scur || 'EUR', suggErr: sg.status === 'rejected', at: Date.now() };
+    sugg: Object.keys(sugg).length ? sugg : null, scur: scur || 'EUR', suggErr: sg.status === 'rejected' ? (String((sg.reason && sg.reason.message) || 'errore').replace('HTTP ', '') || true) : false, at: Date.now() };
 }
 async function discogsValue(it) {
   const tok = cfg('discogsToken'); if (!tok) throw new Error('token');
@@ -2128,7 +2131,7 @@ const AUTO_TRIED = new Set();
 async function autoOnline(it) {
   if (!it || S.autoBusy || S.valuing || AUTO_TRIED.has(it.id) || !navigator.onLine) return;
   if (!isMusic(it.tipo)) return (it.tipo === 'libro' || it.tipo === 'film') ? autoRating(it) : undefined;
-  const old = x => !x || !x.at || Date.now() - x.at > 14 * 864e5;
+  const old = x => priceStale(x, 14);
   if (!old(it.valoreDiscogs) && it.votoWeb) return;
   AUTO_TRIED.add(it.id); S.autoBusy = it.id;
   const tok = cfg('discogsToken'); const T = tok ? `?token=${encodeURIComponent(tok)}` : '';
@@ -2153,7 +2156,7 @@ async function autoOnline(it) {
 async function valueNow() {
   const it = byId(S.id); if (!it || S.valuing) return;
   S.valuing = { id: it.id }; render();
-  try { const ok = await discogsValue(it); toast(ok ? 'Valore aggiornato' : 'Edizione non trovata su Discogs');
+  try { const ok = await discogsValue(it); toast(!ok ? 'Edizione non trovata su Discogs' : it.valoreDiscogs && it.valoreDiscogs.suggErr ? `${tr('Discogs non dà ancora i prezzi per condizione')} (${it.valoreDiscogs.suggErr})` : 'Valore aggiornato', 4000);
     if (ok) { try { const w = discogsRating(await fj(`https://api.discogs.com/releases/${encodeURIComponent(it.discogsId)}?token=${encodeURIComponent(cfg('discogsToken'))}`)); if (w) { it.votoWeb = w; await saveItem(it); } } catch (e) {} } }
   catch (e) { toast('Discogs non risponde: riprova tra poco'); }
   S.valuing = null; if (S.view === 'detail') render();
@@ -2518,6 +2521,9 @@ function showUpdateBar() {
   document.body.appendChild(b);
 }
 const NEWS = {
+  '2.25.1': [
+    ['Prezzi per condizione più rapidi', "Se Discogs non dava i prezzi per condizione (valuta e paese non impostati nelle Seller Settings), Spinyl riprova da solo dopo 2 ore invece che dopo 30 giorni."],
+  ],
   '2.25': [
     ['Prezzi sulle copertine', "In Collezione ogni disco mostra la fascia di prezzo Discogs, dalla condizione peggiore alla migliore (es. 6,50 € – 42 €). I prezzi mancanti arrivano da soli, poco alla volta, mentre guardi la Collezione (serve il token Discogs)."],
   ],
