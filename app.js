@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.24.0';
+const VERSION = '2.25.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -92,6 +92,21 @@ function marketValue(it) {
   return { v: 0, cur: 'EUR', src: '' };
 }
 const valueOf = it => marketValue(it).v;
+// Fascia di prezzo sulla copertina: dal prezzo per la condizione peggiore a quello per la migliore (Discogs).
+// Senza prezzi per condizione: il valore scritto a mano, oppure il prezzo minimo in vendita ("da …")
+function priceRange(it) {
+  const d = it.valoreDiscogs;
+  if (d && d.sugg) { const v = Object.values(d.sugg).map(Number).filter(x => x > 0); if (v.length) return { lo: Math.min(...v), hi: Math.max(...v), cur: d.scur || 'EUR', src: 'discogs' }; }
+  const man = num(it.valore); if (man) return { lo: man, hi: man, cur: 'EUR', src: 'manuale' };
+  if (d && d.min) return { lo: d.min, hi: null, cur: d.cur || 'EUR', src: 'minimo' };
+  return null;
+}
+const moneyR = (v, cur = 'EUR') => new Intl.NumberFormat(LOC(), { style: 'currency', currency: cur || 'EUR', maximumFractionDigits: v < 10 && v % 1 ? 2 : 0, minimumFractionDigits: v < 10 && v % 1 ? 2 : 0 }).format(v);
+function rangeHTML(it) {
+  const r = priceRange(it); if (!r) return '';
+  const t = r.hi == null ? `<i>da</i> ${esc(moneyR(r.lo, r.cur))}` : r.lo === r.hi ? esc(moneyR(r.lo, r.cur)) : `${esc(moneyR(r.lo, r.cur))} – ${esc(moneyR(r.hi, r.cur))}`;
+  return `<span class="prange ${r.src}">${t}</span>`;
+}
 const parseTags = s => [...new Set(String(s || '').split(/[,#\n]/).map(t => t.trim()).filter(Boolean))];
 const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/^(the|il|lo|la|i|gli|le|l'|el|los|las)\s+/, '').replace(/[^a-z0-9]/g, '');
 // Tutte le forme in cui lo stesso codice può essere scritto (ISBN 10/13, UPC 12/EAN 13)
@@ -458,14 +473,43 @@ function renderGrid() {
   if (S.filter === 'valore') { g.innerHTML = valueTableHTML(L); hydratePhotos(g); return; }
   const label = i => { const T = TIPI[i.tipo]; if (!T) return ''; const f = i.formato || ''; return f && f.toLowerCase().startsWith(T.label.toLowerCase()) ? f : [T.label, f].filter(Boolean).join(' · '); };
   g.innerHTML = L.map(i => `
-    <button class="card t-${esc(i.tipo)}" data-a="open" data-id="${esc(i.id)}">
+    <button class="card t-${esc(i.tipo)}" data-a="open" data-id="${esc(i.id)}" data-card="${esc(i.id)}">
       ${coverHTML(i)}
       <i class="stripe"></i>
       ${i.prestatoA ? `<span class="tag loan ${loanLate(i) ? 'late' : ''}">${esc(loanTag(i))}</span>` : i.desiderio ? `<span class="tag">Desiderio</span>` : i.stato === 'in' ? `<span class="tag now">${esc(statoLabel(i))}</span>` : ''}
       ${S.sort === 'serie' && i.serie && i.volume ? `<span class="tag vol" translate="no">#${esc(i.volume)}</span>` : ''}
-      <div class="meta"><b translate="no">${esc(i.titolo || tr('Senza titolo'))}</b><span translate="no">${esc((S.sort === 'serie' && i.serie ? [i.serie, i.volume && 'vol. ' + i.volume] : [i.autore, i.anno]).filter(Boolean).join(' · ') || '—')}</span><em>${esc(label(i))}</em></div>
+      <div class="meta"><b translate="no">${esc(i.titolo || tr('Senza titolo'))}</b><span translate="no">${esc((S.sort === 'serie' && i.serie ? [i.serie, i.volume && 'vol. ' + i.volume] : [i.autore, i.anno]).filter(Boolean).join(' · ') || '—')}</span><em>${esc(label(i))}</em>${rangeHTML(i)}</div>
     </button>`).join('');
   hydratePhotos(g);
+  priceFill();
+}
+
+// Prezzi per condizione dei dischi che non li hanno ancora: piano piano, in sottofondo, mentre guardi la Collezione.
+// Discogs permette 60 richieste al minuto; ogni disco ne usa al massimo 3, quindi uno ogni 4 secondi.
+const PRICE_TRIED = new Set(); let priceFillOn = false;
+const priceMisses = () => { try { return JSON.parse(localStorage.getItem('priceMiss') || '{}'); } catch (e) { return {}; } };
+function priceMiss(id) { const m = priceMisses(); m[id] = Date.now(); for (const k of Object.keys(m)) if (Date.now() - m[k] > 30 * 864e5) delete m[k]; try { localStorage.setItem('priceMiss', JSON.stringify(m)); } catch (e) {} }
+async function priceFill() {
+  if (priceFillOn || !cfg('discogsToken') || !navigator.onLine) return;
+  const stale = it => !it.valoreDiscogs || !it.valoreDiscogs.at || Date.now() - it.valoreDiscogs.at > 30 * 864e5;
+  priceFillOn = true;
+  try {
+    await sleep(1500);
+    const miss = priceMisses(); Object.keys(miss).forEach(id => { if (Date.now() - miss[id] < 30 * 864e5) PRICE_TRIED.add(id); });
+    for (let n = 0; n < 60; n++) {
+      if (S.view !== 'list' || document.visibilityState !== 'visible' || S.valuing || !navigator.onLine) break;
+      const it = live().find(i => isMusic(i.tipo) && stale(i) && !PRICE_TRIED.has(i.id));
+      if (!it) break;
+      PRICE_TRIED.add(it.id);
+      try {
+        const ok = await discogsValue(it);
+        if (!ok) priceMiss(it.id); // non trovato su Discogs: non riprovo per 30 giorni
+        const card = document.querySelector(`[data-card="${CSS.escape(it.id)}"] .meta`);
+        if (card) { const old = card.querySelector('.prange'); const h = rangeHTML(byId(it.id) || it); if (old) old.outerHTML = h || ''; else if (h) card.insertAdjacentHTML('beforeend', h); }
+      } catch (e) { if (/HTTP 429/.test(e.message)) await sleep(60000); }
+      await sleep(4000);
+    }
+  } finally { priceFillOn = false; }
 }
 
 // Tab "Valore": totale per categoria, diviso per condizione, con il valore di ogni pezzo
@@ -2474,6 +2518,9 @@ function showUpdateBar() {
   document.body.appendChild(b);
 }
 const NEWS = {
+  '2.25': [
+    ['Prezzi sulle copertine', "In Collezione ogni disco mostra la fascia di prezzo Discogs, dalla condizione peggiore alla migliore (es. 6,50 € – 42 €). I prezzi mancanti arrivano da soli, poco alla volta, mentre guardi la Collezione (serve il token Discogs)."],
+  ],
   '2.24': [
     ['Rispondi a un messaggio', "Nelle chat di gruppo, private e degli eventi tocca «Rispondi» sotto un messaggio: la tua risposta lo cita, e toccando la citazione si torna al messaggio. Nei gruppi chi riceve la risposta ha una notifica dedicata."],
     ['Novità più affidabili', "Se una fonte non risponde, la Home tiene le novità di prima e riprova da sola dopo poco."],

@@ -755,3 +755,8 @@ a.ulink { color: var(--accent); text-decoration: underline; text-underline-offse
 .msg.mine .quote span { opacity: .75; }
 /* i pulsantini sotto i messaggi stanno su una riga (non prendono lo stile .mini degli elenchi) */
 small button.mini, .cacts button.mini { display: inline; padding: 0; border: 0; gap: 0; font-size: inherit; }
+
+/* Fascia di prezzo sulle copertine (dalla condizione peggiore alla migliore) */
+.card .meta .prange { align-self: flex-start; margin-top: 4px; padding: 2px 8px; border-radius: 999px; background: var(--soft); color: var(--ink); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.card .meta .prange i { font-style: normal; font-weight: 500; color: var(--muted); }
+.card .meta .prange.manuale { background: none; padding-left: 0; }
