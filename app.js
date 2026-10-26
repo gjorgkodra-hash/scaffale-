@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.25.1';
+const VERSION = '2.25.2';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -2071,6 +2071,8 @@ function soldLinks(it) {
     out.push(['AbeBooks', isbn ? `${ab}/servlet/SearchResults?isbn=${isbn}` : `${ab}/servlet/SearchResults?kn=${enc(q)}`]);
   }
   if (isMusic(it.tipo) && it.discogsId) out.push(['Discogs', `https://www.discogs.com/sell/release/${enc(it.discogsId)}`]);
+  // Popsike: aste concluse di dischi da collezione (nessuna API: apre la ricerca già fatta)
+  if (isMusic(it.tipo)) { const pq = [it.autore, it.titolo].filter(Boolean).join(' ') + (it.tipo === 'vinile' ? '' : it.tipo === 'cd' ? ' CD' : ' cassette'); if (pq.trim()) out.push(['Popsike', `https://www.popsike.com/php/quicksearch.php?searchtext=${enc(pq.trim())}`]); }
   return `<div class="links">${out.map(([n, u]) => `<a class="linkbtn" href="${esc(u)}" target="_blank" rel="noopener"><span>${esc(n)}</span><span aria-hidden="true">↗</span></a>`).join('')}</div>`;
 }
 // Voto medio della community Discogs (0–5)
@@ -2521,6 +2523,9 @@ function showUpdateBar() {
   document.body.appendChild(b);
 }
 const NEWS = {
+  '2.25.2': [
+    ['Popsike', "Nella scheda di un disco, accanto a eBay e Discogs, il pulsante Popsike apre le aste concluse di quel disco: utile per le stampe rare e da collezione."],
+  ],
   '2.25.1': [
     ['Prezzi per condizione più rapidi', "Se Discogs non dava i prezzi per condizione (valuta e paese non impostati nelle Seller Settings), Spinyl riprova da solo dopo 2 ore invece che dopo 30 giorni."],
   ],

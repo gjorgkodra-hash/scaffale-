@@ -317,6 +317,7 @@
     ['Alcune fonti non hanno risposto: riprovo tra poco.', "Some sources didn't respond: I'll try again shortly.", 'Algunas fuentes no han respondido: lo reintento en breve.'],
     // 2.25: fascia di prezzo sulle copertine
     ['da', 'from', 'desde'],
+    ["Nella scheda di un disco, accanto a eBay e Discogs, il pulsante Popsike apre le aste concluse di quel disco: utile per le stampe rare e da collezione.", "On a record's page, next to eBay and Discogs, the Popsike button opens that record's completed auctions: useful for rare and collectible pressings.", 'En la ficha de un disco, junto a eBay y Discogs, el botón Popsike abre las subastas terminadas de ese disco: útil para prensajes raros y de colección.'],
     ['Prezzi per condizione più rapidi', 'Faster prices by condition', 'Precios por condición más rápidos'],
     ["Se Discogs non dava i prezzi per condizione (valuta e paese non impostati nelle Seller Settings), Spinyl riprova da solo dopo 2 ore invece che dopo 30 giorni.", "If Discogs wasn't giving prices by condition (currency and country not set in Seller Settings), Spinyl tries again by itself after 2 hours instead of 30 days.", 'Si Discogs no daba precios por condición (moneda y país sin configurar en Seller Settings), Spinyl lo reintenta solo a las 2 horas en lugar de a los 30 días.'],
     ['Discogs non dà ancora i prezzi per condizione', "Discogs isn't giving prices by condition yet", 'Discogs todavía no da precios por condición'],
