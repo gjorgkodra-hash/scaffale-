@@ -317,6 +317,9 @@
     ['Alcune fonti non hanno risposto: riprovo tra poco.', "Some sources didn't respond: I'll try again shortly.", 'Algunas fuentes no han respondido: lo reintento en breve.'],
     // 2.25: fascia di prezzo sulle copertine
     ['da', 'from', 'desde'],
+    ['vale', 'worth', 'vale'], ['Vale', 'Worth', 'Vale'], ['Pagato', 'Paid', 'Pagado'],
+    ['Pagato e valore della tua copia', 'Paid and value of your copy', 'Pagado y valor de tu copia'],
+    ["Su ogni copertina, sotto la fascia di prezzo: quanto l'hai pagato e quanto vale la tua copia nella condizione che hai scelto (es. VG+). Il filtro Valore mostra entrambi i totali.", 'On every cover, under the price range: what you paid and what your copy is worth in the condition you chose (e.g. VG+). The Value filter shows both totals.', 'En cada portada, bajo la franja de precio: cuánto pagaste y cuánto vale tu copia en el estado que elegiste (p. ej. VG+). El filtro Valor muestra ambos totales.'],
     ['Hai speso', 'You spent', 'Has gastado'], ['Speso', 'Spent', 'Gastado'], ['pagato', 'paid', 'pagado'],
     ['Valore di mercato', 'Market value', 'Valor de mercado'],
     ['più di quanto hai speso', 'more than you spent', 'más de lo que gastaste'], ['meno di quanto hai speso', 'less than you spent', 'menos de lo que gastaste'],

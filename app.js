@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.26.0';
+const VERSION = '2.26.1';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -105,6 +105,14 @@ function priceRange(it) {
   return null;
 }
 const moneyR = (v, cur = 'EUR') => new Intl.NumberFormat(LOC(), { style: 'currency', currency: cur || 'EUR', maximumFractionDigits: v < 10 && v % 1 ? 2 : 0, minimumFractionDigits: v < 10 && v % 1 ? 2 : 0 }).format(v);
+// Sulla copertina: quanto hai pagato e quanto vale la tua copia nella condizione che hai scelto
+function mineHTML(it) {
+  const paid = num(it.prezzo), m = marketValue(it);
+  const vale = m.src === 'discogs' || m.src === 'manuale' ? m : null;
+  if (!paid && !vale) return '';
+  const g = vale && vale.src === 'discogs' ? `<i translate="no">${esc(gradeShort(vale.grade))}${vale.assumed ? '?' : ''}</i>` : '';
+  return `<span class="pmine">${paid ? `<span><i>Pagato</i> <b translate="no">${esc(money(paid))}</b></span>` : ''}${vale ? `<span><i>Vale</i> <b translate="no">${esc(money(vale.v, vale.cur))}</b>${g ? ' ' + g : ''}</span>` : ''}</span>`;
+}
 function rangeHTML(it) {
   const r = priceRange(it); if (!r) return '';
   const t = r.hi == null ? `<i>da</i> ${esc(moneyR(r.lo, r.cur))}` : r.lo === r.hi ? esc(moneyR(r.lo, r.cur)) : `${esc(moneyR(r.lo, r.cur))} – ${esc(moneyR(r.hi, r.cur))}`;
@@ -405,7 +413,7 @@ function viewList() {
   const compact = v => new Intl.NumberFormat(LOC(), { style: 'currency', currency: 'EUR', notation: 'compact', maximumFractionDigits: v >= 1000 ? 1 : 0 }).format(v);
   const chips = [['tutti', 'Tutti'], ...Object.entries(TIPI).map(([k, v]) => [k, v.plural]), ['valore', 'Valore'], ['scoprire', 'Da scoprire'], ['desideri', 'Desideri'], ['prestito', 'In prestito']]
     .filter(([k]) => !['desideri', 'prestito', 'scoprire'].includes(k) || c[k] > 0 || S.filter === k)
-    .map(([k, l]) => `<button class="chip ${S.filter === k ? 'on' : ''}" data-a="filter" data-v="${k}">${l}<b>${k === 'valore' ? (c.pagato ? compact(c.pagato) : '€') : c[k]}</b></button>`).join('');
+    .map(([k, l]) => `<button class="chip ${S.filter === k ? 'on' : ''}" data-a="filter" data-v="${k}">${l}<b>${k === 'valore' ? (c.pagato || c.valore ? [c.pagato ? `<i>pagato</i> ${compact(c.pagato)}` : '', c.valore ? `<i>vale</i> ${compact(c.valore)}` : ''].filter(Boolean).join(' · ') : '€') : c[k]}</b></button>`).join('');
   const needLogin = cfg('clientId') && S.syncState === 'login' && S.dirty;
   const queued = S.batch.length;
   return `
@@ -481,7 +489,7 @@ function renderGrid() {
       <i class="stripe"></i>
       ${i.prestatoA ? `<span class="tag loan ${loanLate(i) ? 'late' : ''}">${esc(loanTag(i))}</span>` : i.desiderio ? `<span class="tag">Desiderio</span>` : i.stato === 'in' ? `<span class="tag now">${esc(statoLabel(i))}</span>` : ''}
       ${S.sort === 'serie' && i.serie && i.volume ? `<span class="tag vol" translate="no">#${esc(i.volume)}</span>` : ''}
-      <div class="meta"><b translate="no">${esc(i.titolo || tr('Senza titolo'))}</b><span translate="no">${esc((S.sort === 'serie' && i.serie ? [i.serie, i.volume && 'vol. ' + i.volume] : [i.autore, i.anno]).filter(Boolean).join(' · ') || '—')}</span><em>${esc(label(i))}</em>${rangeHTML(i)}</div>
+      <div class="meta"><b translate="no">${esc(i.titolo || tr('Senza titolo'))}</b><span translate="no">${esc((S.sort === 'serie' && i.serie ? [i.serie, i.volume && 'vol. ' + i.volume] : [i.autore, i.anno]).filter(Boolean).join(' · ') || '—')}</span><em>${esc(label(i))}</em>${rangeHTML(i)}${mineHTML(i)}</div>
     </button>`).join('');
   hydratePhotos(g);
   priceFill();
@@ -508,7 +516,7 @@ async function priceFill() {
         const ok = await discogsValue(it);
         if (!ok) priceMiss(it.id); // non trovato su Discogs: non riprovo per 30 giorni
         const card = document.querySelector(`[data-card="${CSS.escape(it.id)}"] .meta`);
-        if (card) { const old = card.querySelector('.prange'); const h = rangeHTML(byId(it.id) || it); if (old) old.outerHTML = h || ''; else if (h) card.insertAdjacentHTML('beforeend', h); }
+        if (card) { const x = byId(it.id) || it; card.querySelectorAll('.prange,.pmine').forEach(e => e.remove()); card.insertAdjacentHTML('beforeend', rangeHTML(x) + mineHTML(x)); }
       } catch (e) { if (/HTTP 429/.test(e.message)) await sleep(60000); }
       await sleep(4000);
     }
@@ -2543,6 +2551,9 @@ function showUpdateBar() {
   document.body.appendChild(b);
 }
 const NEWS = {
+  '2.26.1': [
+    ['Pagato e valore della tua copia', "Su ogni copertina, sotto la fascia di prezzo: quanto l'hai pagato e quanto vale la tua copia nella condizione che hai scelto (es. VG+). Il filtro Valore mostra entrambi i totali."],
+  ],
   '2.26': [
     ['Quanto hai speso', "Il filtro Valore mostra il totale che hai pagato (il Prezzo pagato che scrivi nella scheda). Dentro trovi «Hai speso», il valore di mercato e la differenza, anche per ogni categoria."],
   ],
