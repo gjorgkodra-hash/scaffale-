@@ -426,6 +426,11 @@ async def t_check_and_value(b, base):
     check('controllo Discogs: account e prezzi per condizione', 'kodrago' in t and 'Prezzi per condizione disponibili' in t and '(8)' in t, t)
     await page.evaluate("closeSheet(); S.filter='valore'; go('list')"); await page.wait_for_timeout(300)
     check('tab Valore: totale per categoria', await page.evaluate("document.querySelectorAll('.vgroup').length") >= 3)
+    chip = await page.evaluate("document.querySelector('.chip[data-v=valore] b').textContent")
+    check('filtro Valore: totale pagato', '13' in chip, chip)
+    vt = await page.evaluate("document.querySelector('.vt-total').textContent")
+    check('tab Valore: prima «Hai speso»', 'Hai speso' in vt and '12,90' in vt, vt)
+    check('tab Valore: anche il valore di mercato', await page.evaluate("!!document.querySelector('.vt-total.vt-market')"))
     check('nessun errore JavaScript', not errs, errs)
 
 async def t_auto_online(b, base):

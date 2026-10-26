@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.25.3';
+const VERSION = '2.26.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -375,9 +375,9 @@ function syncBtn() {
 }
 
 function counts() {
-  const L = live(); const c = { tutti: 0, libro: 0, vinile: 0, cd: 0, cassetta: 0, film: 0, desideri: 0, prestito: 0, scoprire: 0, valore: 0 };
+  const L = live(); const c = { tutti: 0, libro: 0, vinile: 0, cd: 0, cassetta: 0, film: 0, desideri: 0, prestito: 0, scoprire: 0, valore: 0, pagato: 0 };
   L.forEach(i => {
-    if (i.desiderio) c.desideri++; else { c.tutti++; c[i.tipo]++; c.valore += valueOf(i); if (i.stato === 'da' || i.stato === 'in') c.scoprire++; }
+    if (i.desiderio) c.desideri++; else { c.tutti++; c[i.tipo]++; c.valore += valueOf(i); c.pagato += num(i.prezzo); if (i.stato === 'da' || i.stato === 'in') c.scoprire++; }
     if (i.prestatoA) c.prestito++;
   });
   return c;
@@ -405,7 +405,7 @@ function viewList() {
   const compact = v => new Intl.NumberFormat(LOC(), { style: 'currency', currency: 'EUR', notation: 'compact', maximumFractionDigits: v >= 1000 ? 1 : 0 }).format(v);
   const chips = [['tutti', 'Tutti'], ...Object.entries(TIPI).map(([k, v]) => [k, v.plural]), ['valore', 'Valore'], ['scoprire', 'Da scoprire'], ['desideri', 'Desideri'], ['prestito', 'In prestito']]
     .filter(([k]) => !['desideri', 'prestito', 'scoprire'].includes(k) || c[k] > 0 || S.filter === k)
-    .map(([k, l]) => `<button class="chip ${S.filter === k ? 'on' : ''}" data-a="filter" data-v="${k}">${l}<b>${k === 'valore' ? (c.valore ? compact(c.valore) : '€') : c[k]}</b></button>`).join('');
+    .map(([k, l]) => `<button class="chip ${S.filter === k ? 'on' : ''}" data-a="filter" data-v="${k}">${l}<b>${k === 'valore' ? (c.pagato ? compact(c.pagato) : '€') : c[k]}</b></button>`).join('');
   const needLogin = cfg('clientId') && S.syncState === 'login' && S.dirty;
   const queued = S.batch.length;
   return `
@@ -518,31 +518,34 @@ async function priceFill() {
 // Tab "Valore": totale per categoria, diviso per condizione, con il valore di ogni pezzo
 function valueTableHTML(L) {
   const tot = L.reduce((t, i) => t + valueOf(i), 0); const valued = L.filter(i => valueOf(i) > 0).length;
+  const paid = L.reduce((t, i) => t + num(i.prezzo), 0); const nPaid = L.filter(i => num(i.prezzo) > 0).length;
   const music = L.filter(i => isMusic(i.tipo)).length;
   const SRC = { manuale: 'stimato da te', discogs: 'Discogs', minimo: 'min. Discogs' };
   let h = `<div class="vt" style="grid-column:1/-1">
-    <div class="vt-total"><span>Valore totale</span><b>${esc(money(tot))}</b><small>${valued === L.length ? (L.length === 1 ? '1 pezzo con valore' : `tutti i ${L.length} pezzi hanno un valore`) : `${valued} pezzi su ${L.length} con valore`}</small></div>
+    <div class="vt-total"><span>Hai speso</span><b>${esc(money(paid))}</b><small>${nPaid === L.length ? (L.length === 1 ? 'Prezzo pagato indicato per 1 pezzo' : `Prezzo pagato indicato per tutti i ${L.length} pezzi`) : `Prezzo pagato indicato per ${nPaid} pezzi su ${L.length}`}</small></div>
+    <div class="vt-total vt-market"><span>Valore di mercato</span><b>${esc(money(tot))}</b>${paid && tot ? `<small class="${tot >= paid ? 'up' : 'down'}">${tot >= paid ? '▲' : '▼'} <span translate="no">${esc(money(Math.abs(tot - paid)))}</span> <span>${tot >= paid ? 'più di quanto hai speso' : 'meno di quanto hai speso'}</span></small>` : ''}<small>${valued === L.length ? (L.length === 1 ? '1 pezzo con valore' : `tutti i ${L.length} pezzi hanno un valore`) : `${valued} pezzi su ${L.length} con valore`}</small></div>
     ${music && cfg('discogsToken') ? `<button id="valueAllBtn" class="btn block" data-a="valueAll">${S.valuing && S.valuing.all ? `Aggiorno ${S.valuing.done} di ${S.valuing.tot}… (tocca per fermare)` : 'Aggiorna i prezzi dei dischi da Discogs'}</button>` : ''}`;
   Object.keys(TIPI).forEach(k => {
     const items = L.filter(i => i.tipo === k); if (!items.length) return;
-    const sum = items.reduce((t, i) => t + valueOf(i), 0);
+    const sum = items.reduce((t, i) => t + valueOf(i), 0); const sumPaid = items.reduce((t, i) => t + num(i.prezzo), 0);
     const by = {}; items.forEach(i => { const c = CONDIZIONI.includes(i.condizione) ? i.condizione : ''; (by[c] = by[c] || [0, 0]); by[c][0]++; by[c][1] += valueOf(i); });
     const conds = [...CONDIZIONI, ''].filter(c => by[c]);
-    const rows = items.slice().sort((a, b) => valueOf(b) - valueOf(a) || String(a.titolo).localeCompare(String(b.titolo), LOC())).map(i => {
+    const rows = items.slice().sort((a, b) => num(b.prezzo) - num(a.prezzo) || valueOf(b) - valueOf(a) || String(a.titolo).localeCompare(String(b.titolo), LOC())).map(i => {
       const m = marketValue(i);
       return `<button class="vrow" data-a="open" data-id="${esc(i.id)}">
         <span class="vt-t"><b translate="no">${esc(i.titolo)}</b><small translate="no">${esc([i.autore, i.anno].filter(Boolean).join(' · '))}</small></span>
         <span class="vt-c">${i.condizione ? `<span>${esc(i.condizione)}</span>` : '<span class="muted">—</span>'}${isMusic(i.tipo) && GRADE_OF[i.condizione] ? `<i translate="no">${esc(gradeShort(GRADE_OF[i.condizione]))}</i>` : ''}</span>
-        <span class="vt-v">${m.v ? `<b>${esc(money(m.v, m.cur))}</b><i>${SRC[m.src]}</i>` : '<b class="muted">—</b>'}</span>
+        <span class="vt-v">${num(i.prezzo) ? `<b>${esc(money(num(i.prezzo)))}</b><i>pagato</i>` : '<b class="muted">—</b><i>pagato</i>'}${m.v ? `<small><span translate="no">${esc(money(m.v, m.cur))}</span> · ${SRC[m.src]}</small>` : ''}</span>
       </button>`;
     }).join('');
     h += `<section class="vgroup t-${k}">
-      <header><b>${TIPI[k].plural}</b><small>${items.length === 1 ? '1 pezzo' : items.length + ' pezzi'}</small><span>${esc(money(sum))}</span></header>
+      <header><b>${TIPI[k].plural}</b><small>${items.length === 1 ? '1 pezzo' : items.length + ' pezzi'}</small><span>${esc(money(sumPaid))}</span></header>
+      <div class="vsub"><span>Speso</span> <b translate="no">${esc(money(sumPaid))}</b> · <span>Valore di mercato</span> <b translate="no">${esc(money(sum))}</b></div>
       <div class="vconds">${conds.map(c => `<div class="vc"><span>${c ? esc(c) : 'Condizione non indicata'}</span><small>× ${by[c][0]}</small><b>${by[c][1] ? esc(money(by[c][1])) : '—'}</b></div>`).join('')}</div>
       <div class="vrows">${rows}</div>
     </section>`;
   });
-  h += `<p class="note vt-note">Dischi: prezzo suggerito da Discogs per la condizione della tua copia (se la condizione manca, viene calcolato come Ottimo · VG+). Libri e film: il valore stimato che scrivi tu nella scheda. Il valore che inserisci a mano vale sempre più di quello automatico.</p></div>`;
+  h += `<p class="note vt-note">Hai speso: la somma dei prezzi pagati che scrivi nella scheda (Modifica › Prezzo pagato). Valore di mercato — dischi: prezzo suggerito da Discogs per la condizione della tua copia (se la condizione manca, viene calcolato come Ottimo · VG+). Libri e film: il valore stimato che scrivi tu nella scheda. Il valore che inserisci a mano vale sempre più di quello automatico.</p></div>`;
   return h;
 }
 
@@ -2540,6 +2543,9 @@ function showUpdateBar() {
   document.body.appendChild(b);
 }
 const NEWS = {
+  '2.26': [
+    ['Quanto hai speso', "Il filtro Valore mostra il totale che hai pagato (il Prezzo pagato che scrivi nella scheda). Dentro trovi «Hai speso», il valore di mercato e la differenza, anche per ogni categoria."],
+  ],
   '2.25.3': [
     ['Controllo Discogs', "In Impostazioni › Chiavi facoltative, sotto il token Discogs: «Controlla il token e i prezzi Discogs» dice a quale account appartiene il token e se Discogs dà i prezzi per condizione."],
   ],

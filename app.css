@@ -760,3 +760,13 @@ small button.mini, .cacts button.mini { display: inline; padding: 0; border: 0; 
 .card .meta .prange { align-self: flex-start; margin-top: 4px; padding: 2px 8px; border-radius: 999px; background: var(--soft); color: var(--ink); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .card .meta .prange i { font-style: normal; font-weight: 500; color: var(--muted); }
 .card .meta .prange.manuale { background: none; padding-left: 0; }
+
+/* Valore: prima quanto hai speso, poi il valore di mercato */
+.vt-total.vt-market { margin-top: 10px; }
+.vt-total.vt-market b { font-size: 26px; }
+.vt-total small.up { color: var(--ok); font-weight: 600; }
+.vt-total small.down { color: var(--warn); font-weight: 600; }
+.vgroup .vsub { padding: 0 16px 10px; font-size: 13px; color: var(--muted); }
+.vgroup .vsub b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.vt-v small { font-size: 11px; color: var(--muted); white-space: nowrap; margin-top: 2px; }
+.vt-total small span { font-family: inherit; text-transform: none; letter-spacing: normal; font-size: inherit; color: inherit; }

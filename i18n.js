@@ -317,6 +317,12 @@
     ['Alcune fonti non hanno risposto: riprovo tra poco.', "Some sources didn't respond: I'll try again shortly.", 'Algunas fuentes no han respondido: lo reintento en breve.'],
     // 2.25: fascia di prezzo sulle copertine
     ['da', 'from', 'desde'],
+    ['Hai speso', 'You spent', 'Has gastado'], ['Speso', 'Spent', 'Gastado'], ['pagato', 'paid', 'pagado'],
+    ['Valore di mercato', 'Market value', 'Valor de mercado'],
+    ['più di quanto hai speso', 'more than you spent', 'más de lo que gastaste'], ['meno di quanto hai speso', 'less than you spent', 'menos de lo que gastaste'],
+    ['Prezzo pagato indicato per 1 pezzo', 'Price paid entered for 1 item', 'Precio pagado indicado para 1 artículo'],
+    ['Quanto hai speso', 'How much you spent', 'Cuánto has gastado'],
+    ["Il filtro Valore mostra il totale che hai pagato (il Prezzo pagato che scrivi nella scheda). Dentro trovi «Hai speso», il valore di mercato e la differenza, anche per ogni categoria.", 'The Value filter shows the total you paid (the Price paid you enter on each item). Inside you find «You spent», the market value and the difference, also per category.', 'El filtro Valor muestra el total que pagaste (el Precio pagado que escribes en la ficha). Dentro encuentras «Has gastado», el valor de mercado y la diferencia, también por categoría.'],
     ['Controlla il token e i prezzi Discogs', 'Check the Discogs token and prices', 'Comprobar el token y los precios de Discogs'],
     ['Controllo su Discogs…', 'Checking Discogs…', 'Comprobando en Discogs…'],
     ['Token valido, account', 'Valid token, account', 'Token válido, cuenta'], ['Token non valido', 'Invalid token', 'Token no válido'],
@@ -799,9 +805,9 @@
     ['Valore totale', 'Total value', 'Valor total'], ['1 pezzo con valore', '1 item with a value', '1 artículo con valor'],
     ['Aggiorna i prezzi dei dischi da Discogs', 'Update record prices from Discogs', 'Actualizar precios de discos desde Discogs'],
     ['stimato da te', 'your estimate', 'tu estimación'], ['min. Discogs', 'Discogs min.', 'mín. Discogs'], ['Condizione non indicata', 'No condition set', 'Estado no indicado'],
-    ['Dischi: prezzo suggerito da Discogs per la condizione della tua copia (se la condizione manca, viene calcolato come Ottimo · VG+). Libri e film: il valore stimato che scrivi tu nella scheda. Il valore che inserisci a mano vale sempre più di quello automatico.',
-      'Records: price suggested by Discogs for the condition of your copy (with no condition set, it’s valued as Excellent · VG+). Books and films: the estimated value you enter on the item. A value you enter by hand always takes priority over the automatic one.',
-      'Discos: precio sugerido por Discogs para el estado de tu copia (si falta el estado, se calcula como Excelente · VG+). Libros y películas: el valor estimado que escribes en la ficha. El valor que introduces a mano siempre tiene prioridad sobre el automático.'],
+    ['Hai speso: la somma dei prezzi pagati che scrivi nella scheda (Modifica › Prezzo pagato). Valore di mercato — dischi: prezzo suggerito da Discogs per la condizione della tua copia (se la condizione manca, viene calcolato come Ottimo · VG+). Libri e film: il valore stimato che scrivi tu nella scheda. Il valore che inserisci a mano vale sempre più di quello automatico.',
+      'You spent: the total of the prices paid you enter on each item (Edit › Price paid). Market value — records: price suggested by Discogs for the condition of your copy (with no condition set, it’s valued as Excellent · VG+). Books and films: the estimated value you enter on the item. A value you enter by hand always takes priority over the automatic one.',
+      'Has gastado: la suma de los precios pagados que escribes en la ficha (Editar › Precio pagado). Valor de mercado — discos: precio sugerido por Discogs para el estado de tu copia (si falta el estado, se calcula como Excelente · VG+). Libros y películas: el valor estimado que escribes en la ficha. El valor que introduces a mano siempre tiene prioridad sobre el automático.'],
   ];
 
   // Testi con parti variabili
@@ -867,6 +873,8 @@
     [/^Mostra tutte \((\d+)\)$/, (m, l) => l === 'en' ? `Show all (${m[1]})` : `Mostrar todas (${m[1]})`],
     [/^\((\d+) copie\)$/, (m, l) => l === 'en' ? `(${m[1]} copies)` : `(${m[1]} copias)`],
     [/^tutti i (\d+) pezzi hanno un valore$/, (m, l) => l === 'en' ? `all ${m[1]} items have a value` : `los ${m[1]} artículos tienen valor`],
+    [/^Prezzo pagato indicato per tutti i (\d+) pezzi$/, (m, l) => l === 'en' ? `Price paid entered for all ${m[1]} items` : `Precio pagado indicado para los ${m[1]} artículos`],
+    [/^Prezzo pagato indicato per (\d+) pezzi su (\d+)$/, (m, l) => l === 'en' ? `Price paid entered for ${m[1]} of ${m[2]} items` : `Precio pagado indicado para ${m[1]} de ${m[2]} artículos`],
     [/^(\d+) pezzi su (\d+) con valore$/, (m, l) => l === 'en' ? `${m[1]} of ${m[2]} items have a value` : `${m[1]} de ${m[2]} artículos con valor`],
   ];
   // "Film" da solo è una categoria; dentro "Film · DVD" indica un singolo pezzo
