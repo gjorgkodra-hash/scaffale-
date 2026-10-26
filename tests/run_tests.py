@@ -286,6 +286,7 @@ def make_route(no_vision=False):
             DISCOGS_URLS.append(u)
             if p.path.startswith('/marketplace/price_suggestions/'):
                 return await J({g: {'currency': 'EUR', 'value': round(30 * f, 2)} for g, f in zip(GRADES, [1, .8, .6, .42, .3, .22, .14, .08])})
+            if p.path == '/oauth/identity': return await J({'username': 'kodrago'})
             if p.path.startswith('/marketplace/stats/'): return await J({'lowest_price': {'value': 18.5, 'currency': 'EUR'}, 'num_for_sale': 23})
             if p.path.startswith('/releases/'): return await J({'tracklist': [{'position': 'A1', 'title': 'Speak to Me', 'type_': 'track'}], 'images': [{'uri': 'https://img.test/f.png'}], 'identifiers': [], 'labels': [], 'community': {'rating': {'average': 4.56, 'count': 321}}})
             if p.path == '/database/search':
@@ -418,6 +419,11 @@ async def t_check_and_value(b, base):
     await page.wait_for_function("live().filter(i=>isMusic(i.tipo)&&!i.desiderio).every(i=>i.valoreDiscogs&&i.valoreDiscogs.sugg)", timeout=40000)
     await page.wait_for_timeout(300)
     check('prezzi dei dischi recuperati in sottofondo', await page.evaluate("!!document.querySelector('[data-card=i1] .prange')"))
+    await page.evaluate("go('settings')"); await page.wait_for_timeout(300)
+    await page.evaluate("document.querySelector('details.adv').open = true"); await page.click('[data-a=discogsCheck]')
+    await page.wait_for_function("$('#dgCheck').textContent.includes('kodrago')", timeout=8000)
+    t = await page.evaluate("$('#dgCheck').textContent")
+    check('controllo Discogs: account e prezzi per condizione', 'kodrago' in t and 'Prezzi per condizione disponibili' in t and '(8)' in t, t)
     await page.evaluate("closeSheet(); S.filter='valore'; go('list')"); await page.wait_for_timeout(300)
     check('tab Valore: totale per categoria', await page.evaluate("document.querySelectorAll('.vgroup').length") >= 3)
     check('nessun errore JavaScript', not errs, errs)

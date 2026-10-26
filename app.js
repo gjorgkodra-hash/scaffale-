@@ -2,7 +2,7 @@
    App web installabile (PWA). Dati sul telefono + copia su Google Drive. */
 'use strict';
 
-const VERSION = '2.25.2';
+const VERSION = '2.25.3';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -822,6 +822,7 @@ function viewSettings() {
         <label class="field"><span>Chiave Google Libri (libri, facoltativa)</span><input id="cfg-booksKey" value="${esc(cfg('booksKey'))}" autocomplete="off"></label>
         <label class="field"><span>Chiave API TMDB (film, consigliata)</span><input id="cfg-tmdbKey" value="${esc(cfg('tmdbKey'))}" autocomplete="off"></label>
         <label class="field"><span>Token Discogs (vinili, CD, cassette)</span><input id="cfg-discogsToken" value="${esc(cfg('discogsToken'))}" autocomplete="off"></label>
+        ${cfg('discogsToken') ? '<button class="more" data-a="discogsCheck">Controlla il token e i prezzi Discogs</button><div id="dgCheck"></div>' : ''}
         <label class="field"><span>Chiave Google Cloud Vision (riconosce anche le copertine senza scritte, facoltativa)</span><input id="cfg-visionKey" value="${esc(cfg('visionKey'))}" autocomplete="off"></label>
         ${cfg('visionKey') ? `<p class="note" style="margin:6px 0 10px">Google Vision questo mese: ${visionUsed()} di ${VISION_MONTHLY} foto su questo telefono</p>` : ''}
         <label class="field"><span>Client ID Google</span><input id="cfg-clientId" value="${esc(cfg('clientId'))}" autocomplete="off"></label>
@@ -2035,6 +2036,22 @@ async function discogsPrices(id) {
   return { min: s.lowest_price && s.lowest_price.value != null ? +s.lowest_price.value : null, cur: (s.lowest_price && s.lowest_price.currency) || 'EUR', n: s.num_for_sale || 0,
     sugg: Object.keys(sugg).length ? sugg : null, scur: scur || 'EUR', suggErr: sg.status === 'rejected' ? (String((sg.reason && sg.reason.message) || 'errore').replace('HTTP ', '') || true) : false, at: Date.now() };
 }
+// Diagnosi: a chi appartiene il token e se Discogs dà i prezzi per condizione (prova con un disco molto venduto)
+async function discogsCheck() {
+  const box = $('#dgCheck'); if (!box) return; const tok = encodeURIComponent(cfg('discogsToken'));
+  box.innerHTML = loadingHTML('Controllo su Discogs…');
+  const get = async url => { try { const r = await fetch(url); let j = null; try { j = await r.json(); } catch (e) {} return { st: r.status, j }; } catch (e) { return { st: 0, j: { message: String(e.message || e) } }; } };
+  const [id, ps] = await Promise.all([get(`https://api.discogs.com/oauth/identity?token=${tok}`), get(`https://api.discogs.com/marketplace/price_suggestions/1873013?token=${tok}`)]);
+  const n = ps.st === 200 && ps.j ? Object.values(ps.j).filter(v => v && v.value != null).length : 0;
+  const line = (ok, html) => `<p class="note pnote">${ok ? '✓' : '✗'} ${html}</p>`;
+  let h = id.st === 200 && id.j ? line(true, `<span>Token valido, account</span> <b translate="no">${esc(id.j.username || '?')}</b>`) : line(false, `<span>Token non valido</span> <span translate="no">(${esc(id.st)}${id.j && id.j.message ? ': ' + esc(id.j.message) : ''})</span>`);
+  if (n) h += line(true, `<span>Prezzi per condizione disponibili</span> <span translate="no">(${n})</span>`);
+  else {
+    h += line(false, `<span>Prezzi per condizione non disponibili</span> <span translate="no">(${esc(ps.st)}${ps.j && ps.j.message ? ': ' + esc(ps.j.message) : ps.st === 200 ? ': {}' : ''})</span>`);
+    h += `<p class="note pnote">Su Discogs, con questo account: Settings › Seller Settings: scegli valuta e paese, compila i campi obbligatori e salva. Poi ricontrolla qui.</p>`;
+  }
+  box.innerHTML = h;
+}
 async function discogsValue(it) {
   const tok = cfg('discogsToken'); if (!tok) throw new Error('token');
   const m = await discogsLookupId(it); if (!m) return false;
@@ -2523,6 +2540,9 @@ function showUpdateBar() {
   document.body.appendChild(b);
 }
 const NEWS = {
+  '2.25.3': [
+    ['Controllo Discogs', "In Impostazioni › Chiavi facoltative, sotto il token Discogs: «Controlla il token e i prezzi Discogs» dice a quale account appartiene il token e se Discogs dà i prezzi per condizione."],
+  ],
   '2.25.2': [
     ['Popsike', "Nella scheda di un disco, accanto a eBay e Discogs, il pulsante Popsike apre le aste concluse di quel disco: utile per le stampe rare e da collezione."],
   ],
@@ -4459,6 +4479,7 @@ Object.assign(actions, {
   remind: () => remindLoan(),
   valueNow: () => valueNow(),
   valueAll: () => valueAll(),
+  discogsCheck: () => discogsCheck(),
   addBatch: () => { S.batchTipo = S.addTipo; closeSheet(); startBatch(); },
   openBatch: () => go('batch'),
   batchScan: () => startBatch(),
